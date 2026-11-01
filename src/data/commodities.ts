@@ -1,0 +1,242 @@
+import type { CommodityId, CommoditySpec } from '../engine/types';
+
+/**
+ * Commodités de la phase 1. Les contrats sont calqués sur les références réelles
+ * (ICE Brent, ICE Endex TTF, LME Copper, CBOT Wheat, ICE Rotterdam Coal) mais les bourses sont fictives.
+ * Les paramètres de modèle sont des ordres de grandeur plausibles, pas des calibrations.
+ */
+export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
+  BRENT: {
+    id: 'BRENT',
+    name: 'Brent (brut léger mer du Nord)',
+    short: 'Brent',
+    family: 'energy',
+    exchange: 'ICX Europe',
+    currency: 'USD',
+    priceUnit: '$/bbl',
+    qtyUnit: 'bbl',
+    lot: { kind: 'fixed', qty: 1000 },
+    tick: 0.01,
+    valuePerUnit: 1,
+    decimals: 2,
+    listing: { kind: 'monthly', count: 24 },
+    ltdRule: 'BRENT',
+    model: {
+      s0: 78,
+      chi0: 0.04,
+      kappa: 1.4,
+      sigmaChi: 0.28,
+      sigmaXi: 0.16,
+      rho: 0.3,
+      longDrift: -0.02,
+      seasonalAmp: 0.012,
+      seasonalPeak: 6.5,
+    },
+    liquidity: { halfSpreadTicks: 1, depthLots: 800, commission: 2.5 },
+    physical: {
+      cargoSizes: [300_000, 600_000],
+      storagePerUnitMonth: 0.45,
+      spotSpreadPct: 0.004,
+      locations: [
+        { id: 'BRENT_RTM', cityId: 'rotterdam', label: 'CIF Rotterdam', incoterm: 'CIF', basisMean: 1.1, basisVol: 0.9 },
+        { id: 'BRENT_USGC', cityId: 'houston', label: 'FOB US Gulf', incoterm: 'FOB', basisMean: -2.4, basisVol: 1.2 },
+        { id: 'BRENT_FUJ', cityId: 'dubai', label: 'FOB Fujairah', incoterm: 'FOB', basisMean: -1.2, basisVol: 1.0 },
+        { id: 'BRENT_SIN', cityId: 'singapore', label: 'CFR Singapour', incoterm: 'CFR', basisMean: 2.1, basisVol: 1.1 },
+      ],
+    },
+    color: '#ff8a3d',
+    icon: '🛢️',
+    blurb: 'La référence mondiale du brut. Cargaisons de 600 kbbl, futures réglés en cash.',
+  },
+  TTF: {
+    id: 'TTF',
+    name: 'Gaz naturel TTF (Pays-Bas)',
+    short: 'TTF',
+    family: 'energy',
+    exchange: 'ICX Endex',
+    currency: 'EUR',
+    priceUnit: '€/MWh',
+    qtyUnit: 'MWh',
+    lot: { kind: 'mwMonth', mw: 1 },
+    tick: 0.005,
+    valuePerUnit: 1,
+    decimals: 3,
+    listing: { kind: 'monthly', count: 18 },
+    ltdRule: 'TTF',
+    model: {
+      s0: 36,
+      chi0: 0,
+      kappa: 3,
+      sigmaChi: 0.65,
+      sigmaXi: 0.25,
+      rho: 0.2,
+      longDrift: -0.03,
+      seasonalAmp: 0.14,
+      seasonalPeak: 0.5,
+    },
+    liquidity: { halfSpreadTicks: 4, depthLots: 300, commission: 3 },
+    physical: {
+      cargoSizes: [50_000, 100_000, 200_000],
+      storagePerUnitMonth: 0.25,
+      spotSpreadPct: 0.005,
+      locations: [
+        { id: 'TTF_HUB', cityId: 'rotterdam', label: 'TTF (hub virtuel NL)', incoterm: 'HUB', basisMean: 0, basisVol: 0.3 },
+        { id: 'TTF_NBP', cityId: 'london', label: 'NBP (Royaume-Uni)', incoterm: 'HUB', basisMean: -0.6, basisVol: 0.9 },
+        { id: 'TTF_CH', cityId: 'geneva', label: 'Frontière suisse', incoterm: 'DAP', basisMean: 1.8, basisVol: 0.5 },
+      ],
+    },
+    color: '#4cc3ff',
+    icon: '🔥',
+    blurb: 'Le prix du gaz européen. Très saisonnier : l’hiver coûte plus cher que l’été.',
+  },
+  CU: {
+    id: 'CU',
+    name: 'Cuivre grade A',
+    short: 'Cuivre',
+    family: 'metals',
+    exchange: 'LMM Londres',
+    currency: 'USD',
+    priceUnit: '$/t',
+    qtyUnit: 't',
+    lot: { kind: 'fixed', qty: 25 },
+    tick: 0.5,
+    valuePerUnit: 1,
+    decimals: 1,
+    listing: { kind: 'monthly', count: 15 },
+    ltdRule: 'LME',
+    model: {
+      s0: 9300,
+      chi0: -0.01,
+      kappa: 0.9,
+      sigmaChi: 0.17,
+      sigmaXi: 0.15,
+      rho: 0.25,
+      longDrift: 0.025,
+      seasonalAmp: 0,
+      seasonalPeak: 0,
+    },
+    liquidity: { halfSpreadTicks: 4, depthLots: 600, commission: 6 },
+    physical: {
+      cargoSizes: [500, 1000, 2000],
+      storagePerUnitMonth: 18,
+      spotSpreadPct: 0.003,
+      locations: [
+        { id: 'CU_RTM', cityId: 'rotterdam', label: 'Entrepôt Rotterdam (DDP)', incoterm: 'DAP', basisMean: 120, basisVol: 30 },
+        { id: 'CU_SHA', cityId: 'shanghai', label: 'CIF Shanghai (Yangshan)', incoterm: 'CIF', basisMean: 85, basisVol: 45 },
+        { id: 'CU_SIN', cityId: 'singapore', label: 'CIF Singapour', incoterm: 'CIF', basisMean: 70, basisVol: 30 },
+        { id: 'CU_SCL', cityId: 'santiago', label: 'FOB San Antonio (Chili)', incoterm: 'FOB', basisMean: 30, basisVol: 25 },
+      ],
+    },
+    color: '#e8875b',
+    icon: '🔶',
+    blurb: 'Le métal de l’électrification. Échéances mensuelles au 3ᵉ mercredi (logique LME).',
+  },
+  WHEAT: {
+    id: 'WHEAT',
+    name: 'Blé tendre rouge d’hiver',
+    short: 'Blé',
+    family: 'agri',
+    exchange: 'CGX Chicago',
+    currency: 'USD',
+    priceUnit: 'c/bu',
+    qtyUnit: 'bu',
+    lot: { kind: 'fixed', qty: 5000 },
+    tick: 0.25,
+    valuePerUnit: 0.01,
+    decimals: 2,
+    listing: { kind: 'months', months: [2, 4, 6, 8, 11], count: 7 },
+    ltdRule: 'CBOT',
+    model: {
+      s0: 590,
+      chi0: 0.02,
+      kappa: 1.1,
+      sigmaChi: 0.3,
+      sigmaXi: 0.17,
+      rho: 0.2,
+      longDrift: 0.03,
+      seasonalAmp: 0.035,
+      seasonalPeak: 1.5,
+    },
+    liquidity: { halfSpreadTicks: 1, depthLots: 500, commission: 2.5 },
+    physical: {
+      cargoSizes: [1_102_300, 2_204_600],
+      storagePerUnitMonth: 4,
+      spotSpreadPct: 0.005,
+      locations: [
+        { id: 'WHT_GULF', cityId: 'houston', label: 'FOB US Gulf', incoterm: 'FOB', basisMean: 65, basisVol: 15 },
+        { id: 'WHT_CHI', cityId: 'chicago', label: 'Silo Chicago (track)', incoterm: 'FCA', basisMean: -15, basisVol: 10 },
+        { id: 'WHT_RTM', cityId: 'rotterdam', label: 'CIF Rotterdam', incoterm: 'CIF', basisMean: 95, basisVol: 20 },
+        { id: 'WHT_DXB', cityId: 'dubai', label: 'CFR Golfe Persique', incoterm: 'CFR', basisMean: 120, basisVol: 25 },
+      ],
+    },
+    display: { unit: 't', factor: 1 / 36.7437 },
+    color: '#f2c94c',
+    icon: '🌾',
+    blurb: 'Coté en cents par boisseau. Cinq échéances par an (mars, mai, juil., sept., déc.).',
+  },
+  API2: {
+    id: 'API2',
+    name: 'Charbon thermique API2 (CIF ARA)',
+    short: 'Charbon API2',
+    family: 'energy',
+    exchange: 'ICX Europe',
+    currency: 'USD',
+    priceUnit: '$/t',
+    qtyUnit: 't',
+    lot: { kind: 'fixed', qty: 1000 },
+    tick: 0.05,
+    valuePerUnit: 1,
+    decimals: 2,
+    listing: { kind: 'monthly', count: 24 },
+    ltdRule: 'LAST_FRIDAY',
+    model: {
+      s0: 112,
+      chi0: 0.03,
+      kappa: 1.5,
+      sigmaChi: 0.4,
+      sigmaXi: 0.2,
+      rho: 0.25,
+      longDrift: -0.01,
+      seasonalAmp: 0.05,
+      seasonalPeak: 0.5,
+    },
+    liquidity: { halfSpreadTicks: 3, depthLots: 250, commission: 3 },
+    physical: {
+      cargoSizes: [50_000, 75_000],
+      storagePerUnitMonth: 0.9,
+      spotSpreadPct: 0.006,
+      locations: [
+        { id: 'COAL_ARA', cityId: 'rotterdam', label: 'CIF ARA', incoterm: 'CIF', basisMean: 0, basisVol: 1.5 },
+        { id: 'COAL_RB', cityId: 'johannesburg', label: 'FOB Richards Bay', incoterm: 'FOB', basisMean: -14, basisVol: 4 },
+        { id: 'COAL_CN', cityId: 'shanghai', label: 'CFR Chine du Sud', incoterm: 'CFR', basisMean: 6, basisVol: 4 },
+      ],
+    },
+    color: '#9aa4b2',
+    icon: '⚫',
+    blurb: 'Le charbon livré à Amsterdam-Rotterdam-Anvers. Lié au gaz : quand le gaz flambe, le charbon suit.',
+  },
+};
+
+export const COMMODITY_IDS: CommodityId[] = ['BRENT', 'TTF', 'CU', 'WHEAT', 'API2'];
+
+/** Taux sans risque (continus, constants en phase 1). */
+export const RATES: Record<'USD' | 'EUR', number> = { USD: 0.04, EUR: 0.0225 };
+
+/**
+ * Matrice de corrélation des chocs (facteurs courts) : BRENT, TTF, CU, WHEAT, API2, EURUSD.
+ * Doit rester définie positive (vérifié par les tests).
+ */
+export const CORRELATION: number[][] = [
+  [1.0, 0.35, 0.3, 0.15, 0.35, 0.1],
+  [0.35, 1.0, 0.1, 0.05, 0.55, 0.0],
+  [0.3, 0.1, 1.0, 0.1, 0.15, 0.25],
+  [0.15, 0.05, 0.1, 1.0, 0.05, 0.05],
+  [0.35, 0.55, 0.15, 0.05, 1.0, 0.0],
+  [0.1, 0.0, 0.25, 0.05, 0.0, 1.0],
+];
+
+export function findLocation(commodity: CommodityId, locationId: string) {
+  const loc = COMMODITIES[commodity].physical.locations.find((l) => l.id === locationId);
+  if (!loc) throw new Error(`Lieu inconnu ${locationId}`);
+  return loc;
+}

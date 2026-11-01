@@ -1,0 +1,146 @@
+import { useState } from 'react';
+import { CITY_BY_ID } from '../data/cities';
+import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COUNTERPARTY_BY_ID } from '../data/counterparties';
+import { formatDayShort, monthLabel } from '../engine/calendar';
+import { basis } from '../engine/market';
+import { roundTo } from '../engine/math';
+import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerDeliveryDay, offerEdge, offerPrice, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import type { CommodityId, Offer } from '../engine/types';
+import { localSpot } from '../engine/valuation';
+import { Panel, Term } from './common';
+import { hedgeLots, hedgeMonthFor } from './derived';
+import { price, qty, signedUsd, tone, usd } from './format';
+import { useStore } from './store';
+
+const INCOTERM_TERM: Record<string, string> = { FOB: 'fob', CIF: 'cif', CFR: 'cif', DAP: 'dap', DES: 'dap', FCA: 'fob', HUB: 'basis' };
+
+export function PhysicalPanel() {
+  const g = useStore((s) => s.game)!;
+  useStore((s) => s.rev);
+  const setPanel = useStore((s) => s.setPanel);
+  const [tab, setTab] = useState<'offers' | 'spot'>('offers');
+  return (
+    <Panel title="Physique" icon="🚢" onClose={() => setPanel('physical')} wide>
+      <div className="tabs">
+        <button className={tab === 'offers' ? 'on' : ''} onClick={() => setTab('offers')}>Offres de cargaisons <span className="pill">{g.offers.length}</span></button>
+        <button className={tab === 'spot' ? 'on' : ''} onClick={() => setTab('spot')}>Marché spot</button>
+      </div>
+      {tab === 'offers' ? <Offers /> : <Spot />}
+    </Panel>
+  );
+}
+
+function Offers() {
+  const g = useStore((s) => s.game)!;
+  if (!g.offers.length) return <div className="empty">Pas d’offre pour l’instant. Les contreparties appellent chaque matin.</div>;
+  return (
+    <div className="offers">
+      <p className="muted small">
+        Prix fixe = courbe au mois de livraison + <Term id="basis">différentiel</Term>. Sur place, vous renégociez d’environ {(LOCAL_EDGE_PCT * 100).toFixed(1)} % : voyager paie.
+      </p>
+      {g.offers.map((o) => <OfferCard key={o.id} o={o} />)}
+    </div>
+  );
+}
+
+function OfferCard({ o }: { o: Offer }) {
+  const g = useStore((s) => s.game)!;
+  const act = useStore((s) => s.act);
+  const toast = useStore((s) => s.toast);
+  const spec = COMMODITIES[o.commodity];
+  const loc = spec.physical.locations.find((l) => l.id === o.locationId)!;
+  const cp = COUNTERPARTY_BY_ID[o.counterpartyId]!;
+  const city = CITY_BY_ID[o.cityId]!;
+  const here = isPresent(g, o.cityId);
+  const px = offerPrice(g, o);
+  const diff = effectiveDiff(g, o);
+  const fair = basis(g.market, o.commodity, o.locationId);
+  const edge = offerEdge(g, o);
+  const hm = hedgeMonthFor(g, o.commodity, offerDeliveryDay(o));
+  const hl = hedgeLots(o.commodity, hm, o.qty);
+
+  const accept = (hedge: boolean) => {
+    const r = act({ type: 'ACCEPT_OFFER', offerId: o.id });
+    if (r.ok && hedge) {
+      const h = act({ type: 'TRADE_FUTURE', commodity: o.commodity, month: hm, lots: -o.side * hl }, true);
+      toast(h.ok ? `Couvert : ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}.` : `Couverture refusée : ${h.message}`, h.ok ? 'good' : 'bad');
+    }
+  };
+
+  return (
+    <div className="offer" style={{ ['--c' as string]: spec.color }}>
+      <div className="offer-top">
+        <span className="mkt-icon">{spec.icon}</span>
+        <div className="offer-title">
+          <b>{cp.name}</b> {o.side > 0 ? 'vend' : 'cherche à acheter'} <b>{qty(o.commodity, o.qty)}</b> de {spec.short}
+          <div className="muted small">
+            <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.label}</Term> · livraison {monthLabel(o.month)} ({formatDayShort(offerDeliveryDay(o))}) · {city.name}
+          </div>
+        </div>
+        <span className={`badge ${here ? 'here' : ''}`}>{here ? '🤝 sur place' : '📞 téléphone'}</span>
+      </div>
+      <div className="offer-grid">
+        <div><span>Diff proposé</span><b>{diff >= 0 ? '+' : ''}{price(o.commodity, diff)}</b></div>
+        <div><span>Diff de marché</span><b>{fair >= 0 ? '+' : ''}{price(o.commodity, roundTo(fair, spec.tick))}</b></div>
+        <div><span>Prix fixe</span><b>{price(o.commodity, px)} {spec.priceUnit}</b></div>
+        <div><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b></div>
+      </div>
+      <div className="offer-actions">
+        <span className="muted small">expire le {formatDayShort(o.expiresDay)}</span>
+        <button onClick={() => accept(false)}>{o.side > 0 ? 'Acheter' : 'Vendre'}</button>
+        <button className="primary" onClick={() => accept(true)} title={`+ ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}`}>
+          {o.side > 0 ? 'Acheter' : 'Vendre'} + <Term id="hedge">couvrir</Term> ({hl} lots {monthLabel(hm)})
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Spot() {
+  const g = useStore((s) => s.game)!;
+  const act = useStore((s) => s.act);
+  const [c, setC] = useState<CommodityId>('BRENT');
+  const spec = COMMODITIES[c];
+  const [size, setSize] = useState(spec.physical.cargoSizes[0]!);
+  const sizes = spec.physical.cargoSizes;
+  const sz = sizes.includes(size) ? size : sizes[0]!;
+  return (
+    <div className="spot">
+      <div className="chips">
+        {COMMODITY_IDS.map((id) => (
+          <button key={id} className={c === id ? 'on' : ''} onClick={() => setC(id)}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>
+        ))}
+      </div>
+      <p className="muted small">
+        Acheter une cargaison prompte et la stocker : intéressant en <Term id="contango">contango</Term> si l’écart de courbe paie le stockage
+        ({price(c, spec.physical.storagePerUnitMonth)} {spec.priceUnit}/mois) et le financement (<Term id="cashcarry">cash-and-carry</Term>).
+        Hors place : +{(REMOTE_SPOT_PENALTY * 100).toFixed(1)} %.
+      </p>
+      <div className="chips">
+        {sizes.map((s) => <button key={s} className={sz === s ? 'on' : ''} onClick={() => setSize(s)}>{qty(c, s)}</button>)}
+      </div>
+      <table className="tbl">
+        <thead><tr><th>Lieu</th><th>Ville</th><th>Spot local</th><th>Diff</th><th>Coût</th><th /></tr></thead>
+        <tbody>
+          {spec.physical.locations.map((l) => {
+            const sp = localSpot(g, c, l.id);
+            const pen = isPresent(g, l.cityId) ? 0 : REMOTE_SPOT_PENALTY;
+            const ask = sp * (1 + spec.physical.spotSpreadPct + pen);
+            const cost = ask * sz * spec.valuePerUnit * (spec.currency === 'EUR' ? Math.exp(g.market.fxLog) : 1);
+            return (
+              <tr key={l.id}>
+                <td><Term id={INCOTERM_TERM[l.incoterm] ?? 'basis'}>{l.label}</Term></td>
+                <td>{CITY_BY_ID[l.cityId]!.name}{isPresent(g, l.cityId) ? ' 📍' : ''}</td>
+                <td>{price(c, sp)}</td>
+                <td>{price(c, basis(g.market, c, l.id))}</td>
+                <td>{usd(cost)}</td>
+                <td><button onClick={() => act({ type: 'SPOT_BUY', commodity: c, locationId: l.id, qty: sz })}>Acheter</button></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
