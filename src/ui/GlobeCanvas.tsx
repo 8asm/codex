@@ -35,6 +35,7 @@ export function GlobeCanvas() {
         globe.current?.focusCity(id);
       },
       simDay: () => (useStore.getState().game?.day ?? 0) + clock.dayFrac,
+      onDive: (id) => useStore.getState().requestCity(id),
       travelProgress: () => {
         const t = useStore.getState().game?.player.travel;
         const st = useStore.getState().game;
@@ -46,6 +47,15 @@ export function GlobeCanvas() {
     });
     return () => globe.current?.dispose();
   }, [selectCity]);
+
+  // Transitions globe ↔ ville : plongeon puis pause du globe ; remontée au retour.
+  const cityView = useStore((s) => s.cityView);
+  const cityPhase = useStore((s) => s.cityPhase);
+  useEffect(() => {
+    if (!globe.current || !cityView) return;
+    if (cityPhase === 'diving') globe.current.dive(cityView, () => useStore.getState().cityReady());
+    if (cityPhase === 'rising') globe.current.rise(cityView, () => useStore.setState({ cityView: null, cityPhase: null }));
+  }, [cityView, cityPhase]);
 
   const startDay = g?.startDay;
   const hq = g?.company.hqCity;

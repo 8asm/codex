@@ -93,7 +93,7 @@ export function WorldPanel() {
               {i === 0 && <div className="muted small">Taux effectif cette année : <b>{(tax.rate * 100).toFixed(1)} %</b>{tax.regime ? ` (${tax.regime.label})` : c.specialRegime?.minPhysicalVolume ? ` — régime spécial si volume physique ≥ ${usd(c.specialRegime.minPhysicalVolume)} (actuel ${usd(g.company.physVolumeYtd)})` : ''}</div>}
               {i === 1 && (
                 <button className="primary" onClick={() => act({ type: 'RELOCATE_HQ', city: c.id })}>
-                  Transférer le siège à {c.name} · {usd(relocationCost(g))}
+                  Transférer le siège à {c.name} · {usd(relocationCost(g, c.id))}
                 </button>
               )}
             </div>

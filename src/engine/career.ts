@@ -23,6 +23,7 @@ import { nav } from './valuation';
 import type { Action, CareerState, CareerTrack, CommodityId, GameState, Skill } from './types';
 import { recomputeIm } from './margin';
 import { pushSituation } from './situations';
+import { defaultOffice, officeEffects, tierForNav } from './offices';
 
 export const SKILLS: Skill[] = ['marché', 'risque', 'négociation', 'opérations', 'finance', 'relationnel'];
 
@@ -58,7 +59,7 @@ export function deskFor(employerId: string, level: number): CommodityId[] {
 export function gainSkill(state: GameState, skill: Skill, n: number) {
   const c = state.career;
   if (!c) return;
-  c.skills[skill] = Math.max(0, Math.min(100, c.skills[skill] + n * (1 - c.skills[skill] / 130)));
+  c.skills[skill] = Math.max(0, Math.min(100, c.skills[skill] + n * officeEffects(state).skillMult * (1 - c.skills[skill] / 130)));
 }
 
 export function careerLog(state: GameState, text: string) {
@@ -188,6 +189,7 @@ const LEVEL_NEEDED: Record<string, number> = {
   TRADE_OTC: 4, SHIP_CARGO: 4, TRADE_FFA: 4,
   BUY_OPPORTUNITY: 6, SELL_ASSET: 6, SET_ASSET: 6, MAINTAIN_ASSET: 6, HIRE_MANAGER: 6, FIRE_MANAGER: 6, HEDGE_PRODUCTION: 6,
   RCF_DRAW: 6, RCF_REPAY: 6, SET_AUTO_TREASURY: 6, SET_CSA: 6, SET_CREDIT_INSURANCE: 6, SET_LIMITS: 99, RELOCATE_HQ: 99,
+  OFFICE_MOVE: 99, OFFICE_STYLE: 99, OFFICE_ITEM: 99, OFFICE_PROPERTY: 99, INVITE_HQ: 99,
 };
 
 function actionCommodity(state: GameState, a: Action): CommodityId | undefined {
@@ -318,6 +320,7 @@ export function becomeCeo(state: GameState) {
   state.lastNav = nav(state);
   state.risk.monthStartNav = state.lastNav;
   state.risk.limits = { varPctNav: 0.05, stopLossPctNav: 0.1, deltaPctNav: 0.02, strict: false };
+  state.office = defaultOffice(state.day, tierForNav(capital));
   c.status = 'ceo';
   c.level = 7;
   c.allocation = capital;
@@ -393,7 +396,8 @@ export function foundCompany(state: GameState, name: string, city: string) {
   state.company.cash = capital;
   state.company.initialCapital = capital;
   state.company.yearStartNav = capital;
-  state.company.rcfDrawn = 0;
+  state.company.lossCarry = 0;
+  state.office = defaultOffice(state.day);
   state.company.lossCarry = 0;
   state.lastNav = nav(state);
   state.risk.monthStartNav = state.lastNav;

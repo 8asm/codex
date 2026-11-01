@@ -479,3 +479,49 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .neg-moves button { display: flex; flex-direction: column; align-items: center; }
 .neg-moves button small { font-size: .65rem; font-weight: 600; opacity: .75; }
 .career-summary { text-align: left; background: rgba(0,0,0,.25); border-radius: 10px; padding: 8px 12px; margin-top: 8px; }
+
+/* ---------------------------------------------------------------- phase 6 : vue ville et bureaux */
+.cityview { position: absolute; inset: 0; z-index: 5; animation: cityIn .7s ease-out; }
+.cityview.leaving { animation: cityOut 1.3s ease-in forwards; }
+@keyframes cityIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cityOut { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+.cityview-canvas { position: absolute; inset: 0; }
+.cityview-canvas canvas { display: block; }
+.city-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.city3d-label { position: absolute; left: 0; top: 0; white-space: nowrap; text-align: center; background: rgba(8,22,46,0.85); border: 2px solid var(--line); border-radius: 10px; padding: 2px 9px; font-size: 12px; display: flex; flex-direction: column; }
+.city3d-label.hq { border-color: var(--gold); font-size: 14px; }
+.city3d-label span { font-size: 10px; color: var(--muted); }
+.cityview-bar { position: absolute; top: 96px; left: 50%; transform: translateX(-50%); z-index: 9; display: flex; gap: 8px; align-items: center; background: rgba(8,22,46,0.88); border: 2px solid var(--line); border-radius: 999px; padding: 4px 8px; }
+.cityview-bar button.on { background: var(--gold); color: #1b1300; }
+.cityview-title { display: flex; flex-direction: column; align-items: center; padding: 0 10px; line-height: 1.1; }
+.cityview-caption { position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 6; background: rgba(8,22,46,0.75); border-radius: 999px; padding: 3px 12px; pointer-events: none; }
+.city-btn { position: absolute; top: 146px; right: 14px; z-index: 9; }
+.office-head { display: flex; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
+.office-head h3 { margin: 0 0 4px; }
+.office-kpis { display: grid; grid-template-columns: repeat(5, auto); gap: 6px 14px; align-items: end; }
+.office-kpis > div { display: flex; flex-direction: column; }
+.office-kpis small { color: var(--muted); font-size: .7rem; }
+.gauge { width: 80px; height: 6px; background: #ffffff22; border-radius: 4px; overflow: hidden; }
+.gauge i { display: block; height: 100%; background: linear-gradient(90deg, #7dd3fc, var(--gold)); }
+.tier-grid, .style-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tier-card, .style-card, .item-card { background: var(--panel-2); border: 2px solid transparent; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
+.tier-card.on, .style-card.on, .item-card.on { border-color: var(--gold); }
+.tier-card .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: auto; }
+.tier-card button, .style-card button { margin-top: auto; font-size: .78rem; padding: 4px 8px; }
+.tag { margin-top: auto; align-self: flex-start; background: var(--gold); color: #1b1300; border-radius: 999px; padding: 1px 8px; font-size: .72rem; font-weight: 800; }
+.style-classique { background: linear-gradient(160deg, #5b3a22aa, var(--panel-2)); }
+.style-openspace { background: linear-gradient(160deg, #e2e8f055, var(--panel-2)); }
+.style-bunker { background: linear-gradient(160deg, #020617, #1e3a8a66); }
+.style-verriere { background: linear-gradient(160deg, #bfe0f566, #d4a01733); }
+.item-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.item-card { flex-direction: row; align-items: center; gap: 8px; }
+.item-card > div { flex: 1; }
+.item-card .icon { font-size: 1.6rem; }
+.item-card.locked { opacity: .55; }
+.leasebuy { background: var(--panel-2); border-radius: 12px; padding: 8px 10px; margin-top: 8px; }
+.leasebuy h4 { margin: 0 0 4px; }
+.leasebuy table { width: 100%; }
+.leasebuy td:last-child { text-align: right; font-weight: 800; }
+.invite-list { display: flex; flex-direction: column; gap: 4px; }
+.invite-row { display: grid; grid-template-columns: 1fr 40px auto; gap: 8px; align-items: center; }
+.warn { color: var(--warn); }

@@ -278,7 +278,7 @@ export interface Advice {
 
 export type AdviceAction =
   | { kind: 'hedge'; commodity: CommodityId }
-  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' }
   | { kind: 'trade'; action: Action; label: string };
 
 export interface Offer {
@@ -327,7 +327,8 @@ export type CashCategory =
   | 'credit'
   | 'freight'
   | 'assets'
-  | 'dividends';
+  | 'dividends'
+  | 'office';
 
 export interface Company {
   name: string;
@@ -562,6 +563,7 @@ export interface GameState {
   opportunities: AssetOpportunity[];
   streams: StreamPosition[];
   automation: Automation;
+  office: OfficeState;
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];
@@ -857,6 +859,11 @@ export type Action =
   | { type: 'FOUND_COMPANY'; name: string; city: string }
   | { type: 'SET_PAYOUT'; payout: number }
   | { type: 'MEET_NPC'; npcId: string }
+  | { type: 'OFFICE_MOVE'; tier: OfficeTier; buy?: boolean }
+  | { type: 'OFFICE_STYLE'; style: FloorStyle }
+  | { type: 'OFFICE_ITEM'; item: PrestigeItemId; sell?: boolean }
+  | { type: 'OFFICE_PROPERTY'; buy: boolean }
+  | { type: 'INVITE_HQ'; npcId: string }
   | { type: 'RETIRE' };
 
 export type NegotiationMove = 'ancrer' | 'concéder' | 'bluffer' | 'argumenter' | 'accepter' | 'rompre';
@@ -864,4 +871,31 @@ export type NegotiationMove = 'ancrer' | 'concéder' | 'bluffer' | 'argumenter' 
 export interface ActionResult {
   ok: boolean;
   message: string;
+}
+
+// ---------------------------------------------------------------- phase 6 : bureaux
+/** 0 étage loué, 1 plusieurs étages, 2 tour, 3 campus. */
+export type OfficeTier = 0 | 1 | 2 | 3;
+export type FloorStyle = 'classique' | 'openspace' | 'bunker' | 'verriere';
+export type PrestigeItemId = 'trophees' | 'mur' | 'reception' | 'bienetre' | 'academie' | 'art' | 'heliport' | 'auditorium';
+
+/** Dépense capitalisée amortie linéairement (agencements, réaménagements). */
+export interface FitOut {
+  label: string;
+  cost: number;
+  since: Day;
+  months: number;
+}
+
+export interface OfficeState {
+  tier: OfficeTier;
+  style: FloorStyle;
+  /** Immeuble détenu en propre (tour ou campus) plutôt que loué. */
+  owned: null | { cost: number; since: Day };
+  fitOuts: FitOut[];
+  items: { id: PrestigeItemId; cost: number; since: Day }[];
+  movedDay: Day;
+  lastConferenceYear: number;
+  /** Candidatures spontanées reçues (statistique affichée). */
+  applicants: number;
 }

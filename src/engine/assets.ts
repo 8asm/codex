@@ -9,6 +9,7 @@
  * (production × (forward + basis − coût variable) − coûts fixes), actualisés au taux sans risque + prime
  * de risque pays (4,5 % + jusqu'à 10 % selon l'instabilité).
  */
+import { officeEffects } from './offices';
 import { ASSET_DEF_BY_ID, ASSET_DEFS, MANAGER_NAMES, type AssetDef } from '../data/assets';
 import { COMMODITIES } from '../data/commodities';
 import { COMPANIES, COMPANY_BY_ID } from '../data/companies';
@@ -344,7 +345,7 @@ export function stepAssets(state: GameState, days: number): string[] {
     if (mgr) {
       a.utilization = POLICY[a.policy].util;
       if (a.status === 'operating' && a.condition < POLICY[a.policy].maintainBelow) startMaintenance(state, a);
-      if (chance(state.rng, (1 - mgr.skill / 100) * 0.004 * days)) {
+      if (chance(state.rng, (1 - mgr.skill / 100) * 0.004 * days * officeEffects(state).mistakeMult)) {
         mgr.mistakes++;
         const kind = uniform(state.rng);
         if (kind < 0.5) {

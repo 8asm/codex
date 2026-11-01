@@ -1,3 +1,4 @@
+import { officeBookValue } from './offices';
 /**
  * Valorisation : mark-to-market des futures (depuis le dernier marquage), forwards physiques (actualisés),
  * stocks (spot local), options listées et OTC. NAV = trésorerie − dette + MTM.
@@ -114,7 +115,7 @@ export function bookValue(v: View, book: Book): number {
 
 /** Actifs industriels et contrats de stream au bilan (valeur comptable, pas de marquage au marché). */
 export function fixedAssetsValue(state: GameState): number {
-  return (state.assets ?? []).reduce((s, a) => s + a.bookValue, 0) + (state.streams ?? []).reduce((s, x) => s + streamBook(x), 0);
+  return (state.assets ?? []).reduce((s, a) => s + a.bookValue, 0) + (state.streams ?? []).reduce((s, x) => s + streamBook(x), 0) + officeBookValue(state);
 }
 
 export function nav(state: GameState): number {

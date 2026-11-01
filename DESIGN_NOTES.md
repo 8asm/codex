@@ -336,3 +336,103 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Sauvegardes
 - Version 5. Migration automatique depuis les versions 1 à 4 (les PNJ sont générés à la migration).
+
+## Phase 6 — vue ville 3D, bureaux, personnalisation
+
+### Vue ville (`render/CityView.ts`, `ui/CityCanvas.tsx`)
+- **Zoom continu** : zoomer au maximum sur une ville du globe (ou bouton 🏙️, touche `H`) déclenche un plongeon de la caméra vers la ville. Le globe se met en pause et la vue ville prend le relais par une descente depuis le ciel, dans le brouillard. Dézoomer au maximum dans la ville (ou `Échap`) fait remonter la caméra et revenir au globe, au-dessus de la même ville.
+- **Ville low-poly générée** à partir de l'identifiant de la ville, donc stable d'une partie à l'autre. Elle comprend un quartier d'affaires plus haut au centre, des parcs, des rues avec marquage, des voitures et environ 140 passants (PNJ) sur les trottoirs.
+  - Ville portuaire : front de mer avec quais, grues, conteneurs et porte-conteneurs en mouvement.
+  - Autres villes : fleuve ou lac, avec ses ponts.
+  - Immeubles : un seul `InstancedMesh` avec un shader maison (fenêtres procédurales en coordonnées monde, éclairées au crépuscule). Quelques milliers de faces, une seule draw call.
+- **Siège du joueur** (sa géométrie suit le palier) :
+
+  | Palier | Rendu |
+  |---|---|
+  | Étage loué | Un plateau aux couleurs de la société dans un immeuble partagé, avec une plaque dans le hall |
+  | Plusieurs étages | Trois étages, enseigne sur le toit |
+  | Tour | Tour de verre en gradins, couronne, hall vitré, fontaine |
+  | Campus | Tour plus haute, pavillons à toits végétalisés, passerelles, jardins |
+
+  Sur le siège, on voit aussi :
+  - les objets de prestige extérieurs : sculpture (œuvre d'art) sur le parvis, héliport avec hélicoptère, dôme de l'auditorium ;
+  - un drapeau si la société est propriétaire de son immeuble ;
+  - le personnel devant l'entrée.
+- **Sièges des concurrents** de la ville (les plus grands d'abord), avec leur couleur et une hauteur liée à leur VL.
+- **Salaire et employeur** : un salarié voit le siège de son employeur, dont le palier est déduit de la VL de la société simulée.
+- **Salle de marché** : on y entre en cliquant sur le siège. Elle est rendue dans une scène séparée, en maison de poupée.
+  - Le nombre de rangées et de bureaux dépend du palier.
+  - Les traders occupent les postes réellement utilisés ; ils tournent la tête, et d'autres circulent dans les allées.
+  - Les écrans affichent des graphiques ; le tableau ou le mur d'écrans affiche les **vrais prix du jour** et leur variation.
+  - Le style change matériaux, lumière et décor : boiseries et lampes de banquier, open space clair et plantes, bunker sombre éclairé par les écrans, verrière à structure dorée.
+  - Les objets de prestige sont visibles : maquettes de navires, tableau, salon, tableau blanc de l'académie, cantine.
+- **Lumière** : elle suit la séance. Matin clair, crépuscule en fin de journée, fenêtres qui s'allument.
+
+### Bureaux (`engine/offices.ts`, `data/offices.ts`, testés)
+- **Paliers** :
+
+  | Palier | Loyer (× loyer de la ville) | Postes | Agencement | Bailleur exige une VL d'au moins |
+  |---|---|---|---|---|
+  | Étage loué | ×1 | 8 | 0,25 M$ | — |
+  | Plusieurs étages | ×3 | 20 | 1,5 M$ | 40 M$ |
+  | Tour | ×8 | 60 | 6 M$ | 120 M$ |
+  | Campus | ×16 | 150 | 18 M$ | 400 M$ |
+
+  Les agencements sont ajustés du coût local (0,6 + 0,4 × indice du coût du personnel). La condition de VL représente la solvabilité exigée du preneur. On ne déménage pas plus d'une fois tous les deux mois.
+- **Postes** occupés : l'équipe de base (3), un poste par gérant d'actif en fonction, un opérateur par automatisme actif. Au-delà de la capacité :
+  - coworking de débordement à 6 k$ par poste et par mois (× indice du coût du personnel) ;
+  - prestige −4 par poste en trop.
+
+  La croissance (actifs, automatisation) pousse donc à s'agrandir.
+- **Comptabilité exacte** (tests) :
+  - **Capex capitalisés** : agencements et réaménagements de style sont amortis linéairement sur 60 mois. Le jour de la dépense, la VL ne bouge pas : le cash devient un actif. Elle baisse ensuite avec l'amortissement.
+  - **Déménagement** : la valeur nette restante des anciens agencements passe en perte. Un nouveau style démonte l'ancien.
+  - **Achat de l'immeuble** (tour, campus) :
+    - prix = loyer annuel / taux de capitalisation de 6 % ; la VL ne change pas le jour de l'achat ;
+    - le bâti (60 % du prix) s'amortit sur 40 ans, soit 1,5 % par an, le terrain non ; plancher de valeur à 40 % ;
+    - charges de propriétaire 1,2 % par an ; plus de loyer ;
+    - revente (cession-bail) à la valeur nette moins 3 % de frais.
+  - **Louer ou acheter** : le panneau compare le loyer annuel au coût complet de la propriété (taux USD courant + charges + usure). À 4 %, acheter coûte un peu plus cher que louer. Le choix se joue sur le prestige (+5), la trésorerie immobilisée (qui ne sert plus de marge) et l'anticipation des taux. Une entrée du codex est consacrée à ce choix.
+  - **Œuvre d'art** : valorisée à 75 % de son prix, soit la juste valeur nette des frais d'enchères. La VL perd 25 % le jour de l'achat ; l'œuvre est revendable.
+  - Le loyer, les charges, le débordement et la conférence sont prélevés avec les frais généraux mensuels. L'ancien « loyer + équipe » devient « équipe » plus le module bureaux, avec un loyer identique au palier 0 : les parties existantes ne changent pas.
+  - Les investissements ont leur propre catégorie de flux de trésorerie (« Bureaux »).
+- **Styles de salle de marché** (le réaménagement coûte le prix de base × l'échelle du palier : 1 ; 2,5 ; 6 ; 14) :
+
+  | Style | Effet | Prestige |
+  |---|---|---|
+  | Classique | relations +15 % | +6 |
+  | Open space | progression des compétences +25 % | +2 |
+  | Salle blindée | erreurs des gérants d'actifs −35 % | 0 |
+  | Verrière | négociations ×1,3 | +10 |
+
+- **Prestige** (0–100) : palier (5 / 15 / 32 / 50) + style + objets + 5 si propriétaire − pénalité de débordement. **Il ne modifie jamais un prix de marché.** Il agit uniquement sur les humains :
+  - **Recevoir au siège** (`INVITE_HQ`, le joueur doit être au siège) : gain de confiance = 5 × (0,6 + P/60) × multiplicateurs (style, salon) × (1 − confiance/120). Cela coûte 4 k$ et partage le délai des rendez-vous. Au-delà de 40 de prestige, le contact repart « impressionné ». La confiance améliore ensuite les offres physiques, le crédit, les tuyaux…
+  - **Négociation des contrats physiques** : la concession maximale du client augmente de P/100 × 15 pb, et de moitié seulement si le joueur n'est pas au siège ; ×1,3 avec la verrière.
+  - **Levée de fonds** : prix de réserve des investisseurs −P/600.
+  - **Talents** : chaque mois, probabilité min(0,7 ; P/120 + 15 % avec la cantine) d'une candidature spontanée de gérant. Sa compétence vaut 50 + 30u + P/5 (+5 avec l'académie) ; son salaire est réduit de 10 % avec la cantine.
+- **Objets de prestige** :
+
+  | Objet | Coût | Effet |
+  |---|---|---|
+  | Maquettes et trophées | 0,12 M$ | prestige +3 |
+  | Mur d'écrans | 0,45 M$ | prestige +3, erreurs des gérants −10 %, cours en direct dans la salle |
+  | Salon de réception | 0,6 M$ | invitations ×1,5 |
+  | Cantine et sport | 0,9 M$ + 18 k$/mois | candidats −10 % de salaire et plus nombreux |
+  | Académie interne | 1,2 M$ + 25 k$/mois | compétences +20 %, gérants en poste +0,4 point par mois |
+  | Œuvre d'art | 2,5 M$ | prestige +10 |
+  | Héliport (tour) | 3,5 M$ | vols au départ du siège : 1 h de moins, ce qui fait passer certains vols sous 9 h, donc arrivée un jour plus tôt |
+  | Auditorium (campus) | 8 M$ | conférence annuelle en janvier (0,6 M$) : confiance +4 avec tous les contacts, réputation +3 |
+
+- **Transfert du siège** : l'immeuble est vendu, les agencements et objets fixes sont perdus, l'art déménage. De nouveaux agencements sont payés au même palier, et ce coût s'ajoute au coût du transfert.
+- **Carrière** : un salarié n'a pas la main sur les bureaux (actions réservées à la direction). Créer sa société repart d'un étage loué ; devenir CEO donne le siège de l'employeur, au palier correspondant à sa taille.
+- **Aléa sans état** : les candidatures spontanées utilisent un tirage haché (seed, jour, motif) qui ne consomme pas la séquence aléatoire principale. Le marché d'une partie reste identique à celui d'avant la phase 6, à seed et actions égales.
+- **Simplifications** :
+  - pas de retraitement IFRS 16 du bail (droit d'utilisation et dette locative) : sans effet sur la trésorerie, et la VL du jeu est une mesure économique ;
+  - pas de marché immobilier : l'immeuble est valorisé à sa valeur nette comptable, et le loyer de marché n'est pas indexé ;
+  - pas de durée de bail ni d'indemnité de sortie anticipée ; la perte des agencements en tient lieu ;
+  - l'art garde une valeur constante ;
+  - l'équipe de base reste de 3 personnes : le recrutement de traders et l'ouverture de bureaux dans d'autres villes viendront en *phase 8*, comme prévu ;
+  - pas d'interaction directe avec les passants de la vue ville : ils sont décoratifs, et les PNJ avec lesquels on interagit sont ceux du panneau Bureaux ou Carrière.
+
+### Sauvegardes
+- Version 6. Migration automatique depuis les versions 1 à 5 : bureaux par défaut (étage loué, style classique).

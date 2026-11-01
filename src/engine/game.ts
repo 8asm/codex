@@ -50,8 +50,9 @@ import { accrueInterest, drawRcf, repayRcf, settleTreasury } from './treasury';
 import type { Action, ActionResult, CashCategory, CommodityId, GameConfig, GameState } from './types';
 import { nav, valueByCommodity } from './valuation';
 import { COMMODITIES as SPECS } from '../data/commodities';
+import { defaultOffice, fitOutCost, inviteToHq, managesOffice, moveOffice, negotiationEdge, officeEffects, officeItem, officeMonth, officeProperty, relocateOffice, setStyle } from './offices';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
@@ -108,7 +109,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...partial };
   const startDay = adjustFollowing(dayFromYMD(config.startYear, 1, 4));
   const endDay = dayFromYMD(config.startYear + config.years, 1, 1) - 1;
-  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets', 'dividends'];
+  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets', 'dividends', 'office'];
   const state: GameState = {
     version: SAVE_VERSION,
     config,
@@ -157,6 +158,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     opportunities: [],
     streams: [],
     automation: { ...DEFAULT_AUTOMATION, autoHedge: { ...DEFAULT_AUTOMATION.autoHedge } },
+    office: defaultOffice(startDay),
     career: null,
     npcs: [],
     situations: [],
@@ -279,9 +281,10 @@ function closeDay(state: GameState) {
   const cur = ymd(state.day);
   if (monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay) && paysCompanyCosts(state)) {
     const city = CITY_BY_ID[co.hqCity]!;
-    const cost = city.officeRentMonthly + STAFF_MONTHLY * city.staffCostIndex;
+    const cost = STAFF_MONTHLY * city.staffCostIndex;
     addCash(state, -cost, 'overhead');
-    log(state, `Frais généraux du mois (loyer, salaires)`, -cost);
+    log(state, `Frais généraux du mois (salaires de l’équipe)`, -cost);
+    officeMonth(state);
     // Déclaration réglementaire des dérivés (type EMIR / Dodd-Frank) : coût par transaction du mois écoulé.
     const fee = state.world.cityRegs[co.hqCity]!.reportingFee * co.tradesThisMonth;
     if (fee > 0) {
@@ -433,6 +436,16 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       return { ok: true, message: 'Politique de dividendes mise à jour.' };
     case 'MEET_NPC':
       return meet(state, action.npcId);
+    case 'OFFICE_MOVE':
+      return moveOffice(state, action.tier, action.buy);
+    case 'OFFICE_STYLE':
+      return setStyle(state, action.style);
+    case 'OFFICE_ITEM':
+      return officeItem(state, action.item, action.sell);
+    case 'OFFICE_PROPERTY':
+      return officeProperty(state, action.buy);
+    case 'INVITE_HQ':
+      return inviteToHq(state, action.npcId);
     case 'RETIRE': {
       if (!state.career) return { ok: false, message: 'Mode carrière uniquement.' };
       state.status = 'ended';
@@ -511,6 +524,11 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       if (p.travel) return { ok: false, message: 'Vous êtes déjà en vol.' };
       if (!p.cityId || p.cityId === action.to) return { ok: false, message: 'Vous êtes déjà sur place.' };
       const fi = flightInfo(p.cityId, action.to);
+      // Héliport au siège : on évite le trajet jusqu'à l'aéroport (≈ 1 h gagnée).
+      if (p.cityId === state.company.hqCity && managesOffice(state) && state.office?.items.some((i) => i.id === 'heliport')) {
+        fi.hours = Math.max(1, fi.hours - 1);
+        fi.days = fi.hours <= 9 ? 1 : 2;
+      }
       addCash(state, -fi.cost, 'travel');
       p.travel = { from: p.cityId, to: action.to, departDay: state.day, arriveDay: addBusinessDays(state.day, fi.days), hours: fi.hours };
       p.cityId = null;
@@ -563,7 +581,7 @@ function beginNegotiation(state: GameState, kind: string, target: string): Actio
     if (o.negotiated) return { ok: false, message: 'Vous avez déjà négocié cette offre.' };
     const contact = contactAt(state, o.counterpartyId);
     const F = forwardAt(state.market, o.commodity, offerDeliveryDay(o));
-    const give = F * (0.0015 + Math.max(0, contact?.trust ?? 0) / 100 * 0.004 + (isPresent(state, o.cityId) ? 0.002 : 0) + skillN / 100 * 0.002);
+    const give = F * (0.0015 + Math.max(0, contact?.trust ?? 0) / 100 * 0.004 + (isPresent(state, o.cityId) ? 0.002 : 0) + skillN / 100 * 0.002 + negotiationEdge(state));
     o.negotiated = true;
     startNegotiation(state, { kind: 'deal', npcId: contact?.id ?? '', title: `Différentiel ${COMMODITIES[o.commodity].short} avec ${COMPANY_BY_ID[o.counterpartyId]?.name ?? ''}`, unit: COMMODITIES[o.commodity].priceUnit, opening: o.diff, reservation: o.diff - o.side * give, leverage: false, higherIsBetter: o.side < 0, context: { offerId: o.id } });
     return { ok: true, message: 'Négociation ouverte.' };
@@ -577,7 +595,7 @@ function beginNegotiation(state: GameState, kind: string, target: string): Actio
     const capital = Math.round((3e6 + c.reputation * 0.4e6 + Math.max(0, inv.trust) * 0.1e6) / 1e5) * 1e5;
     const founder = Math.max(1, c.wealth * 0.8);
     const fair = (capital / (capital + founder)) * 100;
-    startNegotiation(state, { kind: 'investisseur', npcId: inv.id, title: `Levée de fonds : ${(capital / 1e6).toFixed(1)} M$ de ${inv.name}`, unit: '% du capital', opening: Math.min(90, fair * 1.6), reservation: Math.max(1, fair * (1.15 - inv.trust / 300 - c.reputation / 500)), leverage: c.investors.length > 0, higherIsBetter: false, context: { capital } });
+    startNegotiation(state, { kind: 'investisseur', npcId: inv.id, title: `Levée de fonds : ${(capital / 1e6).toFixed(1)} M$ de ${inv.name}`, unit: '% du capital', opening: Math.min(90, fair * 1.6), reservation: Math.max(1, fair * (1.15 - inv.trust / 300 - c.reputation / 500 - officeEffects(state).prestige / 600)), leverage: c.investors.length > 0, higherIsBetter: false, context: { capital } });
     return { ok: true, message: 'Rendez-vous avec l’investisseur.' };
   }
   if (kind === 'offre') {
@@ -684,7 +702,7 @@ function meet(state: GameState, id: string): ActionResult {
   state.world.eventCooldown[`meet.${id}`] = addBusinessDays(state.day, 15);
   const here = state.player.cityId === n.cityId;
   c.wealth -= here ? 1500 : 300;
-  const gain = (here ? 6 : 3) * (1 - Math.max(0, n.trust) / 120) * (1 + c.skills.relationnel / 200);
+  const gain = (here ? 6 : 3) * (1 - Math.max(0, n.trust) / 120) * (1 + c.skills.relationnel / 200) * officeEffects(state).relationMult;
   remember(state, id, gain, here ? 'Déjeuner ensemble' : 'Appel vidéo');
   c.skills.relationnel = Math.min(100, c.skills.relationnel + 0.3);
   return { ok: true, message: here ? `Déjeuner avec ${n.name} : la relation se renforce.` : `Appel avec ${n.name} (en personne, l’effet serait double : voyagez à ${CITY_BY_ID[n.cityId]?.name}).` };
@@ -695,8 +713,9 @@ function counted(state: GameState, r: ActionResult, n = 1): ActionResult {
   return r;
 }
 
-export function relocationCost(state: GameState): number {
-  return RELOCATION_FIXED + RELOCATION_EXIT_TAX * Math.max(0, nav(state));
+export function relocationCost(state: GameState, toCity?: string): number {
+  // + agencement des nouveaux locaux au même palier (les anciens sont perdus)
+  return RELOCATION_FIXED + RELOCATION_EXIT_TAX * Math.max(0, nav(state)) + (toCity ? fitOutCost(state, state.office?.tier ?? 0, toCity) : 0);
 }
 
 /** Transfert du siège : nouvelle fiscalité, nouveau régulateur, nouveau régime de sanctions. */
@@ -706,8 +725,9 @@ function relocate(state: GameState, city: string): ActionResult {
   if (co.marginCall) return { ok: false, message: 'Impossible de déménager pendant un appel de marge.' };
   if (state.day - co.lastRelocationDay < RELOCATION_COOLDOWN * 1.4) return { ok: false, message: 'Un seul transfert de siège par an.' };
   const cost = relocationCost(state);
-  if (cost > co.cash - co.im) return { ok: false, message: 'Trésorerie insuffisante pour le transfert.' };
+  if (cost + fitOutCost(state, state.office?.tier ?? 0, city) > co.cash - co.im) return { ok: false, message: 'Trésorerie insuffisante pour le transfert.' };
   addCash(state, -cost, 'overhead');
+  relocateOffice(state, city);
   const from = CITY_BY_ID[co.hqCity]!.name;
   co.hqCity = city;
   co.lastRelocationDay = state.day;
@@ -769,6 +789,11 @@ export function migrateState(raw: GameState): GameState {
     s.company.cumCashByCategory.dividends = 0;
     seedNpcs(s);
     s.version = 5;
+  }
+  if (s.version === 5) {
+    s.office = defaultOffice(s.day);
+    s.company.cumCashByCategory.office = 0;
+    s.version = 6;
   }
   return s;
 }

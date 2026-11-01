@@ -50,6 +50,8 @@ export interface GlobeOptions {
   travelProgress: () => number | null;
   /** jour de simulation fractionnaire (pour animer les navires entre deux clôtures) */
   simDay: () => number;
+  /** zoom avant au plus près d'une ville : on plonge dans la vue ville */
+  onDive?: (cityId: string) => void;
 }
 
 const EARTH_VS = /* glsl */ `
@@ -141,7 +143,8 @@ export class Globe {
   private labelLayer: HTMLDivElement;
   private raf = 0;
   private clock = new THREE.Clock();
-  private focusAnim: null | { from: THREE.Vector3; to: THREE.Vector3; t: number; dist0: number; dist1: number } = null;
+  private focusAnim: null | { from: THREE.Vector3; to: THREE.Vector3; t: number; dist0: number; dist1: number; dur?: number; done?: () => void } = null;
+  private paused = false;
   private resizeObs: ResizeObserver;
   private overlayMesh: THREE.Mesh;
   private overlayKey = '';
@@ -169,7 +172,9 @@ export class Globe {
     this.controls.maxDistance = 5;
     this.controls.rotateSpeed = 0.5;
     this.controls.zoomSpeed = 0.8;
-    this.controls.addEventListener('start', () => (this.focusAnim = null));
+    this.controls.addEventListener('start', () => {
+      if (!this.focusAnim?.done) this.focusAnim = null;
+    });
 
     this.buildStarfield();
     const tex = buildTextures(opts.cities);
@@ -260,10 +265,47 @@ export class Globe {
     this.trail.visible = false;
     this.scene.add(this.trail);
 
+    this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: true });
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(container);
     this.resize();
     this.loop();
+  }
+
+  /** Zoom avant en butée : la ville la plus centrale devient la destination du plongeon. */
+  private onWheel = (e: WheelEvent) => {
+    if (e.deltaY >= 0 || this.focusAnim || this.paused || !this.opts.onDive) return;
+    if (this.camera.position.length() > this.controls.minDistance + 0.02) return;
+    const dir = this.camera.position.clone().normalize();
+    let best: CityNode | null = null;
+    let bestDot = 0.985;
+    for (const n of this.nodes) {
+      const d = n.pos.clone().normalize().dot(dir);
+      if (d > bestDot) {
+        bestDot = d;
+        best = n;
+      }
+    }
+    if (best) this.opts.onDive(best.city.id);
+  };
+
+  /** Plongeon continu vers une ville (avant le passage en vue ville). Le globe se met en pause à l'arrivée. */
+  dive(id: string, done: () => void) {
+    const n = this.nodeById[id];
+    if (!n) return done();
+    this.controls.minDistance = 1.02;
+    this.focusAnim = { from: this.camera.position.clone().normalize(), to: n.pos.clone().normalize(), t: 0, dist0: this.camera.position.length(), dist1: 1.09, dur: 1.2, done: () => { this.paused = true; this.labelLayer.style.display = 'none'; done(); } };
+  }
+
+  /** Retour de la vue ville : on repart du ras du sol et on remonte en orbite. */
+  rise(id: string, done?: () => void) {
+    const n = this.nodeById[id];
+    this.paused = false;
+    this.labelLayer.style.display = '';
+    if (!n) return done?.();
+    const dir = n.pos.clone().normalize();
+    this.camera.position.copy(dir.clone().multiplyScalar(1.09));
+    this.focusAnim = { from: dir, to: dir.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize(), t: 0, dist0: 1.09, dist1: 2.0, dur: 1.2, done: () => { this.controls.minDistance = 1.18; done?.(); } };
   }
 
   private buildStarfield() {
@@ -399,7 +441,8 @@ export class Globe {
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
-    const dt = Math.min(0.05, this.clock.getDelta());
+    const raw = this.clock.getDelta();
+    const dt = Math.min(0.05, raw);
     const t = this.clock.elapsedTime;
     this.earthMat.uniforms.time!.value = t;
     // Soleil lié à la caméra avec un balancement lent : la face regardée reste lumineuse (lisibilité),
@@ -415,12 +458,16 @@ export class Globe {
 
     if (this.focusAnim) {
       const f = this.focusAnim;
-      f.t = Math.min(1, f.t + dt / 1.1);
+      f.t = Math.min(1, f.t + Math.min(raw, 0.5) / (f.dur ?? 1.1)); // temps réel : même durée sur machine lente
       const e = f.t < 0.5 ? 2 * f.t * f.t : 1 - (-2 * f.t + 2) ** 2 / 2;
       const dir = this.tmp.copy(f.from).lerp(f.to, e).normalize();
       this.camera.position.copy(dir.multiplyScalar(f.dist0 + (f.dist1 - f.dist0) * e));
-      if (f.t >= 1) this.focusAnim = null;
+      if (f.t >= 1) {
+        this.focusAnim = null;
+        f.done?.();
+      }
     }
+    if (this.paused) return;
     this.controls.update();
 
     // drapeau qui ondule, avatar qui sautille
@@ -479,6 +526,7 @@ export class Globe {
   dispose() {
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
+    this.renderer.domElement.removeEventListener('wheel', this.onWheel);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

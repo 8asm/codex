@@ -66,16 +66,30 @@ npm run build      # build de production dans dist/
 - **Marché de l'emploi** (débauchage, entretiens, références), **création de sa société** avec investisseurs, banques et dividendes soumis à retenue à la source.
 - **Sandbox « trader salarié »** : rejoindre une maison existante comme trader.
 
+## Phase 6 — ce qui s'ajoute
+
+- **Vue ville 3D** : zoomez au maximum sur une ville du globe (ou 🏙️, touche `H`). La caméra plonge dans la ville low-poly, avec ses passants, ses voitures, son port ou son fleuve, et les sièges des concurrents. Dézoomez pour revenir au globe.
+- **Un siège qui grandit avec vous** : étage loué → plusieurs étages → tour → campus. Les bailleurs exigent une valeur liquidative minimale.
+- **Salle de marché visitable** (cliquez sur le siège). On y voit les traders à leur poste, les écrans et un mur de cours en direct. Quatre styles : classique, open space, salle blindée, verrière.
+- **Personnalisation** (panneau 🏛️ Bureaux, touche `B`) : déménager, acheter son immeuble ou le revendre en cession-bail, réaménager la salle, installer des objets de prestige (art, salon, académie, cantine, héliport, auditorium…).
+- **Le prestige a des effets de jeu** : clients reçus au siège plus confiants, meilleures concessions en négociation physique, investisseurs moins exigeants, candidatures spontanées de gérants de talent.
+- **Finance rigoureuse** :
+  - capex capitalisés et amortis sur 60 mois ;
+  - perte des agencements au déménagement ;
+  - comparaison louer ou acheter (taux de capitalisation, coût de l'argent, charges, usure) ;
+  - art valorisé net des frais d'enchères ;
+  - débordement en coworking quand les postes manquent.
+
 ### Raccourcis
 
-`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `U` automatisation · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
 
 ## Structure
 
 ```
 src/engine   moteur pur et déterministe (testé)
 src/data     commodités, villes, contreparties, codex
-src/render   globe Three.js
+src/render   globe et vue ville Three.js
 src/ui       React + Zustand
 src/save     IndexedDB / JSON
 ```

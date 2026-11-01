@@ -75,3 +75,12 @@ export function poisson(s: RngState, lambda: number): number {
   } while (p > L);
   return k - 1;
 }
+
+/**
+ * Tirage uniforme « sans état » : dépend uniquement des clés (seed, jour, motif).
+ * Sert aux mécaniques ajoutées après coup (phase 6) pour ne pas décaler la séquence aléatoire principale :
+ * une partie existante garde exactement le même marché qu'avant l'ajout.
+ */
+export function hashUniform(...keys: (string | number)[]): number {
+  return uniform(seedRng(keys.join('|')));
+}

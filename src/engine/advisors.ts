@@ -9,6 +9,8 @@ import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { addBusinessDays, formatDayShort, monthLabel, ymd } from './calendar';
 import { lastTradingDay, listedMonths, physicalDeliveryDay } from './contracts';
 import { newId } from './ledger';
+import { managesOffice, seatsFree } from './offices';
+import { TIERS } from '../data/offices';
 import { forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
 import { otcNotional } from './derivatives';
 import { physicalExposureUsd, PHYSICAL_LEVERAGE } from './physical';
@@ -297,6 +299,13 @@ function rules(state: GameState): Draft[] {
   const late = state.voyages.find((v) => v.delayDays >= 2);
   if (late) out.push({ advisor: 'ops', mood: 'worried', rule: `ops.late.${late.id}`, cooldown: 8, text: `Notre cargaison de ${COMMODITIES[late.commodity].short} est bloquée par la fermeture d’un passage : ${late.delayDays} jours de retard. Les livraisons dépendantes sont menacées.`, action: { kind: 'panel', panel: 'logistics' } });
 
+  // Bureaux (phase 6) : saturation des postes, croissance possible.
+  if (managesOffice(state) && state.office) {
+    const free = seatsFree(state);
+    if (free < 0) out.push({ advisor: 'ops', mood: 'worried', rule: 'ops.offices.full', cooldown: 25, text: `Nos locaux sont saturés : ${-free} personne(s) travaillent dans un coworking loué au mois, et ça se voit quand un client passe. Il est temps de s’agrandir.`, action: { kind: 'panel', panel: 'offices' } });
+    const next = TIERS[state.office.tier + 1];
+    if (next && navV >= next.minNav * 1.3 && state.day - state.office.movedDay > 120) out.push({ advisor: 'legal', mood: 'neutral', rule: 'legal.offices.grow', cooldown: 60, text: `Avec ${fmtM(navV)} de fonds propres, les bailleurs nous proposeraient « ${next.name.toLowerCase()} ». Un siège plus prestigieux aide à recruter et à convaincre les clients — mais c’est du loyer et des agencements en plus.`, action: { kind: 'panel', panel: 'offices' } });
+  }
   if (freeCash(state) < 0 && !co.marginCall) {
     out.push({ advisor: 'risk', mood: 'angry', rule: 'risk.freecash', cooldown: 2, text: 'Notre cash libre est négatif. À la clôture, ce sera un appel de marge.', action: { kind: 'panel', panel: 'treasury' } });
   }

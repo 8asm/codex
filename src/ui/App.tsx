@@ -25,6 +25,11 @@ import { CareerPanel } from './CareerPanel';
 import { NegotiationModal, SituationOverlay } from './NegotiationModal';
 import { rights } from '../engine/career';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
+import { OfficesPanel } from './OfficesPanel';
+import { CityCanvas } from './CityCanvas';
+import { COMPANY_BY_ID } from '../data/companies';
+import { CITY_BY_ID } from '../data/cities';
+import type { GameState } from '../engine/types';
 
 const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'career', icon: '👔', label: 'Carrière', key: 'J' },
@@ -40,6 +45,7 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'news', icon: '📰', label: 'Actu', key: 'A' },
   { id: 'world', icon: '🌍', label: 'Monde', key: 'G' },
   { id: 'rivals', icon: '🏢', label: 'Rivaux', key: 'K' },
+  { id: 'offices', icon: '🏛️', label: 'Bureaux', key: 'B' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
 ];
 
@@ -70,6 +76,14 @@ function useGameLoop() {
   }, []);
 }
 
+/** Ville à visiter : la ville sélectionnée, sinon le siège (ou celui de l'employeur). */
+function cityTarget(g: GameState, selected: string | null): string {
+  if (selected) return selected;
+  const c = g.career;
+  if (c?.employerId && c.status === 'employed') return COMPANY_BY_ID[c.employerId]!.cityId;
+  return g.company.hqCity;
+}
+
 function useKeyboard() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -79,6 +93,10 @@ function useKeyboard() {
       if (!st.game) return;
       if (e.key === 'Escape') {
         if (st.modal) st.closeModal();
+        else if (st.cityPhase === 'city' && !st.panel) {
+          if (st.interior) st.setInterior(false);
+          else st.exitCity();
+        }
         else st.setPanel(st.panel ?? 'market');
         return;
       }
@@ -90,6 +108,10 @@ function useKeyboard() {
       else if (e.key === '3') st.setSpeed(5);
       else if (e.key.toLowerCase() === 'n' && st.speed === 0) st.step();
       else if (e.key.toLowerCase() === 'u') st.setPanel('automation');
+      else if (e.key.toLowerCase() === 'h') {
+        if (st.cityPhase === 'city') st.exitCity();
+        else st.requestCity(cityTarget(st.game, st.selectedCity));
+      }
       else {
         const d = DOCK.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
         if (d) st.setPanel(d.id);
@@ -111,6 +133,10 @@ export function App() {
   useGameLoop();
   useKeyboard();
   const menuRef = useRef<HTMLDivElement>(null);
+  const cityPhase = useStore((s) => s.cityPhase);
+  const selectedCity = useStore((s) => s.selectedCity);
+  const requestCity = useStore((s) => s.requestCity);
+  const inCity = cityPhase === 'city' || cityPhase === 'leaving';
 
   // Divulgation progressive : la trésorerie n'apparaît qu'une fois des marges ou de la dette en jeu.
   const showTreasury = !!game && (game.company.im > 0 || game.company.rcfDrawn > 0 || game.history.length > 15);
@@ -140,6 +166,7 @@ export function App() {
   return (
     <div className="app">
       <GlobeCanvas />
+      {game && inCity && <CityCanvas />}
       {!game && <StartScreen />}
       {game && (
         <>
@@ -149,7 +176,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K C U : panneaux · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K B C U : panneaux · H : vue ville · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -176,8 +203,14 @@ export function App() {
             {panel === 'assets' && <AssetsPanel />}
             {panel === 'automation' && <AutomationPanel />}
             {panel === 'career' && <CareerPanel />}
+            {panel === 'offices' && <OfficesPanel />}
           </div>
-          <LayerBar />
+          {!cityPhase && <LayerBar />}
+          {!cityPhase && (
+            <button className="city-btn" onClick={() => requestCity(cityTarget(game, selectedCity))} title="Plonger dans la ville (H) — ou zoomez au maximum sur une ville">
+              🏙️ {CITY_BY_ID[cityTarget(game, selectedCity)]!.name}
+            </button>
+          )}
           <AdvisorBar />
           <NewsTicker />
           <Modals />

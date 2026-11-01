@@ -8,6 +8,7 @@ import { signedUsd, tone, usd } from './format';
 import { useStore } from './store';
 
 const CAT_LABEL: Record<CashCategory, string> = {
+  office: 'Bureaux (investissements)',
   vm: 'Marge de variation', commission: 'Commissions', physical: 'Flux physiques', storage: 'Stockage', interest: 'Intérêts',
   overhead: 'Frais généraux', tax: 'Impôts', travel: 'Voyages', liquidation: 'Liquidations forcées',
   premium: 'Primes d’options', otc: 'Règlements OTC', compliance: 'Conformité & reporting', credit: 'Crédit (défauts, assurance)',

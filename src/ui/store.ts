@@ -10,7 +10,7 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices';
 export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals' | 'routes' | 'stocks';
 export type Speed = 0 | 1 | 2 | 5;
 
@@ -59,6 +59,15 @@ interface UIState {
   closeModal: () => void;
   seeTerm: (id: string) => void;
   openCodex: (id: string) => void;
+  /** Vue ville : ville affichée et phase de la transition globe ↔ ville. */
+  cityView: string | null;
+  cityPhase: null | 'diving' | 'city' | 'leaving' | 'rising';
+  interior: boolean;
+  requestCity: (id: string) => void;
+  cityReady: () => void;
+  exitCity: () => void;
+  cityGone: () => void;
+  setInterior: (on: boolean) => void;
 }
 
 let toastId = 1;
@@ -100,7 +109,7 @@ export const useStore = create<UIState>((set, get) => ({
     set({ game: g, rev: 0, speed: 0, panel: 'market', modal: null, month: listedMonths(COMMODITIES.BRENT, g.day)[0]!, commodity: 'BRENT', selectedCity: null });
   },
   loadState: (s) => set({ game: s, rev: get().rev + 1, speed: 0, modal: null, month: listedMonths(COMMODITIES[get().commodity], s.day)[0]! }),
-  quit: () => set({ game: null, speed: 0, modal: null }),
+  quit: () => set({ game: null, speed: 0, modal: null, cityView: null, cityPhase: null, interior: false }),
 
   act: (a, quiet) => {
     const g = get().game;
@@ -187,4 +196,20 @@ export const useStore = create<UIState>((set, get) => ({
     get().seeTerm(id);
     set({ panel: 'codex', codexFocus: id });
   },
+  cityView: null,
+  cityPhase: null,
+  interior: false,
+  requestCity: (id) => {
+    if (get().cityPhase) return;
+    set({ cityView: id, cityPhase: 'diving', interior: false });
+  },
+  cityReady: () => set({ cityPhase: 'city' }),
+  exitCity: () => {
+    if (get().cityPhase === 'city') set({ cityPhase: 'leaving', interior: false });
+  },
+  cityGone: () => set({ cityPhase: 'rising' }),
+  setInterior: (on) => set({ interior: on }),
 }));
+
+// Accès de débogage (serveur de développement uniquement) : scripts de capture et console.
+if (import.meta.env.DEV) (window as unknown as { __tw: typeof useStore }).__tw = useStore;
