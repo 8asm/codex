@@ -8,6 +8,9 @@ import { exposures, forwardMtm, futuresPnlVsEntry, inventoryValue, localSpot, na
 import { optionUnitPrice, optionValueUsd, otcValueUsd } from '../engine/derivatives';
 import { lotQty } from '../engine/contracts';
 import { fx } from '../engine/market';
+import { voyageValue } from '../engine/logistics';
+import { ffaFair, ffaValue } from '../engine/freight';
+import { FREIGHT } from '../data/freight';
 import { Panel, Sparkline, Term } from './common';
 import { price, qty, signedUsd, tone, usd } from './format';
 import { useStore } from './store';
@@ -20,8 +23,8 @@ export function BookPanel() {
   const select = useStore((s) => s.selectCommodity);
   const last = g.history[g.history.length - 1];
   const navSeries = g.history.slice(-250).map((h) => h.nav);
-  const exps = exposures(g).filter((e) => e.futuresQty || e.forwardQty || e.inventoryQty || e.optionQty || e.otcQty);
-  const empty = !g.futures.length && !g.forwards.length && !g.inventory.length && !g.options.length && !g.otc.length;
+  const exps = exposures(g).filter((e) => e.futuresQty || e.forwardQty || e.inventoryQty || e.optionQty || e.otcQty || e.transitQty);
+  const empty = !g.futures.length && !g.forwards.length && !g.inventory.length && !g.options.length && !g.otc.length && !g.voyages.length && !g.ffa.length;
 
   const roll = (c: (typeof g.futures)[number]) => {
     const months = listedMonths(COMMODITIES[c.commodity], g.day);
@@ -57,7 +60,7 @@ export function BookPanel() {
         <>
           <h4>Exposition nette (prix) — le cœur du <Term id="hedge">hedging</Term></h4>
           <table className="tbl">
-            <thead><tr><th /><th>Futures</th><th>Physique à terme</th><th>Stocks</th><th>Options & OTC (Δ)</th><th>Net</th><th>Δ pour +1 %</th><th /></tr></thead>
+            <thead><tr><th /><th>Futures</th><th>Physique à terme</th><th>Stocks & en mer</th><th>Options & OTC (Δ)</th><th>Net</th><th>Δ pour +1 %</th><th /></tr></thead>
             <tbody>
               {exps.map((e) => {
                 const gross = Math.abs(e.forwardQty + e.inventoryQty);
@@ -67,7 +70,7 @@ export function BookPanel() {
                     <td>{COMMODITIES[e.commodity].icon} {COMMODITIES[e.commodity].short}</td>
                     <td>{qty(e.commodity, e.futuresQty)}</td>
                     <td>{qty(e.commodity, e.forwardQty)}</td>
-                    <td>{qty(e.commodity, e.inventoryQty)}</td>
+                    <td>{qty(e.commodity, e.inventoryQty + e.transitQty)}{e.transitQty ? <div className="muted small">dont {qty(e.commodity, e.transitQty)} en mer</div> : null}</td>
                     <td>{qty(e.commodity, e.optionQty + e.otcQty)}</td>
                     <td><b>{qty(e.commodity, e.netQty)}</b>{gross > 0 && <div className="hedge-bar" title={`Ratio de couverture ${(ratio * 100).toFixed(0)} %`}><div style={{ width: `${Math.min(100, ratio * 50)}%` }} /></div>}</td>
                     <td className={tone(e.delta1pct)}>{signedUsd(e.delta1pct)}</td>
@@ -161,7 +164,7 @@ export function BookPanel() {
             <tbody>
               {g.forwards.map((d) => (
                 <tr key={d.id}>
-                  <td>{d.side > 0 ? 'Achat' : 'Vente'} {COMMODITIES[d.commodity].short} {findLocation(d.commodity, d.locationId).label}<div className="muted small">{COUNTERPARTY_BY_ID[d.counterpartyId]?.name}</div></td>
+                  <td>{d.side > 0 ? 'Achat' : 'Vente'} {COMMODITIES[d.commodity].short} {findLocation(d.commodity, d.locationId).label}<div className="muted small">{COUNTERPARTY_BY_ID[d.counterpartyId]?.name}{d.tolerance ? ` · tolérance ±${Math.round(d.tolerance * 100)} % (vendeur)` : ''}</div></td>
                   <td>{qty(d.commodity, d.qty)}</td>
                   <td>{price(d.commodity, d.price)}</td>
                   <td>{monthLabel(d.month)} <small className="muted">{formatDayShort(d.deliveryDay)}</small></td>
@@ -170,6 +173,19 @@ export function BookPanel() {
               ))}
             </tbody>
           </table>
+        </>
+      )}
+
+      {g.voyages.length > 0 && (
+        <>
+          <h4>En mer</h4>
+          <table className="tbl"><tbody>{g.voyages.map((v) => <tr key={v.id}><td>{COMMODITIES[v.commodity].icon} {qty(v.commodity, v.qty)} → {findLocation(v.commodity, v.to).label}</td><td>arrivée {formatDayShort(v.arriveDay)}</td><td>{usd(voyageValue(g, v))}</td></tr>)}</tbody></table>
+        </>
+      )}
+      {g.ffa.length > 0 && (
+        <>
+          <h4><Term id="ffa">FFA</Term> (fret)</h4>
+          <table className="tbl"><tbody>{g.ffa.map((p) => <tr key={p.id}><td>{FREIGHT[p.index].name} {monthLabel(p.month)}</td><td className={p.days > 0 ? 'pos' : 'neg'}>{p.days} j</td><td>{p.price.toLocaleString('fr-FR')} → {Math.round(ffaFair(g, p.index, p.month)).toLocaleString('fr-FR')} $/j</td><td className={tone(ffaValue(g, p))}>{signedUsd(ffaValue(g, p))}</td></tr>)}</tbody></table>
         </>
       )}
 

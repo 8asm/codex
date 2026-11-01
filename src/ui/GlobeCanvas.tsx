@@ -9,6 +9,11 @@ import { futuresPrice } from '../engine/market';
 import { rivalOf } from '../engine/companies';
 import type { GameState } from '../engine/types';
 import { prevPrice } from './derived';
+import { ASSET_DEF_BY_ID } from '../data/assets';
+import { CITY_BY_ID } from '../data/cities';
+import { LOCATION_PORT, SEA_NODES } from '../data/routes';
+import { INLAND_LEG } from '../data/routes';
+import { qty as fmtQty } from './format';
 import type { LayerId } from './store';
 import { clock, useStore } from './store';
 
@@ -29,6 +34,7 @@ export function GlobeCanvas() {
         selectCity(id);
         globe.current?.focusCity(id);
       },
+      simDay: () => (useStore.getState().game?.day ?? 0) + clock.dayFrac,
       travelProgress: () => {
         const t = useStore.getState().game?.player.travel;
         const st = useStore.getState().game;
@@ -139,5 +145,32 @@ function worldLayers(g: GameState, layers: Record<LayerId, boolean>) {
     for (const s of w.sanctions) mark(s.zone, s.kind === 'full' ? 'rgba(239,68,68,0.85)' : 'rgba(244,114,182,0.75)');
     overlay = { key: `s:${w.sanctions.map((x) => x.id).join()}|${w.restrictions.map((x) => x.id).join()}`, countries, blobs };
   }
-  return { markers, cityBadges, cityChips, overlay };
+  if (layers.stocks) {
+    cityChips ??= {};
+    const byLoc = new Map<string, { c: string; q: number }>();
+    for (const l of g.inventory) {
+      const x = byLoc.get(l.locationId) ?? { c: l.commodity, q: 0 };
+      x.q += l.qty;
+      byLoc.set(l.locationId, x);
+    }
+    for (const [loc, x] of byLoc) {
+      const spec = COMMODITIES[x.c as keyof typeof COMMODITIES];
+      const cityId = spec.physical.locations.find((l) => l.id === loc)!.cityId;
+      (cityChips[cityId] ??= []).push({ text: `${spec.icon}${fmtQty(spec.id, x.q)}`, tone: 'flat' });
+    }
+  }
+  const node = Object.fromEntries(SEA_NODES.map((n) => [n.id, n]));
+  const voyages = g.voyages.map((v) => {
+    const inland = INLAND_LEG[v.from]?.path;
+    void node;
+    return { id: v.id, path: v.path, fromLatLon: inland, departDay: v.departDay, arriveDay: v.arriveDay, kind: v.commodity === 'BRENT' ? ('tanker' as const) : ('bulk' as const), color: COMMODITIES[v.commodity].color };
+  });
+  const assets = g.assets.filter((a) => ASSET_DEF_BY_ID[a.defId]!.type !== 'vessel').map((a) => {
+    const d = ASSET_DEF_BY_ID[a.defId]!;
+    const city = CITY_BY_ID[d.cityId]!;
+    const port = LOCATION_PORT[d.locationId];
+    const off = (a.id.charCodeAt(a.id.length - 1) % 6) * 0.35;
+    return { id: a.id, type: d.type, lat: d.lat ?? (port && d.type === 'terminal' ? node[port]!.lat : city.lat + 0.6 + off * 0.3), lon: d.lon ?? city.lon + 0.8 + off, status: a.status };
+  });
+  return { markers, cityBadges, cityChips, overlay, voyages, assets, showRoutes: layers.routes, sanctionedZones: g.world.sanctions.map((x) => x.zone) };
 }

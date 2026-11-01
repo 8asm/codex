@@ -8,7 +8,12 @@
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { lotQty } from './contracts';
 import { optionUnitGreeks, optionValueUsd, otcValueUsd, avgInputs, apoUnitPrice, type View } from './derivatives';
-import { basis, discount, forwardAt, futuresPrice, fx, spotPrice } from './market';
+import { basis, basisAt, discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
+import { integratedVariance } from './model';
+import { black76 } from './pricing';
+import { voyageValue } from './logistics';
+import { ffaValue } from './freight';
+import { streamBook } from './assets';
 import type { Book, CommodityId, ForwardDeal, FuturesPosition, GameState, InventoryLot, MarketState } from './types';
 
 const zero = () => Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as Record<CommodityId, number>;
@@ -31,7 +36,7 @@ export function futuresPnlVsEntry(state: GameState, p: FuturesPosition): number 
 
 /** Prix forward local = courbe benchmark à la date de livraison + différentiel courant (courbe de basis plate). */
 export function localForwardIn(m: MarketState, c: CommodityId, locationId: string, deliveryDay: number): number {
-  return forwardAt(m, c, deliveryDay) + basis(m, c, locationId);
+  return forwardAt(m, c, deliveryDay) + basisAt(m, c, locationId, deliveryDay);
 }
 
 export function localForward(state: GameState, c: CommodityId, locationId: string, deliveryDay: number): number {
@@ -41,7 +46,23 @@ export function localForward(state: GameState, c: CommodityId, locationId: strin
 export function forwardMtmIn(m: MarketState, day: number, d: ForwardDeal): number {
   const spec = COMMODITIES[d.commodity];
   const fwd = localForwardIn(m, d.commodity, d.locationId, d.deliveryDay);
-  return d.side * (fwd - d.price) * d.qty * spec.valuePerUnit * fx(m, spec.currency) * discount(m, spec.currency, day, d.deliveryDay);
+  const linear = d.side * (fwd - d.price) * d.qty * spec.valuePerUnit * fx(m, spec.currency) * discount(m, spec.currency, day, d.deliveryDay);
+  return linear + (d.tolerance ? toleranceValueIn(m, day, d.commodity, d.locationId, d.deliveryDay, d.price, d.qty, d.tolerance, d.side < 0) : 0);
+}
+
+/**
+ * Valeur de la clause de tolérance (± tol × qté au choix du vendeur) : le vendeur livre plus quand le prix
+ * convenu dépasse le marché et moins dans le cas inverse. C'est un call + un put au strike du contrat sur
+ * tol × qté (Black-76 sur le prix local, vol du modèle). Positive pour le joueur s'il est vendeur, négative s'il achète.
+ */
+export function toleranceValueIn(m: MarketState, day: number, c: CommodityId, locationId: string, deliveryDay: number, K: number, qty: number, tol: number, playerIsSeller: boolean): number {
+  const spec = COMMODITIES[c];
+  const T = Math.max(0, (deliveryDay - day) / 365);
+  const F = localForwardIn(m, c, locationId, deliveryDay);
+  const sigma = T > 0 ? Math.sqrt(integratedVariance(spec.model, T, T, m.volMult) / T) * m.ivLevel[c] : 0;
+  const r = rate(m, spec.currency);
+  const straddle = black76(F, K, T, sigma, r, 'C') + black76(F, K, T, sigma, r, 'P');
+  return (playerIsSeller ? 1 : -1) * tol * qty * straddle * spec.valuePerUnit * fx(m, spec.currency);
 }
 
 export function forwardMtm(state: GameState, d: ForwardDeal): number {
@@ -66,7 +87,7 @@ export function inventoryValue(state: GameState, lot: InventoryLot): number {
 }
 
 export function bookOf(state: GameState): Book {
-  return { futures: state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc };
+  return { futures: state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc, voyages: state.voyages ?? [], ffa: state.ffa ?? [] };
 }
 
 /** Valeur de marché (hors cash) d'un livre, ventilée par commodité. */
@@ -77,17 +98,28 @@ export function valueBy(v: View, book: Book): Record<CommodityId, number> {
   for (const l of book.inventory) out[l.commodity] += inventoryValueIn(v.market, l);
   for (const o of book.options) out[o.commodity] += optionValueUsd(v.market, o);
   for (const x of book.otc) out[x.commodity] += otcValueUsd(v, x);
+  for (const y of book.voyages ?? []) out[y.commodity] += voyageValue(v, y);
   return out;
+}
+
+/** Valeur des FFA (fret, hors commodités). */
+export function freightBookValue(v: View, book: Book): number {
+  return (book.ffa ?? []).reduce((s, p) => s + ffaValue(v as GameState, p) - p.mark, 0);
 }
 
 export function bookValue(v: View, book: Book): number {
   const by = valueBy(v, book);
-  return COMMODITY_IDS.reduce((s, c) => s + by[c], 0);
+  return COMMODITY_IDS.reduce((s, c) => s + by[c], 0) + freightBookValue(v, book);
+}
+
+/** Actifs industriels et contrats de stream au bilan (valeur comptable, pas de marquage au marché). */
+export function fixedAssetsValue(state: GameState): number {
+  return (state.assets ?? []).reduce((s, a) => s + a.bookValue, 0) + (state.streams ?? []).reduce((s, x) => s + streamBook(x), 0);
 }
 
 export function nav(state: GameState): number {
   const coll = Object.values(state.credit?.collateral ?? {}).reduce((a, b) => a + b, 0);
-  return state.company.cash - state.company.rcfDrawn + coll + bookValue(state, bookOf(state));
+  return state.company.cash - state.company.rcfDrawn + coll + bookValue(state, bookOf(state)) + fixedAssetsValue(state);
 }
 
 /** Valeur économique cumulée par commodité (flux cumulés + MTM ouvert). Sa variation = P&L de la commodité. */
@@ -102,6 +134,7 @@ export interface Exposure {
   futuresQty: number;
   forwardQty: number;
   inventoryQty: number;
+  transitQty: number; // cargaisons en mer
   optionQty: number; // delta des options (unités)
   otcQty: number; // delta des swaps/APO (unités)
   netQty: number;
@@ -128,7 +161,11 @@ export function exposures(state: GameState): Exposure[] {
     const spec = COMMODITIES[c];
     const m = state.market;
     const k = spec.valuePerUnit * fx(m, spec.currency);
-    let fq = 0, wq = 0, iq = 0, oq = 0, xq = 0, d = 0;
+    let fq = 0, wq = 0, iq = 0, oq = 0, xq = 0, tq = 0, d = 0;
+    for (const v of (state.voyages ?? []).filter((x) => x.commodity === c)) {
+      tq += v.qty;
+      d += v.qty * forwardAt(m, c, v.arriveDay) * k * 0.01;
+    }
     for (const p of state.futures.filter((x) => x.commodity === c)) {
       const q = p.lots * lotQty(spec, p.month);
       fq += q;
@@ -155,6 +192,6 @@ export function exposures(state: GameState): Exposure[] {
       const favg = a.fwds.length ? a.fwds.reduce((s, f) => s + f, 0) / a.fwds.length : spotPrice(m, c);
       d += q * favg * k * 0.01;
     }
-    return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, optionQty: oq, otcQty: xq, netQty: fq + wq + iq + oq + xq, delta1pct: d };
+    return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, transitQty: tq, optionQty: oq, otcQty: xq, netQty: fq + wq + iq + tq + oq + xq, delta1pct: d };
   });
 }

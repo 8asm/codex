@@ -85,10 +85,16 @@ export function handleDefault(state: GameState, id: string) {
     settle(otcMtm + coll, false);
     delete state.credit.collateral[id];
   }
+  // Streams / royalties / offtakes : flux futurs perdus ; le prépaiement restant d'un offtake devient une créance.
+  for (const s of (state.streams ?? []).filter((x) => x.counterpartyId === id)) {
+    if (s.kind === 'offtake') settle(s.prepayLeft, true);
+    else loss += (s.upfront * s.monthsLeft) / s.monthsTotal;
+  }
+  if (state.streams) state.streams = state.streams.filter((x) => x.counterpartyId !== id);
   state.forwards = state.forwards.filter((d) => d.counterpartyId !== id);
   state.otc = state.otc.filter((x) => x.bankId !== id);
   state.offers = state.offers.filter((o) => o.counterpartyId !== id);
-  if (phys.length || otc.length || coll) {
+  if (phys.length || otc.length || coll || loss > 0) {
     state.credit.losses.push({ day: state.day, cp: id, loss, recovered, insured });
     const msg = `Défaut de ${name} : ${phys.length + otc.length} contrat(s) résilié(s) et compensé(s). Perte nette ${(loss / 1e6).toFixed(2)} M$${insured > 0 ? ` (assurance-crédit : ${(insured / 1e6).toFixed(2)} M$ remboursés)` : ''}.`;
     log(state, msg, -loss);
@@ -125,7 +131,7 @@ export function stepCredit(state: GameState, days: number) {
   }
   // Défauts des contreparties à notation fixe (producteurs, utilities)
   const stress = state.market.volRegime === 'stressed' ? 2 : 1;
-  const ids = new Set(state.forwards.map((d) => d.counterpartyId));
+  const ids = new Set([...state.forwards.map((d) => d.counterpartyId), ...(state.streams ?? []).map((x) => x.counterpartyId)]);
   for (const id of ids) {
     if (state.companies.some((c) => c.id === id)) continue;
     const pd = cpPD(state, id);

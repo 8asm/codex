@@ -12,6 +12,7 @@ export type OptStyle = 'A' | 'E';
 /** Règle d'expiration des options sur futures. */
 export type OptionExpiryRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'WITH_FUTURE';
 export type AdvisorId = 'risk' | 'trader' | 'legal' | 'ops' | 'analyst';
+export type FreightIndex = 'CAPE' | 'PMX' | 'SMX' | 'AFRA';
 
 /** Paramètres du modèle de Schwartz-Smith (2000) à deux facteurs, sous mesure risque-neutre. */
 export interface ModelParams {
@@ -33,6 +34,8 @@ export interface PhysicalLocation {
   incoterm: Incoterm;
   basisMean: number; // différentiel moyen vs benchmark (unité de cotation)
   basisVol: number; // vol annuelle du différentiel (unité de cotation)
+  /** Lien au fret : le différentiel bouge avec le taux d'affrètement (+ destination rendue, − origine FOB). */
+  freightLink?: { index: FreightIndex; perUnit: number };
 }
 
 export interface CommoditySpec {
@@ -73,6 +76,10 @@ export interface CommoditySpec {
     spotSpreadPct: number;
     locations: PhysicalLocation[];
   };
+  /** Logistique : tonnes par unité, manutention portuaire ($/t), pertes en transit, navire selon la taille. */
+  logistics: { tonnesPerUnit: number; handlingPerT: number; transitLoss: number; vessel: (qty: number) => FreightIndex };
+  /** Règlement des futures à l'échéance : en cash, ou livraison physique dans un lieu (LME, TTF, CBOT). */
+  settlement: { kind: 'cash' } | { kind: 'physical'; locationId: string };
   /** Conversion d'affichage optionnelle (ex. bu -> t). */
   display?: { unit: string; factor: number };
   color: string;
@@ -128,6 +135,7 @@ export interface FactorSnapshot {
   f: Record<CommodityId, [number, number]>; // [chi, xi]
   fxLog: number;
   volMult: number;
+  fr?: Record<FreightIndex, number>;
 }
 
 export interface MarketState {
@@ -141,6 +149,8 @@ export interface MarketState {
   impact: Record<string, number>;
   /** Niveau de vol implicite relatif à la vol du modèle (prime de variance, peur), par commodité. */
   ivLevel: Record<CommodityId, number>;
+  /** Log des taux d'affrètement (TCE $/jour) par indice de fret. */
+  freight: Record<FreightIndex, number>;
   /** Taux directeurs (continus) : bougent avec les banques centrales. */
   rates: Record<Currency, number>;
   /** Décalages persistants de différentiels (canal bloqué, embargo…), retirés à la fin de l'événement. */
@@ -176,6 +186,8 @@ export interface ForwardDeal {
   deliveryDay: Day;
   counterpartyId: string;
   tradeDay: Day;
+  /** Tolérance de quantité (±) au choix du vendeur. */
+  tolerance?: number;
 }
 
 export interface InventoryLot {
@@ -263,7 +275,7 @@ export interface Advice {
 
 export type AdviceAction =
   | { kind: 'hedge'; commodity: CommodityId }
-  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' }
   | { kind: 'trade'; action: Action; label: string };
 
 export interface Offer {
@@ -280,6 +292,8 @@ export interface Offer {
   counterpartyId: string;
   expiresDay: Day;
   createdDay: Day;
+  /** Tolérance de quantité (±) au choix du vendeur : une option embarquée. */
+  tolerance?: number;
   /** Contrôles KYC en cours jusqu'à ce jour (offre non acceptable avant). */
   kycReadyDay?: Day;
 }
@@ -305,7 +319,9 @@ export type CashCategory =
   | 'premium'
   | 'otc'
   | 'compliance'
-  | 'credit';
+  | 'credit'
+  | 'freight'
+  | 'assets';
 
 export interface Company {
   name: string;
@@ -368,7 +384,8 @@ export type Impact =
   | { k: 'companyHit'; id: string; navPct: number; rep: number }
   | { k: 'companyDefault'; id: string }
   | { k: 'freezeCash'; pct: number; days: number }
-  | { k: 'warehouseFraud'; loc: string; lossPct: number };
+  | { k: 'warehouseFraud'; loc: string; lossPct: number }
+  | { k: 'freight'; idx: FreightIndex; v: number };
 
 export interface ZoneState {
   stability: number;
@@ -403,6 +420,8 @@ export interface ActiveEffect {
   untilDay: Day;
   layer: 'météo' | 'logistique' | 'géopolitique' | 'marché';
   basisShift?: Record<string, number>;
+  /** Passages maritimes fermés pendant l'événement (ex. 'suez'). */
+  closes?: string[];
 }
 
 /** Étape différée d'un événement : confirmation, démenti, impact retardé, fin d'événement. */
@@ -516,6 +535,14 @@ export interface GameState {
   /** Instantané de fin de journée servant de base au P&L expliqué du lendemain. */
   explainBase: null | { market: MarketState; book: Book; day: Day };
   world: WorldState;
+  voyages: Voyage[];
+  ffa: FfaPosition[];
+  freightFixings: Record<FreightIndex, Fixing[]>;
+  assets: AssetState[];
+  managers: Manager[];
+  opportunities: AssetOpportunity[];
+  streams: StreamPosition[];
+  automation: Automation;
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];
@@ -542,6 +569,115 @@ export interface Book {
   inventory: InventoryLot[];
   options: OptionPosition[];
   otc: OtcPosition[];
+  voyages: Voyage[];
+  ffa: FfaPosition[];
+}
+
+// ---------------------------------------------------------------- phase 4 : logistique, actifs, automatisation
+export interface Voyage {
+  id: string;
+  commodity: CommodityId;
+  qty: number;
+  cost: number; // coût unitaire de la marchandise (prix de revient)
+  from: string; // lieu physique d'origine
+  to: string; // lieu physique de destination
+  vessel: { kind: 'spot'; index: FreightIndex } | { kind: 'fleet'; assetId: string };
+  departDay: Day;
+  arriveDay: Day;
+  path: string[]; // nœuds maritimes
+  nm: number;
+  freightUsd: number;
+  insured: boolean;
+  delayDays: number;
+  viaCanals: string[];
+}
+
+/** Forward freight agreement compensé : swap sur la moyenne mensuelle d'un indice de fret ($/jour). */
+export interface FfaPosition {
+  id: string;
+  index: FreightIndex;
+  month: MonthIndex;
+  days: number; // signé : + acheteur de fret
+  price: number; // $/jour
+  mark: number; // MTM (USD) à la dernière marge de variation
+}
+
+export type AssetType = 'oilfield' | 'mine_cu' | 'mine_coal' | 'refinery' | 'tank' | 'warehouse' | 'silo' | 'gas_storage' | 'terminal' | 'vessel';
+export type AssetPolicy = 'prudent' | 'équilibré' | 'agressif';
+
+export interface AssetState {
+  id: string;
+  defId: string;
+  share: number; // part détenue (coentreprise)
+  status: 'building' | 'operating' | 'maintenance' | 'strike' | 'damaged';
+  statusUntil: Day;
+  condition: number; // 0..100
+  utilization: number; // 0..1
+  managerId: string | null;
+  policy: AssetPolicy;
+  cost: number; // coût d'acquisition (pour l'amortissement)
+  bookValue: number; // valeur comptable (coût − amortissements − dépréciations)
+  purchaseDay: Day;
+  lifeDays: number;
+  produced: number;
+  cumCash: number;
+  crack?: number; // marge de raffinage courante (raffineries)
+  vesselMode?: 'charter' | 'own'; // navire : affrété à d'autres au taux du marché, ou réservé à nos voyages
+  tcEndDay?: Day; // navire pris en affrètement à temps (pas possédé)
+  hire?: number; // loyer journalier d'un affrètement à temps
+  busyUntil?: Day; // navire occupé par un de nos voyages
+}
+
+export interface Manager {
+  id: string;
+  name: string;
+  skill: number; // 0..100
+  salary: number; // mensuel
+  specialty: 'production' | 'stockage' | 'logistique';
+  assetId: string | null;
+  mistakes: number;
+}
+
+export interface AssetOpportunity {
+  id: string;
+  defId: string;
+  kind: 'acquisition' | 'greenfield' | 'stream' | 'royalty' | 'offtake' | 'tcin';
+  share: number;
+  price: number;
+  expiresDay: Day;
+  counterpartyId?: string;
+  months?: number;
+  pct?: number; // part de production (stream) ou de revenu (royalty)
+  pricePct?: number; // stream : prix payé en % du spot à la livraison
+  qtyPerMonth?: number; // offtake
+  discount?: number; // offtake : décote vs spot (unité de cotation)
+  hire?: number; // affrètement à temps : $/jour
+}
+
+export interface StreamPosition {
+  id: string;
+  kind: 'stream' | 'royalty' | 'offtake';
+  defId?: string;
+  counterpartyId: string;
+  commodity: CommodityId;
+  locationId: string;
+  pct: number;
+  pricePct: number;
+  qtyPerMonth: number;
+  discount: number;
+  prepayLeft: number; // offtake : prépaiement restant à rembourser par les livraisons
+  monthsLeft: number;
+  monthsTotal: number;
+  upfront: number;
+  received: number;
+}
+
+export interface Automation {
+  autoRoll: boolean;
+  autoHedge: { on: boolean; ratio: number; threshold: number };
+  autoSellProduction: boolean;
+  autoLogistics: boolean;
+  marineInsurance: boolean;
 }
 
 export type Action =
@@ -562,7 +698,17 @@ export type Action =
   | { type: 'DISMISS_ADVICE'; id: string }
   | { type: 'RELOCATE_HQ'; city: string }
   | { type: 'SET_CREDIT_INSURANCE'; on: boolean }
-  | { type: 'SET_CSA'; bankId: string; on: boolean };
+  | { type: 'SET_CSA'; bankId: string; on: boolean }
+  | { type: 'SHIP_CARGO'; lotId: string; to: string; qty?: number; vesselAssetId?: string }
+  | { type: 'TRADE_FFA'; index: FreightIndex; month: MonthIndex; days: number }
+  | { type: 'BUY_OPPORTUNITY'; id: string }
+  | { type: 'SELL_ASSET'; id: string }
+  | { type: 'SET_ASSET'; id: string; utilization?: number; policy?: AssetPolicy; vesselMode?: 'charter' | 'own' }
+  | { type: 'MAINTAIN_ASSET'; id: string }
+  | { type: 'HIRE_MANAGER'; id: string; assetId: string }
+  | { type: 'FIRE_MANAGER'; id: string }
+  | { type: 'HEDGE_PRODUCTION'; id: string; months: number; ratio: number }
+  | { type: 'SET_AUTOMATION'; patch: Partial<Automation> };
 
 export interface ActionResult {
   ok: boolean;

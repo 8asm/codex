@@ -8,7 +8,7 @@ Pas de guerre : des cargaisons, des courbes forward, des appels de marge et du c
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 77 tests du moteur (pricing, options, marge SPAN, VaR, événements, sanctions, crédit, concurrents, déterminisme)
+npm test           # 96 tests du moteur (pricing, options, marge SPAN, VaR, événements, crédit, fret, logistique, actifs, déterminisme)
 npm run build      # build de production dans dist/
 ```
 
@@ -44,9 +44,19 @@ npm run build      # build de production dans dist/
 - **Risque de contrepartie** : notations, défauts avec close-out netting et récupération partielle, assurance-crédit, CSA par banque.
 - **Calques du globe** : tensions, sanctions, météo, prix, concurrents.
 
+## Phase 4 — ce qui s'ajoute
+
+- **Fret** : quatre marchés d'affrètement (Capesize, Panamax, Supramax, Aframax), très volatils ; FFA pour couvrir ou spéculer.
+- **Logistique** : routes maritimes réelles (Suez, Panama, Malacca, Ormuz, Bab-el-Mandeb, le Cap) avec détours quand un passage ferme. Devis de fret détaillé et arbitrage géographique. Navires animés sur le globe, surestaries, pertes en transit, accidents, assurance marine.
+- **Physique réaliste** : Incoterms qui déterminent qui transporte, laycan, tolérance de quantité valorisée comme une option, courbe de basis liée au fret, livraison physique des futures cuivre, gaz et blé.
+- **18 actifs industriels** : gisements, mines, raffinerie, cuves, entrepôts, silos, stockage de gaz, terminal, navires. Acquisition, coentreprise, construction, stream, royalty, offtake prépayé, affrètement à temps. Valorisation DCF sur la courbe forward, amortissement et dépréciation, accidents, grèves, nationalisations.
+- **Managers** à qui déléguer un actif avec une politique (prudente, équilibrée, agressive) : bons ou mauvais.
+- **Automatisation** (⚙️ ou `U`) : trésorerie, roll, couverture de base, logistique, vente de la production, assurance.
+- **Calques** routes et stocks ; rails, barges et pipelines lumineux ; actifs animés.
+
 ### Raccourcis
 
-`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `C` codex · `Échap` fermer
+`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `U` automatisation · `C` codex · `Échap` fermer
 
 ## Structure
 

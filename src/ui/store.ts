@@ -10,8 +10,8 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals';
-export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation';
+export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals' | 'routes' | 'stocks';
 export type Speed = 0 | 1 | 2 | 5;
 
 export interface Toast {
@@ -82,7 +82,7 @@ export const useStore = create<UIState>((set, get) => ({
   modal: null,
   codexSeen: loadSeen(),
   codexFocus: null,
-  layers: { tension: false, sanctions: false, meteo: true, prix: false, rivals: true },
+  layers: { tension: false, sanctions: false, meteo: true, prix: false, rivals: true, routes: false, stocks: false },
   toggleLayer: (l) => {
     const cur = get().layers;
     // tensions et sanctions partagent le même calque coloré : exclusifs

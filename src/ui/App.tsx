@@ -17,12 +17,17 @@ import { AdvisorBar } from './Advisors';
 import { NewsPanel } from './NewsPanel';
 import { WorldPanel } from './WorldPanel';
 import { RivalsPanel } from './RivalsPanel';
+import { LogisticsPanel } from './LogisticsPanel';
+import { AssetsPanel } from './AssetsPanel';
+import { AutomationPanel } from './AutomationPanel';
 import type { LayerId } from './store';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
 
 const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'market', icon: '📈', label: 'Marchés', key: 'M' },
-  { id: 'physical', icon: '🚢', label: 'Physique', key: 'P' },
+  { id: 'physical', icon: '📦', label: 'Physique', key: 'P' },
+  { id: 'logistics', icon: '🚢', label: 'Fret', key: 'F' },
+  { id: 'assets', icon: '🏭', label: 'Actifs', key: 'I' },
   { id: 'options', icon: '🎯', label: 'Options', key: 'O' },
   { id: 'book', icon: '📒', label: 'Livre', key: 'L' },
   { id: 'risk', icon: '🛡️', label: 'Risque', key: 'R' },
@@ -80,6 +85,7 @@ function useKeyboard() {
       else if (e.key === '2') st.setSpeed(2);
       else if (e.key === '3') st.setSpeed(5);
       else if (e.key.toLowerCase() === 'n' && st.speed === 0) st.step();
+      else if (e.key.toLowerCase() === 'u') st.setPanel('automation');
       else {
         const d = DOCK.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
         if (d) st.setPanel(d.id);
@@ -109,7 +115,11 @@ export function App() {
   const showRisk = !!game && (hasPositions || game.history.length > 10);
   const showWorld = !!game && (game.history.length > 8 || game.world.sanctions.length > 0 || game.world.effects.length > 0);
   const showRivals = !!game && (game.history.length > 4 || game.forwards.length > 0);
-  const visible = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
+  const showLogi = !!game && (game.history.length > 6 || game.inventory.length > 0 || game.forwards.length > 0);
+  const showAssets = !!game && (game.history.length > 12 || game.assets.length > 0);
+  const visible0 = (id: PanelId) => (id === 'logistics' ? showLogi : id === 'assets' ? showAssets : id === 'automation' ? false : true);
+  const visible = (id: PanelId) => visible0(id) && visible1(id);
+  const visible1 = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
   return (
     <div className="app">
@@ -123,7 +133,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P O L R T V A G K C : panneaux · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P F I O L R T V A G K C U : panneaux · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -146,6 +156,9 @@ export function App() {
             {panel === 'news' && <NewsPanel />}
             {panel === 'world' && <WorldPanel />}
             {panel === 'rivals' && <RivalsPanel />}
+            {panel === 'logistics' && <LogisticsPanel />}
+            {panel === 'assets' && <AssetsPanel />}
+            {panel === 'automation' && <AutomationPanel />}
           </div>
           <LayerBar />
           <AdvisorBar />
@@ -166,6 +179,8 @@ const LAYERS: { id: LayerId; icon: string; label: string }[] = [
   { id: 'meteo', icon: '🌀', label: 'Météo' },
   { id: 'prix', icon: '📊', label: 'Prix' },
   { id: 'rivals', icon: '🏢', label: 'Concurrents' },
+  { id: 'routes', icon: '🧭', label: 'Routes' },
+  { id: 'stocks', icon: '🛢️', label: 'Stocks' },
 ];
 
 function LayerBar() {

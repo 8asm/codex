@@ -182,6 +182,9 @@ export function applyImpact(state: GameState, im: Impact, frac = 1) {
       state.inventory = state.inventory.filter((l) => l.qty > 1e-9);
       break;
     }
+    case 'freight':
+      m.freight[im.idx] += im.v * frac;
+      break;
     case 'companyHit':
     case 'companyDefault':
       // traités par le module des sociétés (companies.ts), qui s'enregistre ici pour éviter une dépendance circulaire

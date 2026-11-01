@@ -104,7 +104,10 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
           </div>
         </div>
       </div>
-      <button className="ghost mute" onClick={() => { setMuted(!muted); setM(!muted); }} title="Son">{muted ? '🔇' : '🔊'}</button>
+      <div className="hud-tools">
+        <button className="ghost mute" onClick={() => setPanel('automation')} title="Automatisation (U)">⚙️</button>
+        <button className="ghost mute" onClick={() => { setMuted(!muted); setM(!muted); }} title="Son">{muted ? '🔇' : '🔊'}</button>
+      </div>
     </header>
   );
 }

@@ -40,7 +40,7 @@ interface Template {
   build: (s: GameState) => Fired | null;
 }
 
-const NUMERIC = new Set(['chi', 'xi', 'iv', 'basis', 'enso', 'stability', 'tension']);
+const NUMERIC = new Set(['chi', 'xi', 'iv', 'basis', 'enso', 'stability', 'tension', 'freight']);
 
 function scale(imps: Impact[], f: number): Impact[] {
   return imps.filter((i) => NUMERIC.has(i.k)).map((i) => ({ ...(i as Impact & { v: number }), v: (i as { v: number }).v * f }) as Impact);
@@ -169,8 +169,8 @@ const TEMPLATES: Template[] = [
       return {
         news: { headline: 'Un porte-conteneurs géant bloque le canal entre la Méditerranée et la mer Rouge', body: 'Des centaines de navires attendent. Les cargaisons vers l’Europe et l’Asie sont retardées ; les primes physiques s’envolent.', tone: 'up', major: true, category: 'logistique' },
         impacts: [
-          { k: 'effect', effect: { label: 'Canal bloqué', icon: '🚢', lat: 30.5, lon: 32.35, untilDay: addBusinessDays(s.day, days), layer: 'logistique', basisShift: { BRENT_RTM: 0.8, BRENT_SIN: 0.5, CU_RTM: 45, WHT_DXB: 18, COAL_ARA: 2.5 } } },
-          { k: 'chi', c: 'BRENT', v: 0.015 },
+          { k: 'effect', effect: { label: 'Canal bloqué', icon: '🚢', lat: 30.5, lon: 32.35, untilDay: addBusinessDays(s.day, days), layer: 'logistique', closes: ['suez'], basisShift: { BRENT_RTM: 0.8, BRENT_SIN: 0.5, CU_RTM: 45, WHT_DXB: 18, COAL_ARA: 2.5 } } },
+          { k: 'chi', c: 'BRENT', v: 0.015 }, { k: 'freight', idx: 'AFRA', v: 0.25 }, { k: 'freight', idx: 'CAPE', v: 0.15 },
         ],
         followUps: [{ inDays: days + 1, impacts: [], news: { headline: 'Le canal est rouvert à la navigation', body: 'Le porte-conteneurs a été déséchoué ; les files d’attente se résorbent.', tone: 'down', major: false, category: 'logistique' } }],
       };
@@ -244,6 +244,41 @@ const TEMPLATES: Template[] = [
         ? { news: { headline: 'Incident naval entre l’Occident et la Sarmatie', body: 'Les chancelleries haussent le ton ; les options énergétiques se renchérissent.', tone: 'alert', major: false, category: 'géopolitique', zone: 'SARM' }, impacts: [{ k: 'tension', v: randInt(s.rng, 7, 14) }, { k: 'iv', c: 'TTF', v: 0.08 }, { k: 'iv', c: 'BRENT', v: 0.05 }, { k: 'chi', c: 'TTF', v: 0.04 }] }
         : { news: { headline: 'Sommet diplomatique : signes de détente entre les blocs', body: 'Les marchés respirent.', tone: 'down', major: false, category: 'géopolitique' }, impacts: [{ k: 'tension', v: -randInt(s.rng, 6, 12) }, { k: 'iv', c: 'TTF', v: -0.05 }] };
     },
+  },
+  // ------------------------------------------------ fret et routes maritimes
+  {
+    key: 'redsea', weight: 0.0007, cooldown: 300, geo: true,
+    build: (s) => {
+      const days = randInt(s.rng, 20, 45);
+      return {
+        news: { headline: 'Attaques de navires en mer Rouge : les armateurs évitent Bab-el-Mandeb', body: 'Les navires contournent l’Afrique par le cap de Bonne-Espérance : deux semaines de plus, assurances « risque de guerre » en flèche.', tone: 'up', major: true, category: 'logistique' },
+        impacts: [
+          { k: 'effect', effect: { label: 'Mer Rouge fermée', icon: '⚠️', lat: 13.5, lon: 42.5, untilDay: addBusinessDays(s.day, days), layer: 'logistique', closes: ['bab'], basisShift: { BRENT_RTM: 0.6, WHT_DXB: 10, CU_RTM: 25 } } },
+          { k: 'freight', idx: 'AFRA', v: 0.3 }, { k: 'freight', idx: 'CAPE', v: 0.2 }, { k: 'freight', idx: 'PMX', v: 0.15 }, { k: 'tension', v: 6 },
+        ],
+      };
+    },
+  },
+  {
+    key: 'panama', weight: 0.0008, cooldown: 300,
+    build: (s) => ({
+      news: { headline: 'Sécheresse au canal de Panama : passages limités', body: 'Le niveau des lacs ne permet plus le passage des navires chargés : détour par le cap Horn.', tone: 'up', major: false, category: 'logistique' },
+      impacts: [{ k: 'effect', effect: { label: 'Panama restreint', icon: '🏜️', lat: 9.1, lon: -79.7, untilDay: addBusinessDays(s.day, randInt(s.rng, 15, 35)), layer: 'logistique', closes: ['panama'] } }, { k: 'freight', idx: 'PMX', v: 0.12 }],
+    }),
+  },
+  {
+    key: 'chinaboom', weight: 0.002, cooldown: 60,
+    build: (s) => {
+      const up = chance(s.rng, 0.55);
+      return up
+        ? { news: { headline: 'Importations chinoises de minerai et de charbon au plus haut : les vraquiers s’arrachent', body: 'Le taux d’affrètement des Capesize bondit.', tone: 'up', major: false, category: 'logistique' }, impacts: [{ k: 'freight', idx: 'CAPE', v: 0.35 }, { k: 'freight', idx: 'PMX', v: 0.15 }] }
+        : { news: { headline: 'Flotte de vraquiers en surcapacité : les taux s’effondrent', body: 'Livraisons record de navires neufs, demande atone.', tone: 'down', major: false, category: 'logistique' }, impacts: [{ k: 'freight', idx: 'CAPE', v: -0.3 }, { k: 'freight', idx: 'PMX', v: -0.2 }, { k: 'freight', idx: 'SMX', v: -0.15 }] };
+    },
+  },
+  {
+    key: 'tankers', weight: 0.0015, cooldown: 60,
+    when: (s) => s.world.sanctions.length > 0 || s.world.blocTension > 55,
+    build: () => ({ news: { headline: 'Flotte « fantôme » et sanctions : les pétroliers conformes se raréfient', body: 'Les routes s’allongent, les taux des Aframax s’envolent.', tone: 'up', major: false, category: 'logistique' }, impacts: [{ k: 'freight', idx: 'AFRA', v: 0.35 }] }),
   },
   // ------------------------------------------------ météo
   {

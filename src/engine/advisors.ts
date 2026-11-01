@@ -20,6 +20,9 @@ import { cpRating } from './credit';
 import { zoneOf } from './world';
 import { CITY_BY_ID } from '../data/cities';
 import { forwardMtm } from './valuation';
+import { shipQuote } from './logistics';
+import { ASSET_DEF_BY_ID } from '../data/assets';
+import { isProducer, nationalisationPA, opportunityValue } from './assets';
 
 const forwardMtmFor = (s: GameState, d: ForwardDeal) => forwardMtm(s, d);
 import { exposures, nav } from './valuation';
@@ -250,6 +253,48 @@ function rules(state: GameState): Draft[] {
   if (state.world.effects.some((e) => e.label.startsWith('Ouragan')) && state.forwards.some((d) => d.locationId.endsWith('USGC') || d.locationId === 'WHT_GULF')) {
     out.push({ advisor: 'ops', mood: 'worried', rule: 'ops.hurricane', cooldown: 10, text: 'Ouragan dans le Golfe : nos cargaisons de Houston risquent des retards et le différentiel local s’effondre.' });
   }
+
+  // ---------------------------------------------------------------- PHASE 4 : logistique, actifs
+  for (const lot of state.inventory) {
+    const spec = COMMODITIES[lot.commodity];
+    let best: null | { to: string; arb: number; usd: number } = null;
+    for (const loc of spec.physical.locations) {
+      if (loc.id === lot.locationId) continue;
+      const q = shipQuote(state, lot.commodity, lot.locationId, loc.id, lot.qty);
+      if (q.ok && q.arbUsd > 0 && (!best || q.arbUsd > best.usd)) best = { to: loc.label, arb: q.arbPerUnit, usd: q.arbUsd };
+    }
+    if (best && best.usd > 50_000) {
+      out.push({ advisor: 'analyst', mood: 'happy', rule: `analyst.arb.${lot.id}`, cooldown: 8, text: `Arbitrage géographique : notre stock de ${spec.short} vaudrait ${best.arb.toFixed(spec.decimals)} ${spec.priceUnit} de plus livré ${best.to}, fret, assurance et financement déduits (≈ ${fmtK(best.usd)}).`, action: { kind: 'panel', panel: 'logistics' } });
+      break;
+    }
+  }
+  for (const p of state.futures) {
+    const spec = COMMODITIES[p.commodity];
+    if (spec.settlement.kind !== 'physical' || state.automation.autoRoll) continue;
+    const ltd = lastTradingDay(spec, p.month);
+    if (ltd - state.day <= 6 && ltd >= state.day) {
+      out.push({ advisor: 'ops', mood: 'worried', rule: `ops.delivery.${p.commodity}${p.month}`, cooldown: 6, text: `Attention : le future ${spec.short} se livre physiquement. Si on garde ${p.lots} lots ${monthLabel(p.month)} après le ${formatDayShort(ltd)}, ${p.lots > 0 ? 'on recevra la marchandise et il faudra la payer et la stocker' : 'il faudra livrer depuis notre stock, sinon rachat d’urgence'}. Rouler ?`, action: { kind: 'panel', panel: 'automation' } });
+    }
+  }
+  for (const a of state.assets) {
+    const d = ASSET_DEF_BY_ID[a.defId]!;
+    if (isProducer(d) && !a.managerId && !state.otc.some((x) => x.commodity === d.commodity && x.qty < 0)) {
+      out.push({ advisor: 'risk', mood: 'worried', rule: `risk.prod.${a.id}`, cooldown: 25, text: `La production de ${d.name} n’est pas couverte : chaque baisse de 10 % du ${COMMODITIES[d.commodity].short} ampute directement nos marges. Un manager prudent couvrirait 80 % par des swaps.`, action: { kind: 'panel', panel: 'assets' } });
+    }
+    const st = state.world.zones[d.zone]?.stability ?? 80;
+    if (st < 45 && d.type !== 'vessel') out.push({ advisor: 'legal', mood: 'worried', rule: `legal.nat.${a.id}`, cooldown: 30, text: `Stabilité de ${state.world.zones[d.zone] ? d.zone : ''} à ${Math.round(st)}/100 : risque de nationalisation de ${d.name} (≈ ${Math.round(nationalisationPA(st) * 100)} % par an). L’indemnisation serait dérisoire.` });
+    if (a.condition < 35 && !a.managerId && a.status === 'operating') out.push({ advisor: 'ops', mood: 'worried', rule: `ops.cond.${a.id}`, cooldown: 10, text: `${d.name} est usé (${Math.round(a.condition)}/100) : le risque d’accident grimpe. Programmons une maintenance.`, action: { kind: 'panel', panel: 'assets' } });
+  }
+  for (const o of state.opportunities) {
+    if (o.kind !== 'acquisition' || o.price <= 0) continue;
+    const v = opportunityValue(state, o);
+    if (v > o.price * 1.15) {
+      out.push({ advisor: 'analyst', mood: 'happy', rule: `analyst.opp.${o.id}`, cooldown: 30, text: `${ASSET_DEF_BY_ID[o.defId]!.name} est proposé ${fmtM(o.price)} ; ma valorisation sur la courbe forward donne ${fmtM(v)}. À étudier (le prix des matières premières peut changer d’ici là).`, action: { kind: 'panel', panel: 'assets' } });
+      break;
+    }
+  }
+  const late = state.voyages.find((v) => v.delayDays >= 2);
+  if (late) out.push({ advisor: 'ops', mood: 'worried', rule: `ops.late.${late.id}`, cooldown: 8, text: `Notre cargaison de ${COMMODITIES[late.commodity].short} est bloquée par la fermeture d’un passage : ${late.delayDays} jours de retard. Les livraisons dépendantes sont menacées.`, action: { kind: 'panel', panel: 'logistics' } });
 
   if (freeCash(state) < 0 && !co.marginCall) {
     out.push({ advisor: 'risk', mood: 'angry', rule: 'risk.freecash', cooldown: 2, text: 'Notre cash libre est négatif. À la clôture, ce sera un appel de marge.', action: { kind: 'panel', panel: 'treasury' } });

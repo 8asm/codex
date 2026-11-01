@@ -5,7 +5,7 @@ import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { basis } from '../engine/market';
 import { roundTo } from '../engine/math';
-import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerBlock, offerDeliveryDay, offerEdge, offerPrice, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerBlock, offerDeliveryDay, offerEdge, offerPrice, offerToleranceValue, REMOTE_SPOT_PENALTY } from '../engine/physical';
 import { cpRating } from '../engine/credit';
 import { ZONE_BY_ID } from '../data/world';
 import type { CommodityId, Offer } from '../engine/types';
@@ -16,6 +16,15 @@ import { price, qty, signedUsd, tone, usd } from './format';
 import { useStore } from './store';
 
 const INCOTERM_TERM: Record<string, string> = { FOB: 'fob', CIF: 'cif', CFR: 'cif', DAP: 'dap', DES: 'dap', FCA: 'fob', HUB: 'basis' };
+const INCOTERM_DUTY: Record<string, string> = {
+  FOB: 'livré à bord au port de départ — l’acheteur affrète, paie fret et assurance et porte le risque dès le chargement',
+  CFR: 'le vendeur paie le fret jusqu’à destination ; le risque passe à l’acheteur au chargement',
+  CIF: 'le vendeur paie fret et assurance jusqu’à destination ; le risque passe à l’acheteur au chargement',
+  DAP: 'livré à destination — le vendeur porte transport et risque jusqu’au lieu convenu',
+  DES: 'livré à destination à bord du navire',
+  FCA: 'remis au transporteur (rail, barge) au lieu convenu',
+  HUB: 'transfert de propriété sur le hub virtuel, sans transport physique',
+};
 
 export function PhysicalPanel() {
   const g = useStore((s) => s.game)!;
@@ -91,6 +100,10 @@ function OfferCard({ o }: { o: Offer }) {
         <div><span>Diff de marché</span><b>{fair >= 0 ? '+' : ''}{price(o.commodity, roundTo(fair, spec.tick))}</b></div>
         <div><span>Prix fixe</span><b>{price(o.commodity, px)} {spec.priceUnit}</b></div>
         <div><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b></div>
+      </div>
+      <div className="incoterm small">
+        <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.incoterm}</Term> : {INCOTERM_DUTY[loc.incoterm]} · laycan {formatDayShort(offerDeliveryDay(o) - 2)} – {formatDayShort(offerDeliveryDay(o) + 2)}
+        {o.tolerance ? <> · <Term id="tolerance">tolérance ±{Math.round(o.tolerance * 100)} %</Term> au choix du vendeur ({signedUsd(offerToleranceValue(g, o))})</> : null}
       </div>
       {block && <div className="offer-block">⛔ {block}{o.kycReadyDay && g.day < o.kycReadyDay ? ` (prêt le ${formatDayShort(o.kycReadyDay)})` : ''}</div>}
       <div className="offer-actions">

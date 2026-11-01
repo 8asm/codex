@@ -19,7 +19,8 @@ import { stepFactors } from './model';
 import { vanillaPrice } from './pricing';
 import { normal, seedRng } from './rng';
 import type { Book, CommodityId, GameState, MarketState } from './types';
-import { bookOf, otcDeltaUnits, valueBy } from './valuation';
+import { bookOf, freightBookValue, otcDeltaUnits, valueBy } from './valuation';
+import { FREIGHT, FREIGHT_IDS } from '../data/freight';
 
 export const VAR_SCENARIOS = 400;
 /** Horizon d'un jour ouvré moyen (≈ 1,4 jour calendaire, week-ends compris). */
@@ -27,6 +28,7 @@ export const VAR_DT = 1.4 / 365;
 const CHOL = cholesky(CORRELATION);
 
 interface Scenario {
+  fr: number[];
   zc: number[];
   zx: number[];
   basis: number[];
@@ -43,6 +45,7 @@ function scenarios(seed: string, day: number): Scenario[] {
   const out: Scenario[] = [];
   for (let i = 0; i < VAR_SCENARIOS; i++) {
     out.push({
+      fr: [0, 1, 2, 3].map(() => normal(rng)),
       zc: mulLower(CHOL, CORRELATION.map(() => normal(rng))),
       zx: mulLower(CHOL, CORRELATION.map(() => normal(rng))),
       basis: Array.from({ length: 20 }, () => normal(rng)),
@@ -68,6 +71,7 @@ function applyScenario(base: MarketState, s: Scenario): MarketState {
     m.ivLevel[c] = Math.max(IV_PARAMS.min, m.ivLevel[c] + IV_PARAMS.sigma * Math.sqrt(VAR_DT) * s.iv[i]!);
   });
   m.fxLog += 0.08 * Math.sqrt(VAR_DT) * s.zc[5]!;
+  FREIGHT_IDS.forEach((i, j) => (m.freight[i] += FREIGHT[i].sigma * Math.sqrt(VAR_DT) * s.fr[j]!));
   return m;
 }
 
@@ -81,15 +85,17 @@ export interface VarResult {
 /** VaR / ES 99 % à 1 jour par revalorisation complète. */
 export function computeVar(state: GameState, book: Book = bookOf(state)): VarResult {
   const v0 = valueBy(state, book);
+  const f0 = freightBookValue(state, book);
   const scen = scenarios(state.config.seed, state.day);
   const totals: number[] = [];
   const by: Record<CommodityId, number[]> = Object.fromEntries(COMMODITY_IDS.map((c) => [c, []])) as never;
-  const empty = !book.futures.length && !book.forwards.length && !book.inventory.length && !book.options.length && !book.otc.length;
+  const empty = !book.futures.length && !book.forwards.length && !book.inventory.length && !book.options.length && !book.otc.length && !(book.voyages?.length) && !(book.ffa?.length);
   if (empty) return { var99: 0, es99: 0, varBy: Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as never, pnls: [] };
   for (const s of scen) {
     const m = applyScenario(state.market, s);
-    const v = valueBy({ market: m, day: state.day, fixings: state.fixings }, book);
-    let t = 0;
+    const view = { market: m, day: state.day, fixings: state.fixings, freightFixings: state.freightFixings } as unknown as GameState;
+    const v = valueBy(view, book);
+    let t = freightBookValue(view, book) - f0;
     for (const c of COMMODITY_IDS) {
       const d = v[c] - v0[c];
       by[c].push(d);

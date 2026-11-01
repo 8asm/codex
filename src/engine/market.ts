@@ -7,6 +7,8 @@ import type { Day, MonthIndex } from './calendar';
 import { yearFrac } from './calendar';
 import { listedMonths, pricingDay } from './contracts';
 import { cholesky, mulLower } from './math';
+import { freightForward, initFreight, stepFreight } from './freight';
+import { FREIGHT } from '../data/freight';
 import { forwardVol, lnForward, stepFactors } from './model';
 import { chance, normal, type RngState } from './rng';
 import type { CommodityId, CommodityMarket, Currency, MarketState } from './types';
@@ -54,6 +56,7 @@ export function createMarket(startDay: Day, volatility = 1): MarketState {
     halted: {},
     haltPending: {},
     drift: {},
+    freight: initFreight(),
   };
   for (const id of COMMODITY_IDS) m.commodities[id].imRate = exchangeImRate(m, id);
   snapshot(m);
@@ -67,7 +70,7 @@ export function baseVolMult(m: MarketState, volatility: number): number {
 function snapshot(m: MarketState) {
   const f = {} as Record<CommodityId, [number, number]>;
   for (const id of COMMODITY_IDS) f[id] = [m.commodities[id].chi, m.commodities[id].xi];
-  m.history.push({ day: m.day, f, fxLog: m.fxLog, volMult: m.volMult });
+  m.history.push({ day: m.day, f, fxLog: m.fxLog, volMult: m.volMult, fr: { ...m.freight } });
   if (m.history.length > 320) m.history.shift();
 }
 
@@ -102,10 +105,30 @@ export function spotPrice(m: MarketState, c: CommodityId): number {
   return forwardAt(m, c, m.day);
 }
 
+/** Différentiel physique spot d'un lieu. */
 export function basis(m: MarketState, c: CommodityId, locationId: string): number {
-  const loc = COMMODITIES[c].physical.locations.find((l) => l.id === locationId)!;
-  return loc.basisMean + (m.commodities[c].basisDev[locationId] ?? 0) + (m.basisShift?.[locationId] ?? 0);
+  return basisAt(m, c, locationId, m.day);
 }
+
+/**
+ * Courbe de basis : différentiel attendu pour une livraison à `day`.
+ *   b(T) = moyenne + écart × e^{−κb τ} + décalage d'événement + lien fret
+ * L'écart courant (OU, κb = 4/an) se résorbe avec l'échéance ; le lien fret suit le forward du taux
+ * d'affrètement : quand le fret flambe, les prix rendus montent et les prix FOB baissent.
+ */
+export function basisAt(m: MarketState, c: CommodityId, locationId: string, day: Day): number {
+  const loc = COMMODITIES[c].physical.locations.find((l) => l.id === locationId)!;
+  const tau = Math.max(0, yearFrac(m.day, day));
+  let b = loc.basisMean + (m.commodities[c].basisDev[locationId] ?? 0) * Math.exp(-BASIS_KAPPA * tau) + (m.basisShift?.[locationId] ?? 0);
+  if (loc.freightLink && m.freight) {
+    const fr = FREIGHT[loc.freightLink.index];
+    b += loc.freightLink.perUnit * (freightForward(m, loc.freightLink.index, day) / fr.mean - 1) * FREIGHT_LINK_HIRE_SHARE;
+  }
+  return b;
+}
+
+/** Part de l'affrètement dans le coût total d'un voyage (le reste : soutes, port) : sensibilité du différentiel au fret. */
+export const FREIGHT_LINK_HIRE_SHARE = 0.6;
 
 /** USD par unité de devise. */
 export function fx(m: MarketState, ccy: Currency): number {
@@ -197,6 +220,7 @@ export function stepMarket(m: MarketState, rng: RngState, toDay: Day, volatility
     if (Math.abs(m.impact[k]!) < 1e-6) delete m.impact[k];
   }
 
+  stepFreight(m, rng, dt);
   m.day = toDay;
   snapshot(m);
   return info;
@@ -214,6 +238,7 @@ export function cloneMarket(m: MarketState): MarketState {
     day: m.day, volRegime: m.volRegime, volMult: m.volMult, fxLog: m.fxLog, commodities,
     history: [], impact: { ...m.impact }, ivLevel: { ...m.ivLevel }, rateShift: m.rateShift, volShift: m.volShift,
     rates: { ...m.rates }, basisShift: { ...m.basisShift }, halted: { ...m.halted }, haltPending: { ...m.haltPending }, drift: { ...m.drift },
+    freight: { ...m.freight },
   };
 }
 

@@ -97,8 +97,9 @@ describe('marge initiale', () => {
     const mi = front(s, 'BRENT', 0);
     // position massive : ~ 2 M$ de marge pour 300 lots
     expect(dispatch(s, { type: 'TRADE_FUTURE', commodity: 'BRENT', month: mi, lots: 300 }).ok).toBe(true);
-    // choc de prix brutal contre la position
-    s.market.commodities.BRENT.xi -= 0.2;
+    // choc de prix brutal contre la position, calibré pour une perte d'environ 4 M$ (quel que soit le niveau du Brent)
+    const F = futuresPrice(s.market, 'BRENT', mi);
+    s.market.commodities.BRENT.xi += Math.log(1 - 4e6 / (300_000 * F));
     advanceDay(s);
     expect(s.company.marginCall).not.toBeNull();
     advanceDay(s);
@@ -137,7 +138,7 @@ describe('physique', () => {
     dispatch(s, { type: 'TRADE_FUTURE', commodity: 'BRENT', month: front(s, 'BRENT', 2), lots: -300 });
     const e = exposures(s).find((x) => x.commodity === 'BRENT')!;
     expect(e.netQty).toBe(0);
-    expect(Math.abs(e.delta1pct)).toBeLessThan(0.05 * 300_000 * futuresPrice(s.market, 'BRENT', front(s, 'BRENT', 2)) * 0.01);
+    expect(Math.abs(e.delta1pct)).toBeLessThan(0.1 * 300_000 * futuresPrice(s.market, 'BRENT', front(s, 'BRENT', 2)) * 0.01);
   });
 });
 

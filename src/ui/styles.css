@@ -410,3 +410,30 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .offer-block { font-size: .8rem; color: var(--warn); background: rgba(251,191,36,.08); border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; }
 .rank { color: var(--gold); cursor: pointer; font-weight: 800; }
 .link { cursor: pointer; }
+
+/* ---------------------------------------------------------------- Phase 4 */
+.dock { gap: 4px; }
+.dock button { height: 46px; width: 62px; border-radius: 13px; }
+.dock button span { font-size: 1.15rem; }
+.dock button small { font-size: .6rem; }
+.hud-tools { display: flex; flex-direction: column; justify-content: center; }
+.ship-card, .asset-card, .opp-card { border: 1px solid rgba(255,255,255,0.12); border-left: 4px solid var(--c, var(--gold)); background: rgba(0,0,0,0.2); border-radius: 12px; padding: 10px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+.tbl.dest tr { cursor: pointer; }
+.tbl.dest tr.sel td { background: rgba(255,209,102,.15); }
+.freight-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.fr-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: rgba(0,0,0,.22); box-shadow: none; text-align: left; }
+.fr-card .big { font-family: 'Baloo 2'; font-size: 1.05rem; }
+.opps { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.opp-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.opp-head small { margin-left: auto; }
+.asset-card.damaged { border-left-color: var(--neg); } .asset-card.building { border-left-color: #94a3b8; } .asset-card.maintenance, .asset-card.strike { border-left-color: var(--warn); } .asset-card.operating { border-left-color: var(--pos); }
+.badge.st-damaged { background: rgba(251,113,133,.25); color: var(--neg); } .badge.st-operating { background: rgba(74,222,128,.2); color: var(--pos); }
+.badge.st-maintenance, .badge.st-strike { background: rgba(251,191,36,.2); color: var(--warn); }
+.cond { display: inline-block; width: 50px; height: 7px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; vertical-align: middle; }
+.cond i { display: block; height: 100%; }
+.asset-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.asset-actions select { font-size: .8rem; max-width: 230px; }
+.slider { display: flex; gap: 8px; align-items: center; }
+.auto-row { display: flex; gap: 10px; align-items: flex-start; background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+.auto-row input { margin-top: 4px; }
+.incoterm { background: rgba(125,211,252,.08); border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; color: #cbd5e1; }

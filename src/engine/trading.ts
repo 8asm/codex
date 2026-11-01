@@ -17,6 +17,7 @@ import { depthLots, execPrice, halfSpread, liquidityLabel, quote } from './liqui
 import { contractVol, futuresPrice, fx, IM_HORIZON, IM_Z, isHalted } from './market';
 import { recomputeIm, totalIm } from './margin';
 import { rcfHeadroom } from './treasury';
+import { localSpot } from './valuation';
 import type { ActionResult, CommodityId, FuturesPosition, GameState, OptType, OptionPosition } from './types';
 
 /** Coefficient d'impact permanent (fraction de la demi-fourchette relative, par profondeur traitée). */
@@ -205,13 +206,44 @@ export function settleVariationMargin(state: GameState) {
   }
 }
 
-/** Échéances arrivées à leur dernier jour : réglées en cash au prix final (déjà payé par la VM du jour). */
+/**
+ * Échéances arrivées à leur dernier jour. Brent et charbon se règlent en cash au prix final (déjà payé par la
+ * VM du jour). Cuivre, TTF et blé se LIVRENT physiquement, comme sur les vraies bourses : le long reçoit la
+ * marchandise dans le lieu de livraison (entrepôt agréé, hub gazier, silo) et la paie au prix final ; le court
+ * doit livrer depuis son stock dans ce lieu, sinon il rachète d'urgence au spot local + 3 %.
+ */
+export const DELIVERY_BUYIN_PREMIUM = 0.03;
+
 export function expireContracts(state: GameState): string[] {
   const msgs: string[] = [];
   state.futures = state.futures.filter((p) => {
     const spec = COMMODITIES[p.commodity];
     if (lastTradingDay(spec, p.month) > state.day) return true;
-    const m = `Échéance ${spec.short} ${monthLabel(p.month)} expirée : ${p.lots} lots réglés en cash à ${p.mark.toFixed(spec.decimals)}.`;
+    const st = spec.settlement;
+    let m: string;
+    if (st.kind === 'cash') {
+      m = `Échéance ${spec.short} ${monthLabel(p.month)} expirée : ${p.lots} lots réglés en cash à ${p.mark.toFixed(spec.decimals)}.`;
+    } else {
+      const qty = Math.abs(p.lots) * lotQty(spec, p.month);
+      const k = spec.valuePerUnit * fx(state.market, spec.currency);
+      const loc = spec.physical.locations.find((l) => l.id === st.locationId)!;
+      if (p.lots > 0) {
+        addCash(state, -qty * p.mark * k, 'physical', p.commodity);
+        state.inventory.push({ id: newId(state, 'i'), commodity: p.commodity, locationId: st.locationId, qty, cost: p.mark, sinceDay: state.day });
+        m = `Livraison bourse : vous recevez ${Math.round(qty).toLocaleString('fr-FR')} ${spec.qtyUnit} de ${spec.short} (${loc.label}) au prix final ${p.mark.toFixed(spec.decimals)}.`;
+      } else {
+        let remaining = qty;
+        for (const lot of state.inventory.filter((l) => l.commodity === p.commodity && l.locationId === st.locationId)) {
+          const t = Math.min(lot.qty, remaining);
+          lot.qty -= t;
+          remaining -= t;
+        }
+        state.inventory = state.inventory.filter((l) => l.qty > 1e-9);
+        if (remaining > 0) addCash(state, -remaining * localSpot(state, p.commodity, st.locationId) * (1 + DELIVERY_BUYIN_PREMIUM) * k, 'physical', p.commodity);
+        addCash(state, qty * p.mark * k, 'physical', p.commodity);
+        m = `Livraison bourse : vous livrez ${Math.round(qty).toLocaleString('fr-FR')} ${spec.qtyUnit} de ${spec.short} (${loc.label})${remaining > 0 ? ` — stock insuffisant, rachat d'urgence de ${Math.round(remaining).toLocaleString('fr-FR')} ${spec.qtyUnit}` : ''}.`;
+      }
+    }
     msgs.push(m);
     log(state, m);
     return false;

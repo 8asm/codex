@@ -17,6 +17,7 @@ import { yearFrac } from './calendar';
 import { lotQty } from './contracts';
 import { futuresPrice, fx, rate } from './market';
 import { vanillaPrice } from './pricing';
+import { ffaIm } from './freight';
 import type { CommodityId, FuturesPosition, GameState, MarketState, OptionPosition } from './types';
 import { impliedVolAt } from './volsurface';
 
@@ -86,7 +87,7 @@ export function totalIm(m: MarketState, positions: FuturesPosition[], options: O
 }
 
 export function recomputeIm(state: GameState) {
-  state.company.im = totalIm(state.market, state.futures, state.options);
+  state.company.im = totalIm(state.market, state.futures, state.options) + ffaIm(state);
 }
 
 /** Marge par lot de future (devise de cotation) pour affichage. */

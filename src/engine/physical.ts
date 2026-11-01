@@ -18,12 +18,13 @@ import { isRestricted, sanctionFor, zoneOf } from './world';
 import { addBusinessDays, monthIndexOf, monthLabel, type Day } from './calendar';
 import { physicalDeliveryDay } from './contracts';
 import { addCash, log, newId } from './ledger';
-import { basis, discount, forwardAt, fx } from './market';
+import { basisAt, discount, forwardAt, fx } from './market';
 import { roundTo } from './math';
 import { chance, normal, pick, poisson, randInt, uniform } from './rng';
 import { drawRcf, rcfHeadroom } from './treasury';
 import type { ActionResult, CommodityId, ForwardDeal, GameState, Offer } from './types';
-import { localSpot, nav } from './valuation';
+import { localSpot, nav, toleranceValueIn } from './valuation';
+import { ownedCapacity, storageRate } from './assets';
 
 export const LOCAL_EDGE_PCT = 0.004;
 export const REMOTE_SPOT_PENALTY = 0.004;
@@ -56,9 +57,16 @@ export function offerPrice(state: GameState, o: Offer): number {
 /** Valeur actuelle du deal pour le joueur s'il l'accepte (USD, actualisée). Positif = bonne affaire. */
 export function offerEdge(state: GameState, o: Offer): number {
   const spec = COMMODITIES[o.commodity];
-  const fair = basis(state.market, o.commodity, o.locationId);
+  const fair = basisAt(state.market, o.commodity, o.locationId, offerDeliveryDay(o));
   const perUnit = o.side * (fair - effectiveDiff(state, o));
-  return perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, offerDeliveryDay(o));
+  const linear = perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, offerDeliveryDay(o));
+  return linear + offerToleranceValue(state, o);
+}
+
+/** Valeur de la clause de tolérance pour le joueur (négative s'il achète : l'option appartient au vendeur). */
+export function offerToleranceValue(state: GameState, o: Offer): number {
+  if (!o.tolerance) return 0;
+  return toleranceValueIn(state.market, state.day, o.commodity, o.locationId, offerDeliveryDay(o), offerPrice(state, o), o.qty, o.tolerance, o.side < 0);
 }
 
 export function notionalUsd(state: GameState, c: CommodityId, qty: number, price: number) {
@@ -117,7 +125,7 @@ export function generateOffers(state: GameState) {
     const f = forwardAt(state.market, c, physicalDeliveryDay(month));
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %).
     const skew = f * (0.0015 + 0.0045 * normal(state.rng));
-    let diff = basis(state.market, c, loc.id) + side * skew;
+    let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
     diff = roundTo(diff, spec.tick);
     const id = newId(state, 'o');
@@ -134,6 +142,7 @@ export function generateOffers(state: GameState) {
       createdDay: state.day,
       expiresDay: addBusinessDays(state.day, randInt(state.rng, 1, 3)),
       kycReadyDay: kycRisky(state, cp.id) && kyc > 0.6 ? addBusinessDays(state.day, Math.ceil((kyc - 0.5) * 6)) : undefined,
+      tolerance: pick(state.rng, [0, 0, 0.05, 0.1]),
     });
   }
 }
@@ -174,6 +183,7 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
     deliveryDay: offerDeliveryDay(o),
     counterpartyId: o.counterpartyId,
     tradeDay: state.day,
+    tolerance: o.tolerance,
   };
   state.forwards.push(deal);
   state.company.physVolumeYtd += notional;
@@ -219,12 +229,21 @@ export function spotSell(state: GameState, lotId: string, qty?: number): ActionR
   return { ok: true, message: `Vendu ${q.toLocaleString('fr-FR')} ${spec.qtyUnit}.` };
 }
 
-/** Frais de stockage pour `days` jours calendaires. */
+/**
+ * Frais de stockage pour `days` jours calendaires : la part du stock couverte par nos propres capacités
+ * (cuves, entrepôts, silos détenus) ne paie que leurs coûts d'exploitation (déjà imputés à l'actif) ;
+ * le reste paie le stockage tiers, plus cher quand la courbe est en contango (le stockage devient rare).
+ */
 export function chargeStorage(state: GameState, days: number) {
-  for (const lot of state.inventory) {
-    const spec = COMMODITIES[lot.commodity];
-    const cost = lot.qty * spec.physical.storagePerUnitMonth * (days / 30) * spec.valuePerUnit * fx(state.market, spec.currency);
-    addCash(state, -cost, 'storage', lot.commodity);
+  const byLoc = new Map<string, typeof state.inventory>();
+  for (const l of state.inventory) (byLoc.get(l.locationId) ?? byLoc.set(l.locationId, []).get(l.locationId)!).push(l);
+  for (const [loc, lots] of byLoc) {
+    const c = lots[0]!.commodity;
+    const spec = COMMODITIES[c];
+    const total = lots.reduce((s2, l) => s2 + l.qty, 0);
+    const billed = Math.max(0, total - ownedCapacity(state, loc));
+    const cost = billed * storageRate(state, c) * (days / 30) * spec.valuePerUnit * fx(state.market, spec.currency);
+    if (cost > 0) addCash(state, -cost, 'storage', c);
   }
 }
 
@@ -238,6 +257,12 @@ export function processDeliveries(state: GameState): string[] {
   const due = state.forwards.filter((d) => d.deliveryDay <= state.day);
   if (!due.length) return msgs;
   state.forwards = state.forwards.filter((d) => d.deliveryDay > state.day);
+  // Tolérance : le vendeur choisit la quantité dans ±tol (plus si le prix convenu dépasse le marché).
+  for (const d of due) {
+    if (!d.tolerance) continue;
+    const S = localSpot(state, d.commodity, d.locationId);
+    d.qty = d.qty * (d.price > S ? 1 + d.tolerance : 1 - d.tolerance);
+  }
   for (const d of due.filter((x) => x.side > 0)) {
     const spec = COMMODITIES[d.commodity];
     const pay = d.qty * d.price * spec.valuePerUnit * fx(state.market, spec.currency);

@@ -16,8 +16,9 @@ import { COMMODITIES } from '../data/commodities';
 import { yearFrac } from './calendar';
 import { lotQty } from './contracts';
 import { apoUnitPrice, avgInputs, expectedAverage, type View } from './derivatives';
-import { basis, cloneMarket, discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
+import { basis, basisAt, cloneMarket, discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
 import { vanillaPrice } from './pricing';
+import { ffaFair } from './freight';
 import type { Book, GameState, PnlExplain } from './types';
 import { impliedVolAt } from './volsurface';
 import { bookOf } from './valuation';
@@ -49,7 +50,7 @@ export function computeExplain(state: GameState, totalPnl: number): PnlExplain |
     const spec = COMMODITIES[d.commodity];
     const q = d.side * d.qty * spec.valuePerUnit;
     const F0 = forwardAt(m0, d.commodity, d.deliveryDay), F1 = forwardAt(m1, d.commodity, d.deliveryDay);
-    const b0 = basis(m0, d.commodity, d.locationId), b1 = basis(m1, d.commodity, d.locationId);
+    const b0 = basisAt(m0, d.commodity, d.locationId, d.deliveryDay), b1 = basisAt(m1, d.commodity, d.locationId, d.deliveryDay);
     const D0 = discount(m0, spec.currency, d0, d.deliveryDay), D1 = discount(m1, spec.currency, d1, d.deliveryDay);
     const x0 = fx(m0, spec.currency), x1 = fx(m1, spec.currency);
     e.price += (F1 - F0) * q * D0 * x0;
@@ -108,6 +109,21 @@ export function computeExplain(state: GameState, totalPnl: number): PnlExplain |
       e.price += (P1 - P0 - theta - vol) * q * x0;
       e.fx += P1 * q * (x1 - x0);
     }
+  }
+  for (const y of b.voyages ?? []) {
+    const spec = COMMODITIES[y.commodity];
+    const q = y.qty * (1 - spec.logistics.transitLoss) * spec.valuePerUnit;
+    const x0 = fx(m0, spec.currency), x1 = fx(m1, spec.currency);
+    const T = Math.max(d1, y.arriveDay);
+    const F0 = forwardAt(m0, y.commodity, T), F1 = forwardAt(m1, y.commodity, T);
+    const b0 = basisAt(m0, y.commodity, y.to, T), b1 = basisAt(m1, y.commodity, y.to, T);
+    e.price += (F1 - F0) * q * x0;
+    e.basis += (b1 - b0) * q * x0;
+    e.fx += (F1 + b1) * q * (x1 - x0);
+  }
+  for (const p of b.ffa ?? []) {
+    const v0f = { market: m0, day: d0, freightFixings: state.freightFixings };
+    e.price += p.days * (ffaFair(state, p.index, p.month) - ffaFair(v0f, p.index, p.month));
   }
   const sum = e.price + e.basis + e.fx + e.vol + e.time;
   return { day: d1, ...e, other: totalPnl - sum, total: totalPnl };

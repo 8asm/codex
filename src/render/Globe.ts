@@ -9,6 +9,7 @@ import type { City, CommodityId } from '../engine/types';
 import { arcPoint, latLonToVec3 } from './geo';
 import { buildAvatar, buildCityCluster, buildHq, buildHubProp, buildPlane } from './models';
 import { buildTextures, drawOverlay } from './textures';
+import { LogisticsLayer, type AssetView, type VoyageView } from './logisticsLayer';
 
 export interface GlobeMarker {
   id: string;
@@ -36,6 +37,10 @@ export interface GlobeView {
   cityBadges?: Record<string, { initials: string; color: string; title: string; rival?: boolean }[]>;
   cityChips?: Record<string, { text: string; tone: 'pos' | 'neg' | 'flat' }[]>;
   overlay?: GlobeOverlay | null;
+  voyages?: VoyageView[];
+  assets?: AssetView[];
+  showRoutes?: boolean;
+  sanctionedZones?: string[];
 }
 
 export interface GlobeOptions {
@@ -43,6 +48,8 @@ export interface GlobeOptions {
   onCityClick: (id: string) => void;
   /** appelé à chaque frame : progression du vol en cours (0..1) */
   travelProgress: () => number | null;
+  /** jour de simulation fractionnaire (pour animer les navires entre deux clôtures) */
+  simDay: () => number;
 }
 
 const EARTH_VS = /* glsl */ `
@@ -139,6 +146,7 @@ export class Globe {
   private overlayMesh: THREE.Mesh;
   private overlayKey = '';
   private markerEls = new Map<string, { el: HTMLDivElement; pos: THREE.Vector3 }>();
+  private logistics: LogisticsLayer;
 
   constructor(private container: HTMLElement, private opts: GlobeOptions) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -238,6 +246,7 @@ export class Globe {
       this.nodeById[city.id] = node;
     });
 
+    this.logistics = new LogisticsLayer(this.scene);
     this.hq = buildHq();
     this.hq.position.set(-0.004, 0, -0.004);
     this.avatar = buildAvatar();
@@ -320,6 +329,10 @@ export class Globe {
       m.el.innerHTML = `<span class="icon">${mk.icon}</span><span class="txt">${mk.label}</span>`;
       m.pos = latLonToVec3(mk.lat, mk.lon, 1);
     }
+    this.logistics.setVoyages(v.voyages ?? []);
+    this.logistics.setAssets(v.assets ?? []);
+    this.logistics.setRoutesVisible(!!v.showRoutes);
+    this.logistics.setSanctionedZones(new Set(v.sanctionedZones ?? []));
     // calque géopolitique
     if (v.overlay) {
       if (v.overlay.key !== this.overlayKey) {
@@ -398,6 +411,7 @@ export class Globe {
     (this.earthMat.uniforms.sunDir!.value as THREE.Vector3).copy(sunDir);
     this.sun.position.copy(sunDir).multiplyScalar(10);
     this.clouds.rotation.y += dt * 0.006;
+    this.logistics.update(t, this.opts.simDay());
 
     if (this.focusAnim) {
       const f = this.focusAnim;

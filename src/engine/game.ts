@@ -31,13 +31,18 @@ import { createWorld, stepWorld } from './world';
 import { dailyEvents } from './events';
 import { createCompanies, resetCompanyYear, stepCompanies } from './companies';
 import { stepCredit } from './credit';
+import { recordFreightFixings, settleFfa, tradeFfa } from './freight';
+import { shipCargo, stepVoyages } from './logistics';
+import { buyOpportunity, createManagerPool, fireManager, generateOpportunities, hedgeProduction, hireManager, sellAsset, startMaintenance, stepAssets } from './assets';
+import { DEFAULT_AUTOMATION, runAutomation } from './automation';
+import { FREIGHT_IDS } from '../data/freight';
 import { flightInfo } from './travel';
 import { accrueInterest, drawRcf, repayRcf, settleTreasury } from './treasury';
 import type { Action, ActionResult, CashCategory, CommodityId, GameConfig, GameState } from './types';
 import { nav, valueByCommodity } from './valuation';
 import { COMMODITIES as SPECS } from '../data/commodities';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
@@ -94,7 +99,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...partial };
   const startDay = adjustFollowing(dayFromYMD(config.startYear, 1, 4));
   const endDay = dayFromYMD(config.startYear + config.years, 1, 1) - 1;
-  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit'];
+  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets'];
   const state: GameState = {
     version: SAVE_VERSION,
     config,
@@ -135,6 +140,14 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     adviceCooldown: {},
     track: zeroTrack(),
     world: null as unknown as GameState['world'],
+    voyages: [],
+    ffa: [],
+    freightFixings: Object.fromEntries(FREIGHT_IDS.map((i) => [i, []])) as unknown as GameState['freightFixings'],
+    assets: [],
+    managers: [],
+    opportunities: [],
+    streams: [],
+    automation: { ...DEFAULT_AUTOMATION, autoHedge: { ...DEFAULT_AUTOMATION.autoHedge } },
     companies: createCompanies(),
     credit: { insurance: false, csa: {}, collateral: {}, losses: [], defaulted: {} },
     offers: [],
@@ -151,6 +164,8 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   warmUpMarket(state);
   state.day = startDay;
   state.world = createWorld(state);
+  createManagerPool(state, 6);
+  generateOpportunities(state, 4);
   const city = CITY_BY_ID[config.hqCity]!;
   addNews(state, {
     headline: `${config.companyName} ouvre ses bureaux à ${city.name}`,
@@ -210,6 +225,8 @@ function openDay(state: GameState) {
 function closeDay(state: GameState) {
   const co = state.company;
   const days = state.day - state.lastCloseDay;
+  // Automatisation (roll, couverture, logistique) aux prix du jour, avant les règlements du soir.
+  runAutomation(state);
   // L'exercice des options précède la VM : les futures reçus au strike sont réglés dès ce soir.
   for (const msg of expireOptions(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   settleVariationMargin(state);
@@ -217,6 +234,10 @@ function closeDay(state: GameState) {
   for (const msg of processDeliveries(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   recordFixings(state);
   for (const msg of settleOtc(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  recordFreightFixings(state);
+  settleFfa(state);
+  for (const msg of stepVoyages(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  for (const msg of stepAssets(state, days)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   chargeStorage(state, days);
   accrueInterest(state, days);
   stepCredit(state, days);
@@ -343,6 +364,37 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       return counted(state, guarded(state, () => tradeOption(state, action.commodity, action.month, action.optType, action.strike, action.lots)));
     case 'RELOCATE_HQ':
       return relocate(state, action.city);
+    case 'SHIP_CARGO':
+      return shipCargo(state, action.lotId, action.to, action.qty, action.vesselAssetId);
+    case 'TRADE_FFA':
+      return counted(state, tradeFfa(state, action.index, action.month, action.days));
+    case 'BUY_OPPORTUNITY':
+      return buyOpportunity(state, action.id);
+    case 'SELL_ASSET':
+      return sellAsset(state, action.id);
+    case 'SET_ASSET': {
+      const a = state.assets.find((x) => x.id === action.id);
+      if (!a) return { ok: false, message: 'Actif introuvable.' };
+      if (action.utilization !== undefined) a.utilization = Math.max(0.3, Math.min(1, action.utilization));
+      if (action.policy) a.policy = action.policy;
+      if (action.vesselMode) a.vesselMode = action.vesselMode;
+      return { ok: true, message: 'Paramètres de l’actif mis à jour.' };
+    }
+    case 'MAINTAIN_ASSET': {
+      const a = state.assets.find((x) => x.id === action.id);
+      if (!a || a.status !== 'operating') return { ok: false, message: 'Maintenance impossible maintenant.' };
+      startMaintenance(state, a);
+      return { ok: true, message: 'Arrêt de maintenance programmé (5 à 9 jours).' };
+    }
+    case 'HIRE_MANAGER':
+      return hireManager(state, action.id, action.assetId);
+    case 'FIRE_MANAGER':
+      return fireManager(state, action.id);
+    case 'HEDGE_PRODUCTION':
+      return hedgeProduction(state, action.id, action.months, action.ratio);
+    case 'SET_AUTOMATION':
+      state.automation = { ...state.automation, ...action.patch, autoHedge: { ...state.automation.autoHedge, ...(action.patch.autoHedge ?? {}) } };
+      return { ok: true, message: 'Automatisation mise à jour.' };
     case 'SET_CREDIT_INSURANCE':
       state.credit.insurance = action.on;
       return { ok: true, message: action.on ? 'Assurance-crédit souscrite sur le physique.' : 'Assurance-crédit résiliée.' };
@@ -474,6 +526,19 @@ export function migrateState(raw: GameState): GameState {
     s.company.cumCashByCategory.compliance = 0;
     s.company.cumCashByCategory.credit = 0;
     s.version = 3;
+  }
+  if (s.version === 3) {
+    s.market.freight = Object.fromEntries(FREIGHT_IDS.map((i) => [i, Math.log({ CAPE: 22000, PMX: 14000, SMX: 13000, AFRA: 32000 }[i])])) as GameState['market']['freight'];
+    Object.assign(s, {
+      voyages: [], ffa: [], assets: [], managers: [], opportunities: [], streams: [],
+      freightFixings: Object.fromEntries(FREIGHT_IDS.map((i) => [i, []])),
+      automation: { ...DEFAULT_AUTOMATION, autoHedge: { ...DEFAULT_AUTOMATION.autoHedge } },
+    });
+    s.company.cumCashByCategory.freight = 0;
+    s.company.cumCashByCategory.assets = 0;
+    createManagerPool(s, 6);
+    generateOpportunities(s, 4);
+    s.version = 4;
   }
   return s;
 }

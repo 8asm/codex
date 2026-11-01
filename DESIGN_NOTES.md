@@ -32,7 +32,7 @@ Décisions :
 - **Régime de volatilité** : chaîne de Markov calme/stress (×1,8 sur les vols). Au changement de régime, `A(τ)` change, donc la courbe saute légèrement : la propriété de martingale ne tient qu'à l'intérieur d'un régime. C'est volontaire (un choc de vol déplace la convexité).
 - **Chocs de news** : sauts additifs sur χ (temporaires) ou ξ (structurels), sans compensateur de drift. Le biais de convexité `e^{½J²}` est négligeable (< 0,3 %).
 - **Corrélations** : matrice 6×6 (5 facteurs courts + EURUSD) décomposée par Cholesky. Les facteurs longs utilisent la même structure de corrélation.
-- **Différentiels physiques (basis)** : processus d'Ornstein-Uhlenbeck autour d'une moyenne par lieu. **Simplification** : courbe de basis plate (le diff du jour s'applique à toutes les échéances). *Phase 4 : courbe de basis et fret explicite.*
+- **Différentiels physiques (basis)** : processus d'Ornstein-Uhlenbeck autour d'une moyenne par lieu. **Phase 4** : courbe de basis `b(T) = moyenne + écart·e^{−4τ} + décalage d'événement + lien fret`. L'écart du jour se résorbe avec l'échéance. Le différentiel suit le forward du taux d'affrètement : les prix rendus montent et les prix FOB baissent quand le fret flambe, pondéré par la part de l'affrètement dans le coût d'un voyage (60 %). Les moyennes sont calibrées pour que l'écart entre deux ports d'une grande route ≈ coût complet du fret (±20 %, testé) : l'arbitrage géographique n'est pas gratuit, il s'ouvre sur les chocs.
 - **Taux** : un taux plat par devise (USD 4 %, EUR 2,25 % au départ), actualisation continue en ACT/365, intérêts de trésorerie en ACT/360. **Phase 3** : les taux bougent par pas de 25 pb aux réunions de la Fed et de la BCE (biais selon le narratif macro), avec effet sur l'EURUSD et les matières premières. *Phase 7 : vraies courbes de taux.*
 - **FX** : EURUSD en OU sur le log. Le TTF se règle en EUR, converti en USD au spot du jour. **Simplification** : un seul compte de trésorerie en USD (en réalité, un compte de marge en EUR).
 
@@ -40,7 +40,7 @@ Décisions :
 
 - Dernier jour de cotation fidèle aux règles réelles : Brent (dernier jour ouvré de M−2), TTF (deux jours ouvrés avant M), cuivre LME (3ᵉ mercredi moins deux jours ouvrés), blé CBOT (jour ouvré avant le 15), API2 (dernier vendredi). Tous testés.
 - **Simplification** : un seul calendrier de jours ouvrés (week-ends, 1ᵉʳ janvier, 25 décembre) pour toutes les bourses.
-- **Simplification** : tous les futures se règlent en cash à l'expiration, au prix de règlement du dernier jour. En réalité, l'ICE Brent se règle en cash contre un index, le TTF et le LME se livrent physiquement, et l'API2 se règle sur la moyenne mensuelle de l'index. *Phase 2 (EFP) et phase 4 (livraison bourse).*
+- **Phase 4 — livraison bourse** : cuivre (entrepôt agréé de Rotterdam), TTF (hub) et blé (silo de Chicago) se **livrent physiquement** à l'échéance. Le long reçoit et paie la marchandise au prix final ; le court livre depuis son stock dans ce lieu, sinon rachat d'urgence au spot + 3 %. Brent et API2 restent réglés en cash, comme en réalité. **Simplifications** : l'API2 se règle au prix du dernier jour et non sur la moyenne mensuelle de l'index ; pas de procédure d'avis de livraison (notice day) ni de choix de lieu ou de qualité par le vendeur ; l'EFP n'est pas modélisé.
 - **Simplification** : cuivre en échéances mensuelles uniquement, sans prompt dates quotidiennes ni cash/3M ni tom-next. *Phase 2.*
 - Lot TTF = 1 MW × heures du mois (changements d'heure ignorés). Blé coté en c/bu (valeur 0,01 $ par unité), affiché aussi en tonnes (1 t = 36,7437 bu).
 
@@ -64,9 +64,9 @@ Décisions :
 
 - Offres de cargaisons à prix fixe = courbe au mois de livraison + diff. Le diff proposé avantage la contrepartie de 0,15 % en moyenne. Sur place, le joueur gagne environ 0,4 % : en espérance, voyager rend les deals rentables, et le téléphone non.
 - Livraison le 15 du mois (jour ouvré suivant). Un achat livré entre en stock et se paie comptant. Une vente se sert depuis le stock (même lieu en priorité). Sinon, transfert au coût de la différence de basis moyen, approximation du fret. À défaut de stock, rachat d'urgence au spot + 1,5 %.
-- **Simplification** : les Incoterms sont corrects dans le codex et les libellés, mais le fret, l'assurance et le transfert de risque sont implicites dans le basis du lieu. Pas de laycan ni de tolérance ±10 %, pas d'inspection, de surestaries ou de pertes en transit. *Phase 4 (logistique et fret) et phase 7 (opérationnel).*
+- **Phase 4 — fret explicite** : les Incoterms déterminent qui organise le transport. Acheter FOB oblige le joueur à affréter pour revendre ailleurs ; vendre CIF/CFR/DAP l'oblige à livrer à destination (stock sur place ou cargaison arrivée à temps, sinon rachat d'urgence). Les obligations de chaque Incoterm sont affichées sur les offres. Laycan affiché. **Tolérance de quantité ±5/10 % au choix du vendeur**, valorisée comme une option (straddle Black-76 au prix du contrat sur la quantité de tolérance), exercée à la livraison. Surestaries au-delà du temps de planche, pertes en transit, accidents en mer, assurance marine. **Simplifications** : la date de livraison est le milieu du laycan ; le transfert de risque au chargement (CIF/FOB) n'est pas simulé sur les achats rendus ; inspection, qualité et contamination arrivent en *phase 7*.
 - **Simplification** : le gaz physique est livré « en bloc » le 15, au lieu d'un flux horaire sur le mois.
-- **Simplification** : stockage loué sans limite de capacité, à coût fixe par unité et par mois. *Phase 4 (actifs de stockage).*
+- **Phase 4 — stockage** : le tarif du stockage tiers renchérit avec le contango (×(1 + 3 × contango sur 6 échéances)). Les capacités détenues (cuves, entrepôts, silos, stockage de gaz) couvrent le stock sans frais tiers, et la capacité inutilisée est louée au marché (85 % d'occupation). **Simplification** : le stockage tiers reste disponible sans limite (à prix croissant).
 - Plafond d'encours physique = 6 × fonds propres (lignes de trade finance).
 - Risque de contrepartie : traité en phase 3 (voir plus bas).
 
@@ -189,7 +189,73 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Interface
 - Panneaux **Actualités** (filtres par catégorie, statut rumeur / confirmé / démenti, impacts, calendrier des réunions), **Monde** (tension, taux, ENSO, narratifs, sanctions, zones, comparaison réglementaire, transfert de siège) et **Concurrents** (classement, fiches, expositions, assurance, CSA, défauts subis).
-- Calques du globe : tensions (pays et zones colorés par stabilité), sanctions, météo (marqueurs animés), prix (variation du jour par hub), concurrents (badges des sièges, rival entouré). Les calques « routes » et « stocks » viendront avec la logistique (*phase 4*).
+- Calques du globe : tensions (pays et zones colorés par stabilité), sanctions, météo (marqueurs animés), prix (variation du jour par hub), concurrents (badges des sièges, rival entouré). Routes et stocks : phase 4.
 
 ### Sauvegardes
 - Version 3. Migration automatique depuis les versions 1 et 2.
+
+## Phase 4 — logistique, fret, actifs industriels, automatisation
+
+### Fret (`engine/freight.ts`, `data/freight.ts`)
+- Quatre indices de taux d'affrètement (TCE, $/jour) : Capesize, Panamax, Supramax, Aframax. Modèle de Schwartz à un facteur sur le log, simulé sous la mesure de pricing, avec formule fermée du forward. μ est choisi pour que l'espérance stationnaire vaille la moyenne de l'indice. Martingale vérifiée par Monte Carlo. Vol de 55 à 75 % par an, retour à la moyenne rapide.
+- **FFA** : swaps compensés sur la moyenne mensuelle de l'indice quotidien. Marge de variation chaque soir (avec marge « trade-date »), marge initiale de 25 % du notionnel, commission de 0,25 %. Règlement total = jours × (moyenne − prix) (testé).
+- Événements de fret : mer Rouge fermée (détour par le Cap), sécheresse à Panama, boom ou surcapacité du vrac, flotte fantôme et pétroliers. Le canal bloqué de la phase 3 ferme désormais réellement Suez.
+- **Simplifications** : pas de saisonnalité du fret ; indices indépendants entre eux et des commodités (le lien passe par les soutes indexées sur le Brent et par les différentiels) ; pas de méthaniers (le GNL arrive avec JKM en *phase 8*).
+
+### Logistique (`engine/logistics.ts`, `data/routes.ts`)
+- Graphe maritime de 38 nœuds réels (ports, détroits, canaux, caps), plus court chemin par Dijkstra. Les passages fermés par un événement (Suez, Bab-el-Mandeb, Panama…) imposent le détour (testé : Fujairah–Rotterdam passe par le Cap si Suez est fermé). Pré-acheminement par barge de Chicago au Golfe.
+- **Devis d'expédition** :
+  - affrètement au voyage (TCE × (jours de mer × 1,6 pour le retour à vide + 4 jours d'escale) × part du navire, +15 % pour un lot partiel) ;
+  - soutes (consommation × prix indexé sur le Brent) ;
+  - frais de port, manutention par tonne, assurance marine (0,12 %) ;
+  - financement de la marchandise pendant le voyage ;
+  - arbitrage = valeur forward à destination à l'arrivée (pertes déduites, actualisée) − valeur spot à l'origine − coûts.
+  Avec un navire de notre flotte : pas de loyer, mais le coût d'opportunité (loyer de marché non perçu) est affiché.
+- **Voyages** :
+  - la cargaison quitte le stock, le fret est payé, le navire suit la route sur le globe ;
+  - la cargaison en mer est valorisée au forward de destination (incluse dans la NAV, la VaR, le P&L expliqué et l'exposition) ;
+  - retard si un passage fermé est encore devant le navire ;
+  - accidents (perte remboursée à 99 % si assurée) ;
+  - à l'arrivée, congestion portuaire aléatoire (plus forte en crise) : surestaries au-delà de 2 jours de planche, au TCE × 1,1 ;
+  - pertes en transit (0,1 à 0,2 % selon la marchandise).
+- **Simplifications** : un navire qui doit franchir un passage fermé attend (pas de déroutement en cours de route) ; la route est fixée au départ ; les trains et pipelines sont décoratifs (pas de capacité ni de tarif), sauf la barge de Chicago.
+
+### Actifs industriels (`engine/assets.ts`, `data/assets.ts`)
+- 18 actifs fictifs : 3 gisements, 2 mines de cuivre, 2 mines de charbon, raffinerie, cuves, entrepôt de métaux, 2 silos, stockage de gaz, terminal charbonnier, 4 navires.
+- Modes d'entrée :
+  - acquisition (100 % ou coentreprise 20 à 50 %) au prix DCF ± bruit ;
+  - construction (CAPEX, délai, 30 % de risque de dépassement de 10 à 40 %) ;
+  - stream (10 % de la production payée 20 % du spot) ;
+  - royalty (2 % du chiffre d'affaires) ;
+  - offtake prépayé (prépaiement remboursé en cargaisons avec décote : risque de crédit du producteur, avec netting et récupération en cas de défaut) ;
+  - affrètement à temps d'un navire.
+- **Exploitation quotidienne** :
+  - production = capacité × utilisation × part × déclin, avec coûts variables et fixes ;
+  - production vendue au spot (automatisation) ou mise en stock, donc à couvrir ;
+  - raffinerie : marge de raffinage (crack) stochastique en % du Brent, en attendant les marchés de produits (*phase 8*) ;
+  - stockage : capacité pour le joueur, le reste loué au marché ;
+  - stockage de gaz géré : injection d'avril à septembre, soutirage de novembre à mars ;
+  - terminal : redevances ;
+  - navire : loué au TCE du marché, ou réservé à nos voyages.
+- **Risques** :
+  - usure (l'état baisse avec l'utilisation) ; accident (probabilité ×(1 + (50 − état)/25) × facteur manager), réparation de 2 à 6 % du CAPEX, amende environnementale dans 30 % des cas pour mines, gisements et raffinerie ;
+  - grèves (plus fréquentes en pays instable) ;
+  - **nationalisation** : (45 − stabilité)/45)² × 75 % par an sous une stabilité de 45, indemnisation de 0 à 35 % de la DCF ;
+  - interdiction d'export du pays : production arrêtée.
+- **Comptabilité** : valeur comptable = coût amorti linéairement ; test de dépréciation mensuel (DCF < 75 % de la valeur comptable ⇒ dépréciation). La NAV n'est pas marquée au marché sur les actifs, comme dans de vrais comptes. Cession à environ 92 % de la DCF.
+- **DCF** : flux mensuels sur la courbe forward (forward + basis − coûts) sur la durée de vie restante (30 ans maximum), actualisés au taux sans risque + 4,5 % + jusqu'à 10 % selon l'instabilité du pays. Les CAPEX sont calibrés autour de 80 % de la DCF typique (construire peut créer de la valeur, mais le délai, le dépassement et la courbe sont des risques).
+- **Managers** (PNJ générés) : compétence, salaire, spécialité. La politique prudente, équilibrée ou agressive fixe l'utilisation, le seuil de maintenance et la couverture mensuelle de la production par swaps (80 / 50 / 0 % sur 3 mois). Le facteur d'accident vaut 1,5 − compétence/100. Les erreurs (maintenance reportée, sur-régime) ont une probabilité proportionnelle à l'incompétence.
+- **Simplifications** :
+  - un navire affrété à temps n'est pas inscrit au bilan (IFRS 16 non appliqué) ;
+  - pas de fonderie, d'usine de trituration ni de centrale : il manque les marchés de concentrés, de soja et d'électricité (*phase 8*) ;
+  - coentreprises sans gouvernance (pas de vote des partenaires) ;
+  - les concurrents ne possèdent pas d'actifs modélisés.
+
+### Automatisation (`engine/automation.ts`)
+- Trésorerie (existante) ; roll des futures 2 jours ouvrés avant le dernier jour de cotation ; couverture de base (futures du 2ᵉ mois pour ramener la couverture du physique au ratio cible au-delà d'un seuil) ; logistique (affrètement au dernier moment raisonnable pour honorer les ventes livrables à destination) ; vente de la production ; assurance marine. Les règles sont volontairement simples : risque de base et de calendrier non couverts.
+
+### Rendu
+- Trafic maritime d'ambiance instancié (36 navires sur les grandes routes réelles) et cargaisons du joueur sur leur route, avec sillage pointillé. Calque des routes (graphe complet). Rails, barges et pipelines lumineux ; le gazoduc sarmate vire au rouge sous sanctions. Actifs du joueur en 3D low-poly animés (balancier du derrick, torchère), avec un anneau de statut. Calque « stocks ».
+
+### Sauvegardes
+- Version 4. Migration automatique depuis les versions 1 à 3.
