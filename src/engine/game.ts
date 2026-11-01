@@ -26,7 +26,7 @@ import { morningAdvice } from './advisors';
 import { listedMonths, lotQty } from './contracts';
 import { futuresPrice, fx } from './market';
 import { exposures } from './valuation';
-import type { AdvisorId, RiskState } from './types';
+import type { AdvisorId, CareerTrack, RiskState } from './types';
 import { createWorld, stepWorld } from './world';
 import { dailyEvents } from './events';
 import { createCompanies, resetCompanyYear, stepCompanies } from './companies';
@@ -36,13 +36,22 @@ import { shipCargo, stepVoyages } from './logistics';
 import { buyOpportunity, createManagerPool, fireManager, generateOpportunities, hedgeProduction, hireManager, sellAsset, startMaintenance, stepAssets } from './assets';
 import { DEFAULT_AUTOMATION, runAutomation } from './automation';
 import { FREIGHT_IDS } from '../data/freight';
+import { acceptJob, careerClose, careerLog, careerOpen, deskFor, evaluate, fire, flattenBook, foundCompany, initCareer, interviewChance, isEmployee, leave, makeOffer, permissionError, salaryFor, setAllocation, title } from './career';
+import { checkTips, dailySituations, maybeTip, pushSituation, resolveSituation, stepCompromises } from './situations';
+import { negotiate, startNegotiation } from './negotiation';
+import { contactAt, decayRelations, findRole, npc, remember, seedNpcs } from './npcs';
+import { isPresent, offerDeliveryDay } from './physical';
+import { forwardAt } from './market';
+import { COMPANY_BY_ID } from '../data/companies';
+import { TRACK_SKILL } from '../data/career';
+import type { NegotiationMove } from './types';
 import { flightInfo } from './travel';
 import { accrueInterest, drawRcf, repayRcf, settleTreasury } from './treasury';
 import type { Action, ActionResult, CashCategory, CommodityId, GameConfig, GameState } from './types';
 import { nav, valueByCommodity } from './valuation';
 import { COMMODITIES as SPECS } from '../data/commodities';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
@@ -99,7 +108,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...partial };
   const startDay = adjustFollowing(dayFromYMD(config.startYear, 1, 4));
   const endDay = dayFromYMD(config.startYear + config.years, 1, 1) - 1;
-  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets'];
+  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets', 'dividends'];
   const state: GameState = {
     version: SAVE_VERSION,
     config,
@@ -148,6 +157,12 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     opportunities: [],
     streams: [],
     automation: { ...DEFAULT_AUTOMATION, autoHedge: { ...DEFAULT_AUTOMATION.autoHedge } },
+    career: null,
+    npcs: [],
+    situations: [],
+    negotiation: null,
+    compromises: [],
+    tips: [],
     companies: createCompanies(),
     credit: { insurance: false, csa: {}, collateral: {}, losses: [], defaulted: {} },
     offers: [],
@@ -166,13 +181,19 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   state.world = createWorld(state);
   createManagerPool(state, 6);
   generateOpportunities(state, 4);
-  const city = CITY_BY_ID[config.hqCity]!;
-  addNews(state, {
-    headline: `${config.companyName} ouvre ses bureaux à ${city.name}`,
-    body: `Capital : ${(config.capital / 1e6).toFixed(0)} M$. Ligne de crédit bancaire disponible. Bonne chance.`,
-    tone: 'neutral',
-    major: false,
-  });
+  seedNpcs(state);
+  if (config.mode === 'story' || config.start === 'join') initCareer(state);
+  const city = CITY_BY_ID[state.company.hqCity]!;
+  if (!state.career) {
+    addNews(state, {
+      headline: `${config.companyName} ouvre ses bureaux à ${city.name}`,
+      body: `Capital : ${(config.capital / 1e6).toFixed(0)} M$. Ligne de crédit bancaire disponible. Bonne chance.`,
+      tone: 'neutral',
+      major: false,
+    });
+  } else {
+    addNews(state, { headline: `${config.playerName} rejoint ${COMPANY_BY_ID[state.career.employerId!]!.name} à ${city.name}`, body: `Poste : ${title(state.career)}.`, tone: 'neutral', major: false, category: 'entreprises' });
+  }
   openDay(state);
   return state;
 }
@@ -219,7 +240,19 @@ function openDay(state: GameState) {
   if (state.day !== state.startDay) stepCompanies(state);
   recomputeIm(state);
   generateOffers(state);
+  if (state.career) {
+    careerOpen(state);
+    maybeTip(state);
+    dailySituations(state);
+    stepCompromises(state);
+    decayRelations(state);
+  }
   morningAdvice(state);
+}
+
+/** La société du joueur paie-t-elle ses frais et ses impôts ? (pas un salarié qui gère un livre alloué) */
+function paysCompanyCosts(state: GameState) {
+  return !state.career || state.career.status === 'founder' || state.career.status === 'ceo';
 }
 
 function closeDay(state: GameState) {
@@ -244,7 +277,7 @@ function closeDay(state: GameState) {
 
   const prev = ymd(state.lastCloseDay);
   const cur = ymd(state.day);
-  if (monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay)) {
+  if (monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay) && paysCompanyCosts(state)) {
     const city = CITY_BY_ID[co.hqCity]!;
     const cost = city.officeRentMonthly + STAFF_MONTHLY * city.staffCostIndex;
     addCash(state, -cost, 'overhead');
@@ -257,7 +290,7 @@ function closeDay(state: GameState) {
     }
     co.tradesThisMonth = 0;
   }
-  if (cur.y !== prev.y && state.lastCloseDay >= state.startDay) {
+  if (cur.y !== prev.y && state.lastCloseDay >= state.startDay && paysCompanyCosts(state)) {
     // Impôt sur le résultat de l'exercice écoulé (comptabilité en juste valeur), avec report de pertes.
     const profit = state.lastNav - co.yearStartNav;
     const taxable = profit - co.lossCarry;
@@ -291,7 +324,10 @@ function closeDay(state: GameState) {
       state.pendingAlerts.push({ kind: 'liquidation', text: 'Appel de marge non couvert : le courtier a liquidé toutes vos positions futures.' });
       addNews(state, { headline: `${co.name} : positions liquidées par son courtier`, tone: 'alert', major: true });
       deficit = settleTreasury(state);
-      if (deficit > 0 || co.cash < 0) {
+      if (isEmployee(state)) {
+        co.marginCall = null;
+        fire(state, 'votre livre a été liquidé après un appel de marge non couvert');
+      } else if (deficit > 0 || co.cash < 0) {
         bankrupt(state, 'Impossible de couvrir les appels de marge et la dette exigible.');
       } else co.marginCall = null;
     } else {
@@ -301,8 +337,13 @@ function closeDay(state: GameState) {
     }
   } else co.marginCall = null;
 
-  const navNow = nav(state);
-  if (state.status === 'running' && navNow < 0) bankrupt(state, 'Fonds propres négatifs : les banques coupent les lignes.');
+  let navNow = nav(state);
+  if (state.status === 'running' && navNow < 0) {
+    if (isEmployee(state)) {
+      fire(state, 'votre livre a perdu plus que le capital alloué');
+      navNow = nav(state);
+    } else if (paysCompanyCosts(state)) bankrupt(state, 'Fonds propres négatifs : les banques coupent les lignes.');
+  }
 
   const vb = valueByCommodity(state);
   const pnlBy = {} as Record<CommodityId, number>;
@@ -323,6 +364,11 @@ function closeDay(state: GameState) {
   state.risk.es99 = v.es99;
   state.risk.varBy = v.varBy;
   if (state.status === 'running') evaluateLimits(state, navNow);
+  if (state.career && state.status === 'running') {
+    checkTips(state);
+    careerClose(state, state.lastNav, navNow);
+    navNow = nav(state);
+  }
 
   state.lastValueBy = vb;
   state.lastNav = navNow;
@@ -355,7 +401,46 @@ export function advanceDay(state: GameState): void {
 
 export function dispatch(state: GameState, action: Action): ActionResult {
   if (state.status !== 'running') return { ok: false, message: 'La partie est terminée.' };
+  const denied = permissionError(state, action);
+  if (denied) return { ok: false, message: denied };
   switch (action.type) {
+    case 'RESOLVE_SITUATION':
+      return resolveSituation(state, action.id, action.choice);
+    case 'START_NEGOTIATION':
+      return beginNegotiation(state, action.kind, action.target);
+    case 'NEGOTIATE': {
+      if (!state.negotiation) return { ok: false, message: 'Pas de négociation en cours.' };
+      const msg = negotiate(state, action.move as NegotiationMove, state.career?.skills.négociation ?? 30);
+      if (state.negotiation.done) applyNegotiation(state);
+      return { ok: true, message: msg };
+    }
+    case 'ACCEPT_JOB':
+      return acceptJob(state, action.offerId);
+    case 'APPLY_JOB':
+      return applyJob(state, action.companyId, action.track);
+    case 'RESIGN': {
+      if (!isEmployee(state)) return { ok: false, message: 'Vous n’avez pas de poste.' };
+      remember(state, findRole(state, 'manager', state.career!.employerId)?.id, -5, 'Démission');
+      leave(state, 'démission');
+      return { ok: true, message: 'Vous avez démissionné.' };
+    }
+    case 'REQUEST_TRANSFER':
+      return transfer(state, action.track);
+    case 'FOUND_COMPANY':
+      return foundCompany(state, action.name, action.city);
+    case 'SET_PAYOUT':
+      if (state.career) state.career.payout = Math.max(0, Math.min(0.8, action.payout));
+      return { ok: true, message: 'Politique de dividendes mise à jour.' };
+    case 'MEET_NPC':
+      return meet(state, action.npcId);
+    case 'RETIRE': {
+      if (!state.career) return { ok: false, message: 'Mode carrière uniquement.' };
+      state.status = 'ended';
+      state.career.ended = 'retraite';
+      state.statusReason = `Retraite : patrimoine de ${(state.career.wealth / 1e6).toFixed(2)} M$, réputation ${Math.round(state.career.reputation)}/100.`;
+      state.pendingAlerts.push({ kind: 'ended', text: state.statusReason });
+      return { ok: true, message: state.statusReason };
+    }
     case 'TRADE_FUTURE':
       return counted(state, guarded(state, () => tradeFuture(state, action.commodity, action.month, action.lots)));
     case 'TRADE_SPREAD':
@@ -466,6 +551,145 @@ function hedgeDelta(state: GameState, c: CommodityId, month?: number): ActionRes
   return r.ok ? { ok: true, message: `Couverture : ${lots > 0 ? 'achat' : 'vente'} de ${Math.abs(lots)} lots. ${r.message}` } : r;
 }
 
+function beginNegotiation(state: GameState, kind: string, target: string): ActionResult {
+  const c = state.career;
+  if (state.negotiation && !state.negotiation.done) return { ok: false, message: 'Une négociation est déjà en cours.' };
+  const skillN = c?.skills.négociation ?? 30;
+  if (kind === 'deal') {
+    const o = state.offers.find((x) => x.id === target);
+    if (!o) return { ok: false, message: 'Offre expirée.' };
+    const denied = permissionError(state, { type: 'ACCEPT_OFFER', offerId: o.id });
+    if (denied) return { ok: false, message: denied };
+    if (o.negotiated) return { ok: false, message: 'Vous avez déjà négocié cette offre.' };
+    const contact = contactAt(state, o.counterpartyId);
+    const F = forwardAt(state.market, o.commodity, offerDeliveryDay(o));
+    const give = F * (0.0015 + Math.max(0, contact?.trust ?? 0) / 100 * 0.004 + (isPresent(state, o.cityId) ? 0.002 : 0) + skillN / 100 * 0.002);
+    o.negotiated = true;
+    startNegotiation(state, { kind: 'deal', npcId: contact?.id ?? '', title: `Différentiel ${COMMODITIES[o.commodity].short} avec ${COMPANY_BY_ID[o.counterpartyId]?.name ?? ''}`, unit: COMMODITIES[o.commodity].priceUnit, opening: o.diff, reservation: o.diff - o.side * give, leverage: false, higherIsBetter: o.side < 0, context: { offerId: o.id } });
+    return { ok: true, message: 'Négociation ouverte.' };
+  }
+  if (!c) return { ok: false, message: 'Mode carrière uniquement.' };
+  if (kind === 'investisseur') {
+    const inv = npc(state, target);
+    if (!inv || inv.role !== 'investisseur') return { ok: false, message: 'Investisseur introuvable.' };
+    if (c.investors.some((i) => i.npcId === target)) return { ok: false, message: 'Déjà engagé.' };
+    if (c.reputation < 20) return { ok: false, message: 'Aucun investisseur ne vous recevra avec cette réputation.' };
+    const capital = Math.round((3e6 + c.reputation * 0.4e6 + Math.max(0, inv.trust) * 0.1e6) / 1e5) * 1e5;
+    const founder = Math.max(1, c.wealth * 0.8);
+    const fair = (capital / (capital + founder)) * 100;
+    startNegotiation(state, { kind: 'investisseur', npcId: inv.id, title: `Levée de fonds : ${(capital / 1e6).toFixed(1)} M$ de ${inv.name}`, unit: '% du capital', opening: Math.min(90, fair * 1.6), reservation: Math.max(1, fair * (1.15 - inv.trust / 300 - c.reputation / 500)), leverage: c.investors.length > 0, higherIsBetter: false, context: { capital } });
+    return { ok: true, message: 'Rendez-vous avec l’investisseur.' };
+  }
+  if (kind === 'offre') {
+    const o = c.offers.find((x) => x.id === target && x.interviewed);
+    if (!o) return { ok: false, message: 'Offre introuvable (entretien requis).' };
+    const contact = contactAt(state, o.companyId);
+    startNegotiation(state, { kind: 'offre', npcId: contact?.id ?? '', title: `Salaire chez ${COMPANY_BY_ID[o.companyId]?.name}`, unit: '$ / mois', opening: o.salary, reservation: o.salary * (1.1 + (contact?.trust ?? 0) / 500 + skillN / 500), leverage: isEmployee(state) || c.offers.filter((x) => x.interviewed).length > 1, higherIsBetter: true, context: { offerId: o.id } });
+    return { ok: true, message: 'Négociation ouverte.' };
+  }
+  if (kind === 'salaire') {
+    if (!isEmployee(state)) return { ok: false, message: 'Vous n’avez pas d’employeur.' };
+    if ((state.world.eventCooldown['career.raise'] ?? -1) > state.day) return { ok: false, message: 'Trop tôt pour redemander une augmentation.' };
+    state.world.eventCooldown['career.raise'] = addBusinessDays(state.day, 120);
+    const mgr = findRole(state, 'manager', c.employerId);
+    const sc = evaluate(state).score;
+    startNegotiation(state, { kind: 'salaire', npcId: mgr?.id ?? '', title: 'Demande d’augmentation', unit: '$ / mois', opening: c.salary, reservation: c.salary * (1 + Math.max(0, (sc - 45) / 400) + Math.max(0, mgr?.trust ?? 0) / 400), leverage: c.offers.some((o) => o.interviewed), higherIsBetter: true, context: {} });
+    return { ok: true, message: 'Rendez-vous avec votre manager.' };
+  }
+  return { ok: false, message: 'Négociation inconnue.' };
+}
+
+/** Applique le résultat d'une négociation terminée. */
+function applyNegotiation(state: GameState) {
+  const n = state.negotiation!;
+  const c = state.career;
+  const r = n.result;
+  switch (n.kind) {
+    case 'deal': {
+      const o = state.offers.find((x) => x.id === n.context.offerId);
+      if (o && r !== undefined) o.diff = Number(r.toFixed(4));
+      break;
+    }
+    case 'salaire':
+      if (c && r !== undefined) {
+        c.salary = Math.round(r / 100) * 100;
+        careerLog(state, `Nouveau salaire : ${c.salary.toLocaleString('fr-FR')} $/mois.`);
+      }
+      break;
+    case 'bonus':
+      if (c) {
+        const amt = r ?? Math.abs(n.opening) * 0.8;
+        c.wealth += amt;
+        careerLog(state, `Bonus : ${Math.round(amt / 1000)} k$${r === undefined ? ' (rupture : bonus réduit)' : ''}.`);
+      }
+      break;
+    case 'offre': {
+      const o = c?.offers.find((x) => x.id === n.context.offerId);
+      if (o && r !== undefined) o.salary = Math.round(r / 100) * 100;
+      if (o && r === undefined) c!.offers = c!.offers.filter((x) => x !== o);
+      break;
+    }
+    case 'investisseur':
+      if (c && r !== undefined) {
+        c.investors.push({ npcId: n.npcId, share: Math.max(0.005, r / 100), capital: Number(n.context.capital) });
+        careerLog(state, `${npc(state, n.npcId)?.name} investira ${(Number(n.context.capital) / 1e6).toFixed(1)} M$ pour ${r.toFixed(1)} % du capital.`);
+      }
+      break;
+  }
+}
+
+function applyJob(state: GameState, companyId: string, track: CareerTrack): ActionResult {
+  const c = state.career;
+  if (!c || !COMPANY_BY_ID[companyId]) return { ok: false, message: 'Candidature impossible.' };
+  if (c.status === 'founder' || c.status === 'ceo') return { ok: false, message: 'Vous dirigez une société.' };
+  if (companyId === c.employerId) return { ok: false, message: 'C’est déjà votre employeur.' };
+  if (!state.companies.find((x) => x.id === companyId)?.alive) return { ok: false, message: 'Cette société n’existe plus.' };
+  if ((state.world.eventCooldown[`apply.${companyId}`] ?? -1) > state.day) return { ok: false, message: 'Vous avez déjà postulé récemment.' };
+  state.world.eventCooldown[`apply.${companyId}`] = addBusinessDays(state.day, 40);
+  const level = Math.max(1, Math.min(5, c.level - (track !== c.track ? 1 : 0)));
+  makeOffer(state, companyId, track, level);
+  const o = c.offers.at(-1)!;
+  o.salary = Math.round(salaryFor(level, companyId) / 100) * 100;
+  pushSituation(state, 'interview', { offerId: o.id });
+  return { ok: true, message: `Candidature envoyée : chance estimée ${Math.round(interviewChance(state, companyId, track, level, true) * 100)} % avec préparation.` };
+}
+
+function transfer(state: GameState, track: CareerTrack): ActionResult {
+  const c = state.career;
+  if (!c || !isEmployee(state)) return { ok: false, message: 'Vous devez être salarié.' };
+  if (track === c.track) return { ok: false, message: 'Vous êtes déjà dans cette filière.' };
+  const mgr = findRole(state, 'manager', c.employerId);
+  if ((mgr?.trust ?? 0) < 15) return { ok: false, message: 'Votre manager ne soutient pas votre demande (confiance insuffisante).' };
+  if (c.skills[TRACK_SKILL[track]] < 25) return { ok: false, message: 'Compétences insuffisantes pour cette filière.' };
+  leaveBookIfTrading(state);
+  c.track = track;
+  c.level = Math.max(1, Math.min(5, c.level - 1));
+  c.sinceDay = state.day;
+  c.desk = deskFor(c.employerId!, c.level);
+  setAllocation(state, track === 'trading' ? [0, 0, 8e6, 25e6, 60e6, 150e6, 400e6][c.level]! : 0);
+  careerLog(state, `Transfert : vous devenez ${title(c)}.`);
+  return { ok: true, message: `Transfert accepté : ${title(c)}.` };
+}
+
+function leaveBookIfTrading(state: GameState) {
+  // le livre est repris par le desk : positions soldées au marché, le capital retourne à l'employeur
+  if (state.career!.allocation > 0) flattenBook(state);
+}
+
+function meet(state: GameState, id: string): ActionResult {
+  const n = npc(state, id);
+  const c = state.career;
+  if (!n || !c) return { ok: false, message: 'Contact introuvable.' };
+  if ((state.world.eventCooldown[`meet.${id}`] ?? -1) > state.day) return { ok: false, message: `Vous avez vu ${n.name} récemment.` };
+  state.world.eventCooldown[`meet.${id}`] = addBusinessDays(state.day, 15);
+  const here = state.player.cityId === n.cityId;
+  c.wealth -= here ? 1500 : 300;
+  const gain = (here ? 6 : 3) * (1 - Math.max(0, n.trust) / 120) * (1 + c.skills.relationnel / 200);
+  remember(state, id, gain, here ? 'Déjeuner ensemble' : 'Appel vidéo');
+  c.skills.relationnel = Math.min(100, c.skills.relationnel + 0.3);
+  return { ok: true, message: here ? `Déjeuner avec ${n.name} : la relation se renforce.` : `Appel avec ${n.name} (en personne, l’effet serait double : voyagez à ${CITY_BY_ID[n.cityId]?.name}).` };
+}
+
 function counted(state: GameState, r: ActionResult, n = 1): ActionResult {
   if (r.ok) state.company.tradesThisMonth += n;
   return r;
@@ -539,6 +763,12 @@ export function migrateState(raw: GameState): GameState {
     createManagerPool(s, 6);
     generateOpportunities(s, 4);
     s.version = 4;
+  }
+  if (s.version === 4) {
+    Object.assign(s, { career: null, npcs: [], situations: [], negotiation: null, compromises: [], tips: [] });
+    s.company.cumCashByCategory.dividends = 0;
+    seedNpcs(s);
+    s.version = 5;
   }
   return s;
 }

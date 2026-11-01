@@ -4,6 +4,9 @@ import { DEFAULT_CONFIG } from '../engine/game';
 import { importJson, listSaves, loadGame, type SaveMeta } from '../save/saveStore';
 import { formatDay } from '../engine/calendar';
 import { usd } from './format';
+import { COMPANIES } from '../data/companies';
+import { TRACK_LABEL } from '../data/career';
+import type { CareerTrack } from '../engine/types';
 import { useStore } from './store';
 
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
@@ -19,13 +22,22 @@ export function StartScreen() {
   const [vol, setVol] = useState(1);
   const [crisis, setCrisis] = useState(1);
   const [seed, setSeed] = useState(randomSeed());
+  const [mode, setMode] = useState<'story' | 'found' | 'join'>('story');
+  const [employer, setEmployer] = useState('glenmoor');
+  const [track, setTrack] = useState<CareerTrack>('trading');
+  const [player, setPlayer] = useState('Alex Martin');
   const [saves, setSaves] = useState<SaveMeta[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     listSaves().then(setSaves).catch(() => setSaves([]));
   }, []);
 
-  const start = () => newGame({ companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years, volatility: vol, crisisFrequency: crisis, seed });
+  const start = () =>
+    newGame({
+      mode: mode === 'story' ? 'story' : 'sandbox', start: mode === 'join' ? 'join' : 'found', employerId: employer, track, playerName: player || 'Vous',
+      companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years: mode === 'story' ? Math.max(years, 6) : years, volatility: vol, crisisFrequency: crisis, seed,
+    });
+  const employers = COMPANIES.filter((c) => c.ai);
 
   return (
     <div className="start">
@@ -46,19 +58,47 @@ export function StartScreen() {
             ))}
           </div>
         )}
-        <h3>Nouvelle partie · Sandbox</h3>
-        <label>Nom de la société<input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} /></label>
-        <div className="label">Ville du siège</div>
-        <div className="city-pick">
-          {CITIES.map((c) => (
-            <button key={c.id} className={city === c.id ? 'on' : ''} onClick={() => setCity(c.id)}>
-              <b>{c.name}</b>
-              <small>IS {(c.corporateTax * 100).toFixed(0)} % · loyer {usd(c.officeRentMonthly)}</small>
-            </button>
-          ))}
+        <h3>Nouvelle partie</h3>
+        <div className="tabs mode-pick">
+          <button className={mode === 'story' ? 'on' : ''} onClick={() => setMode('story')}>📖 Histoire<small>de stagiaire à CEO</small></button>
+          <button className={mode === 'found' ? 'on' : ''} onClick={() => setMode('found')}>🏢 Sandbox : ma société</button>
+          <button className={mode === 'join' ? 'on' : ''} onClick={() => setMode('join')}>👔 Sandbox : trader salarié</button>
         </div>
+        {mode !== 'found' && (
+          <>
+            {mode === 'story' && <label>Votre nom<input value={player} onChange={(e) => setPlayer(e.target.value)} maxLength={30} /></label>}
+            <div className="label">Société d’entrée</div>
+            <div className="city-pick employers">
+              {employers.map((c) => (
+                <button key={c.id} className={employer === c.id ? 'on' : ''} onClick={() => setEmployer(c.id)} title={c.culture}>
+                  <b>{c.name}</b>
+                  <small>{CITIES.find((x) => x.id === c.cityId)?.name} · {c.kind} · {c.temperament}</small>
+                </button>
+              ))}
+            </div>
+            {mode === 'story' && (
+              <div className="chips">
+                {(Object.keys(TRACK_LABEL) as CareerTrack[]).map((t) => <button key={t} className={track === t ? 'on' : ''} onClick={() => setTrack(t)}>Filière {TRACK_LABEL[t]}</button>)}
+              </div>
+            )}
+          </>
+        )}
+        {mode === 'found' && (
+          <>
+            <label>Nom de la société<input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} /></label>
+            <div className="label">Ville du siège</div>
+            <div className="city-pick">
+              {CITIES.map((c) => (
+                <button key={c.id} className={city === c.id ? 'on' : ''} onClick={() => setCity(c.id)}>
+                  <b>{c.name}</b>
+                  <small>IS {(c.corporateTax * 100).toFixed(0)} % · loyer {usd(c.officeRentMonthly)}</small>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         <div className="row2">
-          <label>Capital initial : <b>{capital} M$</b><input type="range" min={5} max={100} step={5} value={capital} onChange={(e) => setCapital(Number(e.target.value))} /></label>
+          {mode !== 'story' && <label>{mode === 'join' ? 'Capital alloué au livre' : 'Capital initial'} : <b>{capital} M$</b><input type="range" min={5} max={100} step={5} value={capital} onChange={(e) => setCapital(Number(e.target.value))} /></label>}
           <label>Durée : <b>{years} an{years > 1 ? 's' : ''}</b><input type="range" min={1} max={8} value={years} onChange={(e) => setYears(Number(e.target.value))} /></label>
         </div>
         <div className="row2">
@@ -77,9 +117,8 @@ export function StartScreen() {
         <div className="start-actions">
           <button className="ghost" onClick={() => fileRef.current?.click()}>Importer une sauvegarde…</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { loadState(await importJson(f)); } catch (err) { toast((err as Error).message, 'bad'); } }} />
-          <button className="primary big" onClick={start}>Ouvrir les bureaux →</button>
+          <button className="primary big" onClick={start}>{mode === 'story' ? 'Premier jour →' : mode === 'join' ? 'Rejoindre le desk →' : 'Ouvrir les bureaux →'}</button>
         </div>
-        <p className="muted small">Mode Histoire (carrière de stagiaire à CEO) : phase 5.</p>
       </div>
     </div>
   );

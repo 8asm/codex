@@ -21,9 +21,13 @@ import { LogisticsPanel } from './LogisticsPanel';
 import { AssetsPanel } from './AssetsPanel';
 import { AutomationPanel } from './AutomationPanel';
 import type { LayerId } from './store';
+import { CareerPanel } from './CareerPanel';
+import { NegotiationModal, SituationOverlay } from './NegotiationModal';
+import { rights } from '../engine/career';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
 
 const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
+  { id: 'career', icon: '👔', label: 'Carrière', key: 'J' },
   { id: 'market', icon: '📈', label: 'Marchés', key: 'M' },
   { id: 'physical', icon: '📦', label: 'Physique', key: 'P' },
   { id: 'logistics', icon: '🚢', label: 'Fret', key: 'F' },
@@ -117,7 +121,19 @@ export function App() {
   const showRivals = !!game && (game.history.length > 4 || game.forwards.length > 0);
   const showLogi = !!game && (game.history.length > 6 || game.inventory.length > 0 || game.forwards.length > 0);
   const showAssets = !!game && (game.history.length > 12 || game.assets.length > 0);
-  const visible0 = (id: PanelId) => (id === 'logistics' ? showLogi : id === 'assets' ? showAssets : id === 'automation' ? false : true);
+  const rg = game ? rights(game) : null;
+  const byRights = (id: PanelId) => {
+    if (!rg) return true;
+    if (id === 'career') return !!game?.career;
+    if (id === 'options') return rg.options;
+    if (id === 'physical') return rg.physical;
+    if (id === 'logistics') return rg.otc;
+    if (id === 'assets') return rg.assets;
+    if (id === 'treasury') return rg.treasury || rg.trade;
+    if (id === 'risk' || id === 'book') return rg.trade;
+    return true;
+  };
+  const visible0 = (id: PanelId) => byRights(id) && (id === 'logistics' ? showLogi || !!game?.career : id === 'assets' ? showAssets || !!game?.career : id === 'automation' ? false : true);
   const visible = (id: PanelId) => visible0(id) && visible1(id);
   const visible1 = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
@@ -133,7 +149,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P F I O L R T V A G K C U : panneaux · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K C U : panneaux · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -159,11 +175,14 @@ export function App() {
             {panel === 'logistics' && <LogisticsPanel />}
             {panel === 'assets' && <AssetsPanel />}
             {panel === 'automation' && <AutomationPanel />}
+            {panel === 'career' && <CareerPanel />}
           </div>
           <LayerBar />
           <AdvisorBar />
           <NewsTicker />
           <Modals />
+          <SituationOverlay />
+          <NegotiationModal />
         </>
       )}
       <div className="toasts">

@@ -10,6 +10,9 @@ import { useState } from 'react';
 import { useLiveVar } from './derived';
 import { COVENANT_VAR_PCT } from '../engine/limits';
 import { leaderboard } from '../engine/companies';
+import { evaluate, title } from '../engine/career';
+import { activeSituations } from '../engine/situations';
+import { COMPANY_BY_ID } from '../data/companies';
 
 const SPEEDS: { s: Speed; label: string; key: string }[] = [
   { s: 0, label: '❚❚', key: 'Espace' },
@@ -36,6 +39,9 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
   const marginUse = g.company.im / capacity;
   const ret = navV / g.company.initialCapital - 1;
   const board = leaderboard(g);
+  const employee = g.career?.status === 'employed';
+  const noBook = !!g.career && (g.career.status === 'unemployed' || (employee && g.career.allocation <= 0));
+  const pending = g.career ? activeSituations(g).length : 0;
   const rank = board.findIndex((r) => r.id === 'player') + 1;
   const where = g.player.travel ? `✈ vers ${CITY_BY_ID[g.player.travel.to]!.name}` : `📍 ${CITY_BY_ID[g.player.cityId!]!.name}`;
   const live = useLiveVar();
@@ -49,7 +55,7 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
         <span className="logo">⛵</span>
         <div>
           <div className="brand-name">TRADEWINDS</div>
-          <div className="brand-co">{g.company.name}</div>
+          <div className="brand-co">{g.career ? `${title(g.career)}${g.career.status === 'employed' ? ` · ${COMPANY_BY_ID[g.career.employerId!]?.name}` : g.career.status === 'unemployed' ? '' : ` · ${g.company.name}`}` : g.company.name}</div>
         </div>
       </div>
 
@@ -67,14 +73,29 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
       </div>
 
       <div className="hud-kpis">
+        {g.career && (
+          <div className="kpi" onClick={() => setPanel('career')}>
+            <div className="kpi-label">Patrimoine perso</div>
+            <AnimatedNumber value={g.career.wealth} format={(x) => usd(x, 2)} />
+            <div className="kpi-sub">réputation {Math.round(g.career.reputation)}{pending > 0 ? ` · 📩 ${pending}` : ''}</div>
+          </div>
+        )}
+        {noBook && g.career && (
+          <div className="kpi" onClick={() => setPanel('career')}>
+            <div className="kpi-label">Poste</div>
+            <div className="anim-num">{title(g.career)}</div>
+            <div className="kpi-sub">{employee ? `évaluation ≈ ${Math.round(evaluate(g).score)}/100` : 'en recherche d’emploi'}</div>
+          </div>
+        )}
+        {!noBook && <>
         <div className="kpi" onClick={() => setPanel('treasury')}>
-          <div className="kpi-label">Cash libre</div>
+          <div className="kpi-label">{employee ? 'Cash du livre' : 'Cash libre'}</div>
           <AnimatedNumber value={free} format={(x) => usd(x)} className={free < 0 ? 'neg' : ''} />
         </div>
         <div className="kpi" onClick={() => setPanel('book')}>
-          <div className="kpi-label"><Term id="nav">Fonds propres</Term></div>
+          <div className="kpi-label">{employee ? 'Livre alloué' : <Term id="nav">Fonds propres</Term>}</div>
           <AnimatedNumber value={navV} format={(x) => usd(x, 2)} />
-          <div className={`kpi-sub ${tone(ret)}`}>{(ret * 100).toFixed(1)} % · <span className="rank" onClick={(e) => { e.stopPropagation(); setPanel('rivals'); }}>#{rank}/{board.length}</span></div>
+          <div className={`kpi-sub ${tone(ret)}`}>{(ret * 100).toFixed(1)} %{rank > 0 && <> · <span className="rank" onClick={(e) => { e.stopPropagation(); setPanel('rivals'); }}>#{rank}/{board.length}</span></>}</div>
         </div>
         <div className={`kpi big ${tone(dayPnl)}`} onClick={() => setPanel('book')}>
           <div className="kpi-label">P&L du jour</div>
@@ -90,6 +111,7 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
           <div className="bar"><div style={{ width: `${Math.min(100, varUse * 100)}%` }} /></div>
           <div className="kpi-sub">{usd(v)} · {(v / Math.max(1, navV) * 100).toFixed(1)} % FP</div>
         </div>
+        </>}
         <div className={`kpi alerts ${alerts ? 'on' : ''}`} title="Alertes">
           <div className="kpi-label">Alertes</div>
           <div className="alert-icons">

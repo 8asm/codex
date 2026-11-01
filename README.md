@@ -8,7 +8,7 @@ Pas de guerre : des cargaisons, des courbes forward, des appels de marge et du c
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 96 tests du moteur (pricing, options, marge SPAN, VaR, événements, crédit, fret, logistique, actifs, déterminisme)
+npm test           # 113 tests du moteur (pricing, options, marge SPAN, VaR, événements, crédit, fret, actifs, carrière, déterminisme)
 npm run build      # build de production dans dist/
 ```
 
@@ -54,9 +54,21 @@ npm run build      # build de production dans dist/
 - **Automatisation** (⚙️ ou `U`) : trésorerie, roll, couverture de base, logistique, vente de la production, assurance.
 - **Calques** routes et stocks ; rails, barges et pipelines lumineux ; actifs animés.
 
+## Phase 5 — ce qui s'ajoute
+
+- **Mode Histoire** : choisissez votre société d'entrée et votre filière (trading, risques, opérations, financement, recherche), commencez stagiaire, visez CEO.
+- **Situations quotidiennes** : demandes de seniors, erreurs à rattraper, clients pressés, corruption, presse, trader voyou, notes de recherche…
+- **Livre de trading alloué** par l'employeur avec droits croissants : futures, puis options et physique, puis OTC et fret, puis toutes les commodités.
+- **Évaluations, promotions, bonus, avertissements, licenciement.** Discipline des limites : convocation, gel, renvoi.
+- **PNJ avec mémoire et confiance** : clients, banquiers, chasseurs de têtes, journalistes, officiels, investisseurs, collègues.
+- **Tuyaux** parfois privilégiés (délit d'initié) et **compromissions qui ressurgissent** des années plus tard en enquête : amende, licenciement, interdiction d'exercer, prison.
+- **Négociation en mini-jeu** (ancrage, concessions, bluff, arguments) : salaire, bonus, offres d'emploi, deals physiques, levée de fonds.
+- **Marché de l'emploi** (débauchage, entretiens, références), **création de sa société** avec investisseurs, banques et dividendes soumis à retenue à la source.
+- **Sandbox « trader salarié »** : rejoindre une maison existante comme trader.
+
 ### Raccourcis
 
-`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `U` automatisation · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `U` automatisation · `C` codex · `Échap` fermer
 
 ## Structure
 

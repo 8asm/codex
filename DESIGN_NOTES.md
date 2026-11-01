@@ -78,7 +78,7 @@ Décisions :
   - le taux de chaque ville évolue avec les élections et les réformes ;
   - deux régimes spéciaux : Singapour à 10 % si le volume physique annuel dépasse 500 M$ ; zone franche de Dubaï à 0 % moyennant une redevance de 250 k$ par an ;
   - transfert de siège possible (1,5 M$ + taxe de sortie de 1 % de la NAV, une fois par an).
-  **Simplification restante** : pas de retenues à la source. Elles n'ont de sens qu'avec des dividendes ou des investisseurs : *phase 5 (création de société avec investisseurs)*.
+  **Phase 5** : retenue à la source sur les dividendes du fondateur selon la ville du siège (Genève 35 %, Londres 0 %, Rotterdam 15 %, Singapour 0 %, Houston et Chicago 30 %, Dubaï 0 %, Shanghai 10 %, Santiago 35 %, Johannesburg 20 %). **Simplification** : taux nominaux, sans conventions fiscales ni crédits d'impôt.
 
 ## Rendu
 
@@ -120,7 +120,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - covenant bancaire, VaR ≤ 8 % des fonds propres : avertissement à J1, gel de la RCF et marge +1 % à J3, ligne divisée par deux à J7, retour à la normale quand la VaR repasse sous la limite ;
   - limites internes (VaR, stop-loss mensuel, delta par commodité) avec mode « discipline stricte » : l'ordre est exécuté puis annulé s'il aggrave une limite dépassée ;
   - limites de position des bourses (mois spot et toutes échéances nettes).
-  **Simplification** : en Sandbox, le joueur est le patron. Les sanctions de type remontrance ou licenciement arriveront avec le mode Histoire (phase 5).
+  En Sandbox « ma société », le joueur est le patron (covenant et limites internes). **Phase 5** : en salarié (Histoire ou Sandbox « trader salarié »), les dépassements de limites de l'employeur entraînent convocation, gel du livre puis licenciement (voir plus bas).
 
 ### P&L expliqué (`engine/explain.ts`)
 - Décomposition quotidienne du livre de la veille en prix, base, change, vol et temps, chaque instrument dans ses propres coordonnées (forward du contrat, basis, actualisation, vol au strike, maturité). Le résidu « deals & coûts » rend le total exact (testé). Pour les options, l'ordre est séquentiel (prix → vol → temps).
@@ -154,7 +154,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - El Niño / La Niña, ouragans dans le Golfe, explosion de raffinerie, coup d'État dans un pays minier.
 - **Simplification — prix négatifs** : le modèle lognormal ne peut pas produire de prix négatif. Le remake « pétrole à prix négatif » est un effondrement du front avec un contango extrême. Un modèle arithmétique (ou à décalage) sera nécessaire si un brut enclavé type WTI est ajouté (*phase 8*).
 - **Simplification — suspension** : pendant une suspension, les prix publiés sont figés et tous les chocs (marché et news) s'accumulent, puis tombent à la réouverture. Il n'y a pas d'annulation rétroactive des transactions de la journée (contrairement à l'épisode réel du nickel). Seuls les futures et options de la commodité sont bloqués ; le physique continue.
-- **Simplification — délits d'initiés** : les informations obtenues en avance via les relations (risque de délit d'initié) arrivent avec les PNJ et relations en *phase 5*, et la conformité (enquêtes, sanctions) en *phase 7*.
+- **Délits d'initiés** : informations obtenues en avance par les relations, traitées en phase 5 (voir plus bas). La conformité complète (procédures, sanctions de la société, contrôles automatiques) viendra en *phase 7*.
 
 ### Géopolitique et réglementation
 - **Zones** : les 9 pays réels des villes, plus 5 zones de production fictives remaniées (Fédération de Sarmatie, Royaumes du Golfe, République du Kassaï, Tauride, Archipel d'Insulinde), chacune avec un bloc et une stabilité qui dérive et réagit aux événements. Tension entre blocs de 0 à 100.
@@ -178,7 +178,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Faillite** : liquidation forcée de ses expositions (choc de prix proportionnel à la taille), résiliation et compensation des contrats du joueur.
 - **Concurrence sur le physique** : une offre avantageuse a 25 % de chances par jour d'être raflée par un concurrent.
 - Classement (joueur inclus) et **rival nominatif** (maison de la même ville au profil le plus proche, avec son trader vedette).
-- **Simplification** : les concurrents n'ont pas de livre détaillé (expositions agrégées par commodité) et n'interagissent pas avec le carnet des futures, sauf choc de liquidation. Recrutements et débauchages qui touchent le joueur : *phases 5 et 8*.
+- **Simplification** : les concurrents n'ont pas de livre détaillé (expositions agrégées par commodité) et n'interagissent pas avec le carnet des futures, sauf choc de liquidation. Débauchage du joueur par les chasseurs de têtes : phase 5. Recrutement par le joueur de ses propres équipes : *phase 8*.
 
 ### Risque de contrepartie (`engine/credit.ts`)
 - Probabilités de défaut annuelles par notation (AAA 0,01 % … B 4 %, CCC 15 %), doublées en régime de stress. Les contreparties non simulées sont dégradées par l'instabilité de leur pays.
@@ -259,3 +259,80 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Sauvegardes
 - Version 4. Migration automatique depuis les versions 1 à 3.
+
+## Phase 5 — mode Histoire : carrière, PNJ, relations, création de société
+
+### Architecture
+- `GameState.career` (null en Sandbox « ma société ») décrit le personnage :
+  - statut (salarié, sans emploi, fondateur, CEO), employeur, filière, niveau ;
+  - salaire, **patrimoine personnel** distinct de la société ;
+  - 6 compétences, réputation, mérite, avertissements, sanctions, offres d'emploi, équipe, actionnariat.
+- **Livre alloué** : un salarié qui trade gère `state.company` comme un livre doté par l'employeur. Le capital dépend du niveau : 8 M$ en junior, 25 M$ en trader, 60 M$ en senior, 150 M$ en head of desk, 400 M$ en direction. Pas de frais généraux, d'impôt ni de reporting à sa charge. Les marges sont financées par la trésorerie de l'employeur (ligne interne). Le P&L du livre est reversé chaque jour à la société simulée de l'employeur. Tout le moteur des phases 1 à 4 reste utilisé tel quel.
+- **Droits** selon le niveau, vérifiés avant toute action :
+  - stagiaire et analyste ne tradent pas ;
+  - junior : futures et spreads de son desk ;
+  - trader : + options et physique ;
+  - senior : + OTC, FFA, expéditions ;
+  - head of desk : toutes les commodités ;
+  - direction : actifs, trésorerie, CSA ;
+  - limites internes et transfert de siège : réservés au CEO ou au fondateur.
+  Les filières hors trading ne tradent pas.
+- **Départ, licenciement, transfert** : le livre est soldé au prix de marché et repris par l'employeur (simplification : pas de passation progressive).
+- **Sandbox « trader salarié »** : même mécanique, niveau trader, capital choisi, sans narration ni promotions, mais avec la discipline des limites.
+
+### Progression
+- Cinq filières (trading, risques, opérations, financement structuré, recherche), 8 niveaux chacune : de stagiaire à la direction de la filière, puis CEO.
+- **Évaluations semestrielles** (janvier et juillet) :
+  - note = 45 % performance + 25 % compétence de la filière + 30 % confiance du manager − 8 points par sanction ;
+  - performance en trading : rendement annualisé du livre et de l'équipe face à un objectif de 8 %/an ; hors trading : mérite accumulé dans les situations ;
+  - promotion si note ≥ 65 et ancienneté minimale dans le poste ; avertissement sous 40, licenciement au second ;
+  - le stage se transforme en poste d'analyste si la note atteint 45, sinon il prend fin.
+- **Bonus annuel** : trading = P&L positif × taux selon le niveau × (0,6 + confiance du manager/125) ; hors trading = salaire annuel × note × 30 %. Négociable en mini-jeu.
+- **Discipline des limites** (VaR 3 %, stop-loss mensuel 8 %, delta 4 % du capital alloué) : chaque dépassement vaut une convocation et une sanction (une au plus tous les 3 jours) ; au 3ᵉ ou en cas de stop-loss, gel du livre 10 jours ; au 5ᵉ, licenciement. Une sanction est effacée chaque trimestre sans incident. Perte supérieure à 20 % du capital alloué, ou liquidation après appel de marge : licenciement.
+- **CEO** : au niveau direction, avec une note ≥ 80 et une réputation ≥ 60, le conseil propose la direction générale. La société simulée de l'employeur devient celle du joueur (capital = ses fonds propres) et tout le mode société s'ouvre. Le conseil démet le CEO si la NAV recule de plus de 25 % sur l'année. **Simplification** : les positions agrégées de la société simulée ne sont pas transférées (on démarre en cash).
+- **Marché de l'emploi** :
+  - les chasseurs de têtes apportent des offres chaque mois, selon la réputation et leur confiance ;
+  - le joueur peut aussi postuler ;
+  - la chance de réussir l'entretien dépend des compétences, de la réputation, des références (meilleur ancien manager), du contact dans la société et de la préparation ;
+  - une offre ferme sert de **levier réel** dans toute négociation.
+  Démission et transfert de filière (si le manager soutient la demande et que les compétences suffisent) sont possibles.
+- Coût de la vie mensuel selon la ville, épargne rémunérée à 3 %/an.
+
+### PNJ et relations (`engine/npcs.ts`)
+- Générés par la graine :
+  - un contact par société du monde (client ou banquier) ;
+  - chasseurs de têtes, journalistes, officiels, investisseurs ;
+  - chez l'employeur : manager, collègues, risk manager, conformité, mentor.
+- Chaque PNJ a une confiance (−100..100), une honnêteté, une ambition, un intérêt propre et une **mémoire** (les 12 dernières interactions avec leur effet). Les relations s'érodent lentement vers la neutralité.
+- Effets :
+  - un contact de confiance propose de meilleurs différentiels (jusqu'à 0,3 % du prix) et des offres qui durent plus longtemps ; chaque deal conclu renforce la relation ;
+  - les chasseurs apportent des offres, les banquiers fixent la ligne du futur fondateur, les investisseurs suivent ;
+  - un témoin devenu hostile double la probabilité d'enquête sur une compromission qu'il connaît ;
+  - un déjeuner en personne compte double par rapport à un appel vidéo : il faut voyager.
+
+### Situations (`engine/situations.ts`)
+- 20 modèles procéduraux tirés au sort selon le poste, la filière et le contexte, avec un délai entre deux occurrences du même modèle :
+  - générales : demande d'un senior, erreur à rattraper, appel client, proposition de corruption, journaliste, conférence, collègue qui s'attribue votre travail, mentorat, banquier, contournement de sanctions, manipulation de cours, réclamation qualité, inspection du régulateur, conflit d'équipe ;
+  - propres aux filières : trader voyou (risques), surestaries (opérations), prépaiement (financement), notes de recherche jugées trois mois plus tard (recherche) ;
+  - générées par d'autres mécaniques : chasseur de têtes, entretien, promotion, bonus, convocation du risk management, avertissement, tuyau, enquête.
+- Les situations urgentes mettent le jeu en pause ; une situation ignorée est résolue par défaut, avec un léger malus de relation.
+- **Conséquences différées** : certaines situations en programment d'autres des mois plus tard (prépaiement sans garantie qui tourne mal, bilan d'une note de recherche).
+
+### Compromissions et enquêtes
+- Chaque raccourci éthique laisse une **compromission** : type, gravité 1 à 5, témoins. Une enquête peut s'ouvrir au plus tôt 4 mois après ; probabilité quotidienne = gravité² × 0,006 %, ×2 si un témoin est hostile, ×1,5 si la presse ou le régulateur est au courant. Pour une gravité 5, cela donne environ 15 % par an.
+- Le joueur choisit coopérer, nier ou engager un avocat. Issues : amende (proportionnelle au patrimoine), réputation, licenciement, **interdiction d'exercer** ou **prison** (fins de partie).
+- **Tuyaux** : un PNJ de confiance peut annoncer un mouvement. S'il est réel, l'impact est réellement programmé sur le marché quelques jours plus tard ; sinon c'est une fausse piste (fiabilité liée à l'honnêteté du PNJ). Si l'information est **privilégiée** et que l'exposition du joueur bouge dans le sens annoncé avant publication, un délit d'initié (gravité 4) est enregistré.
+- **Simplification** : pas de procès en plusieurs étapes ni d'appel ; la conformité interne automatisée viendra en *phase 7*.
+
+### Négociation en mini-jeu (`engine/negotiation.ts`)
+- Cinq tours au plus et une jauge de patience. Coups : ancrer, concéder, bluffer, argumenter, accepter, rompre. La contrepartie a une limite cachée qui dépend de la confiance, de la compétence de négociation, de la présence physique (deals) et du levier. Le résultat ne dépasse jamais cette limite (testé). Bluff éventé : −12 de confiance.
+- Utilisée pour : salaire (promotion, augmentation, offre d'emploi), bonus, différentiel d'une offre physique (une tentative par offre, en Sandbox aussi), part du capital cédée aux investisseurs.
+
+### Création de société
+- Conditions : patrimoine ≥ 500 k$ (80 % investis), réputation ≥ 30.
+- Levée de fonds : négociation de la part cédée à chaque investisseur ; le capital proposé dépend de la réputation et de la confiance. Ligne bancaire × (0,7 + confiance moyenne des banquiers/100 + réputation/200), bornée entre 0,4 et 1,6.
+- Le fondateur fixe un taux de distribution. Dividendes annuels sur le bénéfice : sa part après retenue à la source va dans son patrimoine. Les investisseurs attendent au moins 20 % de distribution.
+- **Simplification** : pas de gouvernance (pas d'éviction du fondateur par des investisseurs majoritaires), pas de valorisation de la part du fondateur dans un score.
+
+### Sauvegardes
+- Version 5. Migration automatique depuis les versions 1 à 4 (les PNJ sont générés à la migration).

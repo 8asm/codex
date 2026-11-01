@@ -25,7 +25,7 @@ export function RivalsPanel() {
   return (
     <Panel title="Concurrents & contreparties" icon="🏢" onClose={() => setPanel('rivals')} wide>
       {focus && <CompanyCard id={focus} onClose={() => focusCompany(null)} rival={focus === rival} />}
-      <h4>Classement des maisons · vous êtes <b>#{myRank}</b> sur {board.length}</h4>
+      <h4>Classement des maisons{myRank > 0 ? <> · vous êtes <b>#{myRank}</b> sur {board.length}</> : ''}</h4>
       <table className="tbl board">
         <thead><tr><th>#</th><th>Maison</th><th>Siège</th><th>Fonds propres</th><th>Année</th><th><Term id="rating">Note</Term></th></tr></thead>
         <tbody>

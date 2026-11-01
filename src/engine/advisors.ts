@@ -20,6 +20,7 @@ import { cpRating } from './credit';
 import { zoneOf } from './world';
 import { CITY_BY_ID } from '../data/cities';
 import { forwardMtm } from './valuation';
+import { rights } from './career';
 import { shipQuote } from './logistics';
 import { ASSET_DEF_BY_ID } from '../data/assets';
 import { isProducer, nationalisationPA, opportunityValue } from './assets';
@@ -314,7 +315,10 @@ export function morningAdvice(state: GameState) {
     p.outcome = right ? 'right' : 'wrong';
     state.track[a.advisor][right ? 'right' : 'wrong']++;
   }
-  const drafts = rules(state).filter((d) => (state.adviceCooldown[d.rule] ?? -1e9) <= state.day);
+  // Un salarié sans droit de trader ne reçoit que les analyses de marché, pas d'ordres à passer.
+  const canTrade = rights(state).trade;
+  const drafts = rules(state).filter((d) => (state.adviceCooldown[d.rule] ?? -1e9) <= state.day)
+    .filter((d) => canTrade || ((!d.action || d.action.kind === 'panel') && !d.rule.startsWith('risk.') && !d.rule.startsWith('trader.') && !d.rule.startsWith('ops.')));
   // priorité : colère > inquiétude > le reste ; on ne garde que quelques conseils par jour
   const order = { angry: 0, worried: 1, smug: 2, happy: 2, neutral: 3 } as const;
   drafts.sort((a, b) => order[a.mood] - order[b.mood]);

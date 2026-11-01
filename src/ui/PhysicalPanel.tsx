@@ -108,6 +108,7 @@ function OfferCard({ o }: { o: Offer }) {
       {block && <div className="offer-block">⛔ {block}{o.kycReadyDay && g.day < o.kycReadyDay ? ` (prêt le ${formatDayShort(o.kycReadyDay)})` : ''}</div>}
       <div className="offer-actions">
         <span className="muted small">expire le {formatDayShort(o.expiresDay)}</span>
+        {!o.negotiated && <button disabled={!!block} onClick={() => act({ type: 'START_NEGOTIATION', kind: 'deal', target: o.id })} title="Mini-jeu : améliorer le différentiel (une seule tentative)">Négocier</button>}
         <button disabled={!!block} onClick={() => accept(false)}>{o.side > 0 ? 'Acheter' : 'Vendre'}</button>
         <button className="primary" disabled={!!block} onClick={() => accept(true)} title={`+ ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}`}>
           {o.side > 0 ? 'Acheter' : 'Vendre'} + <Term id="hedge">couvrir</Term> ({hl} lots {monthLabel(hm)})

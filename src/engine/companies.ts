@@ -187,8 +187,12 @@ export function leaderboard(state: GameState): Ranked[] {
   const out: Ranked[] = state.companies
     .filter((c) => c.alive && COMPANY_BY_ID[c.id]!.kind !== 'bank')
     .map((c) => ({ id: c.id, name: COMPANY_BY_ID[c.id]!.name, nav: c.nav, ytd: c.nav / c.yearStartNav - 1, rating: c.rating, cityId: COMPANY_BY_ID[c.id]!.cityId, kind: COMPANY_BY_ID[c.id]!.kind }));
-  const n = nav(state);
-  out.push({ id: 'player', name: state.company.name, nav: n, ytd: n / state.company.yearStartNav - 1, rating: '—', cityId: state.company.hqCity, kind: 'trader' });
+  // un salarié ne dirige pas de maison : il n'apparaît pas au classement
+  const st = state.career?.status;
+  if (!st || st === 'founder' || st === 'ceo') {
+    const n = nav(state);
+    out.push({ id: 'player', name: state.company.name, nav: n, ytd: n / Math.max(1, state.company.yearStartNav) - 1, rating: '—', cityId: state.company.hqCity, kind: 'trader' });
+  }
   return out.sort((a, b) => b.nav - a.nav);
 }
 
@@ -196,6 +200,7 @@ export function leaderboard(state: GameState): Ranked[] {
 export function rivalOf(state: GameState): string | null {
   const board = leaderboard(state);
   const i = board.findIndex((r) => r.id === 'player');
+  if (i < 0) return null;
   const sameCity = board.filter((r) => r.id !== 'player' && r.cityId === state.company.hqCity && ['trader', 'fund'].includes(r.kind));
   if (sameCity.length) return sameCity.sort((a, b) => Math.abs(a.nav - board[i]!.nav) - Math.abs(b.nav - board[i]!.nav))[0]!.id;
   return board[i - 1]?.id ?? board[i + 1]?.id ?? null;

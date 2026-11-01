@@ -4,7 +4,7 @@ import { listedMonths, lotQty } from '../contracts';
 import { advanceDay, createGame, dispatch } from '../game';
 import { futuresPrice, fx } from '../market';
 import { totalIm, imByCommodity } from '../margin';
-import { acceptOffer, offerPrice } from '../physical';
+import { acceptOffer, offerBlock, offerPrice } from '../physical';
 import type { GameState } from '../types';
 import { forwardMtm, nav } from '../valuation';
 
@@ -112,7 +112,7 @@ describe('physique', () => {
   it('MTM d’un forward = (fwd local − prix) × qté × DF, puis livraison en stock', () => {
     const s = createGame({ seed: 'phys', ...quiet });
     let tries = 0;
-    const usdBuy = (x: (typeof s.offers)[number]) => x.side === 1 && COMMODITIES[x.commodity].currency === 'USD';
+    const usdBuy = (x: (typeof s.offers)[number]) => x.side === 1 && COMMODITIES[x.commodity].currency === 'USD' && !offerBlock(s, x);
     while (!s.offers.some(usdBuy) && tries++ < 40) advanceDay(s);
     const o = s.offers.find(usdBuy)!;
     const px = offerPrice(s, o);

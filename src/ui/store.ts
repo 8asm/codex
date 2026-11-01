@@ -10,7 +10,7 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career';
 export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals' | 'routes' | 'stocks';
 export type Speed = 0 | 1 | 2 | 5;
 
@@ -21,7 +21,7 @@ export interface Toast {
 }
 
 export interface Modal {
-  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation' | 'limit';
+  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation' | 'limit' | 'career';
   text: string;
 }
 
@@ -125,6 +125,15 @@ export const useStore = create<UIState>((set, get) => ({
     let pause = false;
     for (const al of alerts) {
       if (al.kind === 'delivery' || al.kind === 'limit_ok') get().toast(al.text, 'info');
+      else if (al.kind === 'situation') {
+        sfx.advisor();
+        get().toast(`📩 ${al.text}`, 'alert');
+        pause = true;
+      } else if (al.kind === 'career') {
+        sfx.news();
+        modal ??= { kind: 'career', text: al.text };
+        pause = true;
+      }
       else if (al.kind === 'advice') continue;
       else if (al.kind === 'limit') {
         sfx.alarm();
@@ -137,7 +146,7 @@ export const useStore = create<UIState>((set, get) => ({
         get().toast(`📰 ${al.text}`, 'alert');
         modal ??= { kind: 'major_news', text: al.text };
         pause = true;
-      } else {
+      } else if (al.kind === 'margin_call' || al.kind === 'bankrupt' || al.kind === 'ended' || al.kind === 'liquidation') {
         sfx.alarm();
         modal = { kind: al.kind, text: al.text };
         pause = true;

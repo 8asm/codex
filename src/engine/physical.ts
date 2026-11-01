@@ -14,6 +14,7 @@ import { CITY_BY_ID } from '../data/cities';
 import { cpRating } from './credit';
 import { sanctionedDiscount } from './events';
 import { addNews } from './news';
+import { contactAt, remember } from './npcs';
 import { isRestricted, sanctionFor, zoneOf } from './world';
 import { addBusinessDays, monthIndexOf, monthLabel, type Day } from './calendar';
 import { physicalDeliveryDay } from './contracts';
@@ -123,8 +124,10 @@ export function generateOffers(state: GameState) {
     const side: 1 | -1 = sanctioned ? 1 : uniform(state.rng) < 0.5 ? 1 : -1;
     const month = monthIndexOf(state.day) + randInt(state.rng, 1, 4);
     const f = forwardAt(state.market, c, physicalDeliveryDay(month));
-    // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %).
-    const skew = f * (0.0015 + 0.0045 * normal(state.rng));
+    // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %) ; un contact qui
+    // vous fait confiance propose de meilleures conditions (jusqu'à 0,3 % de mieux à confiance maximale).
+    const trust = contactAt(state, cp.id)?.trust ?? 0;
+    const skew = f * (0.0015 - (trust / 100) * 0.003 + 0.0045 * normal(state.rng));
     let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
     diff = roundTo(diff, spec.tick);
@@ -140,7 +143,7 @@ export function generateOffers(state: GameState) {
       diff,
       counterpartyId: cp.id,
       createdDay: state.day,
-      expiresDay: addBusinessDays(state.day, randInt(state.rng, 1, 3)),
+      expiresDay: addBusinessDays(state.day, randInt(state.rng, 1, 3) + (trust > 40 ? 2 : 0)),
       kycReadyDay: kycRisky(state, cp.id) && kyc > 0.6 ? addBusinessDays(state.day, Math.ceil((kyc - 0.5) * 6)) : undefined,
       tolerance: pick(state.rng, [0, 0, 0.05, 0.1]),
     });
@@ -187,6 +190,7 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
   };
   state.forwards.push(deal);
   state.company.physVolumeYtd += notional;
+  remember(state, contactAt(state, o.counterpartyId)?.id, 3, 'Affaire conclue ensemble');
   state.offers = state.offers.filter((x) => x.id !== offerId);
   const loc = findLocation(o.commodity, o.locationId);
   const cp = COUNTERPARTY_BY_ID[o.counterpartyId]!;

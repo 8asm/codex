@@ -30,6 +30,22 @@ export function Modals() {
     );
   }
 
+  if (modal.kind === 'career') {
+    return (
+      <div className="modal-bg" onClick={close}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="siren">👔</div>
+          <h2>Carrière</h2>
+          <p>{modal.text}</p>
+          <div className="modal-actions">
+            <button onClick={() => { close(); setPanel('career', true); }}>Ouvrir le panneau Carrière</button>
+            <button className="primary" onClick={close}>Continuer</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (modal.kind === 'limit') {
     return (
       <div className="modal-bg">
@@ -83,8 +99,14 @@ export function Modals() {
   return (
     <div className="modal-bg">
       <div className={`modal ${modal.kind === 'bankrupt' ? 'danger' : 'victory'}`}>
-        <h2>{modal.kind === 'bankrupt' ? '💥 Faillite' : '🏁 Fin de partie'}</h2>
+        <h2>{g.status === 'prison' ? '⛓️ Prison' : g.status === 'banned' ? '🚫 Interdiction d’exercer' : modal.kind === 'bankrupt' ? '💥 Faillite' : '🏁 Fin de partie'}</h2>
         <p>{modal.text}</p>
+        {g.career && (
+          <div className="career-summary small">
+            <b>{g.player.name}</b> — patrimoine {usd(g.career.wealth, 2)}, réputation {Math.round(g.career.reputation)}/100, {g.compromises.filter((x) => !x.resolved).length} compromission(s) jamais découverte(s).
+            <ul>{g.career.log.filter((l) => /Promotion|Nouveau poste|Création|CEO|licenci|Départ/i.test(l.text)).slice(0, 8).reverse().map((l, i) => <li key={i}>{l.text}</li>)}</ul>
+          </div>
+        )}
         <Sparkline data={g.history.map((h) => h.nav)} width={420} height={80} color={ret >= 0 ? '#5eead4' : '#f87171'} />
         <div className="stats">
           <div className="stat"><div className="stat-label">Fonds propres finaux</div><div className="stat-value">{usd(n, 2)}</div></div>

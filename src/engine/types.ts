@@ -13,6 +13,9 @@ export type OptStyle = 'A' | 'E';
 export type OptionExpiryRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'WITH_FUTURE';
 export type AdvisorId = 'risk' | 'trader' | 'legal' | 'ops' | 'analyst';
 export type FreightIndex = 'CAPE' | 'PMX' | 'SMX' | 'AFRA';
+export type CareerTrack = 'trading' | 'risk' | 'operations' | 'structured' | 'research';
+export type Skill = 'marché' | 'risque' | 'négociation' | 'opérations' | 'finance' | 'relationnel';
+export type NpcRole = 'manager' | 'collègue' | 'risk' | 'conformité' | 'client' | 'banquier' | 'chasseur' | 'journaliste' | 'officiel' | 'investisseur' | 'mentor';
 
 /** Paramètres du modèle de Schwartz-Smith (2000) à deux facteurs, sous mesure risque-neutre. */
 export interface ModelParams {
@@ -275,7 +278,7 @@ export interface Advice {
 
 export type AdviceAction =
   | { kind: 'hedge'; commodity: CommodityId }
-  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' }
   | { kind: 'trade'; action: Action; label: string };
 
 export interface Offer {
@@ -294,6 +297,8 @@ export interface Offer {
   createdDay: Day;
   /** Tolérance de quantité (±) au choix du vendeur : une option embarquée. */
   tolerance?: number;
+  /** Déjà négociée par le joueur (une seule tentative). */
+  negotiated?: boolean;
   /** Contrôles KYC en cours jusqu'à ce jour (offre non acceptable avant). */
   kycReadyDay?: Day;
 }
@@ -321,7 +326,8 @@ export type CashCategory =
   | 'compliance'
   | 'credit'
   | 'freight'
-  | 'assets';
+  | 'assets'
+  | 'dividends';
 
 export interface Company {
   name: string;
@@ -338,6 +344,8 @@ export interface Company {
   cumCashByCommodity: Record<CommodityId, number>;
   cumCashByCategory: Record<CashCategory, number>;
   frozenCash: null | { amount: number; untilDay: Day };
+  /** Multiplicateur de la ligne bancaire (confiance des banquiers du fondateur). */
+  creditMult?: number;
   tradesThisMonth: number;
   physVolumeYtd: number;
   lastRelocationDay: Day;
@@ -502,7 +510,12 @@ export interface LogEntry {
 }
 
 export interface GameConfig {
-  mode: 'sandbox';
+  mode: 'sandbox' | 'story';
+  /** Sandbox : créer sa société, ou rejoindre une société existante comme trader. */
+  start?: 'found' | 'join';
+  /** Histoire / rejoindre : société d'entrée et filière. */
+  employerId?: string;
+  track?: CareerTrack;
   seed: string;
   companyName: string;
   playerName: string;
@@ -535,6 +548,12 @@ export interface GameState {
   /** Instantané de fin de journée servant de base au P&L expliqué du lendemain. */
   explainBase: null | { market: MarketState; book: Book; day: Day };
   world: WorldState;
+  career: CareerState | null;
+  npcs: Npc[];
+  situations: Situation[];
+  negotiation: Negotiation | null;
+  compromises: Compromise[];
+  tips: Tip[];
   voyages: Voyage[];
   ffa: FfaPosition[];
   freightFixings: Record<FreightIndex, Fixing[]>;
@@ -553,14 +572,133 @@ export interface GameState {
   history: DailyRecord[];
   log: LogEntry[];
   nextId: number;
-  status: 'running' | 'bankrupt' | 'ended';
+  status: 'running' | 'bankrupt' | 'ended' | 'prison' | 'banned';
   statusReason?: string;
   /** Valeur économique par commodité à la dernière clôture (pour P&L par commodité). */
   lastValueBy: Record<CommodityId, number>;
   lastNav: number;
   lastCloseDay: Day;
   /** Événements de la dernière clôture, consommés par l'UI (pause auto, sons…). */
-  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended' | 'limit' | 'limit_ok' | 'advice'; text: string }[];
+  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended' | 'limit' | 'limit_ok' | 'advice' | 'situation' | 'career'; text: string }[];
+}
+
+// ---------------------------------------------------------------- phase 5 : mode Histoire
+export interface Npc {
+  id: string;
+  name: string;
+  role: NpcRole;
+  companyId: string | null; // employeur du PNJ (null : indépendant, administration, média)
+  cityId: string;
+  trust: number; // −100..100
+  honesty: number; // 0..1
+  ambition: number; // 0..1
+  interest: string; // ce que veut ce PNJ
+  memory: { day: Day; delta: number; text: string }[];
+  /** Spécifique : journaliste/officiel/collègue qui connaît une compromission du joueur. */
+  knows: string[];
+}
+
+export interface Compromise {
+  id: string;
+  day: Day;
+  kind: 'corruption' | 'initié' | 'dissimulation' | 'sanctions' | 'manipulation' | 'complicité' | 'mensonge';
+  severity: number; // 1..5
+  label: string;
+  witnesses: string[]; // PNJ au courant
+  resolved: boolean;
+}
+
+export interface Tip {
+  id: string;
+  day: Day;
+  npcId: string;
+  commodity: CommodityId;
+  dir: 1 | -1;
+  insider: boolean; // information privilégiée non publique
+  revealDay: Day;
+  real: boolean;
+  /** Position nette (unités) au moment du tuyau, pour détecter un usage. */
+  netAtTip: number;
+  text: string;
+}
+
+export interface SituationChoice {
+  label: string;
+  hint?: string;
+}
+
+export interface Situation {
+  id: string;
+  day: Day;
+  template: string;
+  title: string;
+  text: string;
+  npcId?: string;
+  choices: SituationChoice[];
+  urgent: boolean;
+  expiresDay: Day;
+  data?: Record<string, number | string>;
+}
+
+export interface JobOffer {
+  id: string;
+  companyId: string;
+  track: CareerTrack;
+  level: number;
+  salary: number;
+  expiresDay: Day;
+  via?: string; // PNJ chasseur de têtes
+  interviewed: boolean;
+}
+
+export interface Negotiation {
+  id: string;
+  kind: 'salaire' | 'bonus' | 'offre' | 'investisseur' | 'deal';
+  npcId: string;
+  title: string;
+  unit: string; // ex. « $ / mois », « % »
+  opening: number; // première proposition de la contrepartie
+  reservation: number; // limite cachée de la contrepartie
+  offer: number; // proposition courante de la contrepartie
+  ask: number; // demande courante du joueur
+  round: number;
+  maxRounds: number;
+  patience: number; // 0..100
+  leverage: boolean; // alternative réelle (autre offre, information)
+  higherIsBetter: boolean;
+  log: string[];
+  done: boolean;
+  result?: number; // valeur conclue (null si rupture)
+  context: Record<string, string | number>;
+}
+
+export interface CareerState {
+  narrative: boolean; // mode Histoire (situations, progression) ou simple poste (sandbox « rejoindre »)
+  status: 'employed' | 'unemployed' | 'founder' | 'ceo';
+  employerId: string | null;
+  track: CareerTrack;
+  level: number;
+  desk: CommodityId[];
+  sinceDay: Day;
+  hiredDay: Day;
+  salary: number;
+  wealth: number;
+  skills: Record<Skill, number>;
+  reputation: number;
+  allocation: number;
+  merit: number; // points de mérite de la période (situations, missions)
+  warnings: number;
+  strikes: number; // dépassements de limites sanctionnés
+  frozenUntil: Day;
+  lastReview: Day;
+  unemployedSince: Day | null;
+  offers: JobOffer[];
+  team: { id: string; name: string; skill: number; pnlYtd: number }[];
+  equity: number; // part du joueur dans sa société (fondateur)
+  investors: { npcId: string; share: number; capital: number }[];
+  payout: number; // taux de distribution des dividendes (fondateur)
+  log: { day: Day; text: string }[];
+  ended?: 'prison' | 'interdiction' | 'retraite';
 }
 
 export interface Book {
@@ -708,7 +846,20 @@ export type Action =
   | { type: 'HIRE_MANAGER'; id: string; assetId: string }
   | { type: 'FIRE_MANAGER'; id: string }
   | { type: 'HEDGE_PRODUCTION'; id: string; months: number; ratio: number }
-  | { type: 'SET_AUTOMATION'; patch: Partial<Automation> };
+  | { type: 'SET_AUTOMATION'; patch: Partial<Automation> }
+  | { type: 'RESOLVE_SITUATION'; id: string; choice: number }
+  | { type: 'NEGOTIATE'; move: NegotiationMove }
+  | { type: 'START_NEGOTIATION'; kind: Negotiation['kind']; target: string }
+  | { type: 'ACCEPT_JOB'; offerId: string }
+  | { type: 'APPLY_JOB'; companyId: string; track: CareerTrack }
+  | { type: 'RESIGN' }
+  | { type: 'REQUEST_TRANSFER'; track: CareerTrack }
+  | { type: 'FOUND_COMPANY'; name: string; city: string }
+  | { type: 'SET_PAYOUT'; payout: number }
+  | { type: 'MEET_NPC'; npcId: string }
+  | { type: 'RETIRE' };
+
+export type NegotiationMove = 'ancrer' | 'concéder' | 'bluffer' | 'argumenter' | 'accepter' | 'rompre';
 
 export interface ActionResult {
   ok: boolean;

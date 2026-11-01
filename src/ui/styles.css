@@ -437,3 +437,45 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .auto-row { display: flex; gap: 10px; align-items: flex-start; background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
 .auto-row input { margin-top: 4px; }
 .incoterm { background: rgba(125,211,252,.08); border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; color: #cbd5e1; }
+
+/* ---------------------------------------------------------------- Phase 5 */
+.mode-pick button { display: flex; flex-direction: column; align-items: flex-start; }
+.mode-pick button small { font-size: .65rem; opacity: .8; }
+.city-pick.employers { grid-template-columns: repeat(4, 1fr); max-height: 210px; overflow-y: auto; }
+.career-head { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+.career-avatar { font-size: 2.6rem; background: rgba(255,209,102,.15); border-radius: 50%; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--gold); }
+.ladder-career { display: flex; gap: 3px; flex-wrap: wrap; margin: 6px 0; }
+.ladder-career span { font-size: .7rem; padding: 2px 7px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--muted); }
+.ladder-career span.done { background: rgba(74,222,128,.15); color: var(--pos); }
+.ladder-career span.on { background: var(--gold); color: #2a1a00; font-weight: 800; }
+.skills { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.skill { display: grid; grid-template-columns: 1fr 90px 30px; gap: 6px; align-items: center; font-size: .8rem; }
+.skill .bar { height: 7px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; }
+.skill .bar div { height: 100%; background: linear-gradient(90deg, #60a5fa, #a78bfa); }
+.career-log { list-style: none; padding: 0; margin: 0; font-size: .8rem; display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; }
+.situation { background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.12); border-left: 4px solid #60a5fa; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+.situation.urgent { border-left-color: var(--warn); }
+.situation h4 { margin: 4px 0; color: var(--gold); }
+.situation p { margin: 0 0 8px; font-size: .9rem; line-height: 1.4; }
+.sit-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.npc-chip { font-size: .8rem; background: rgba(255,255,255,.08); border-radius: 999px; padding: 2px 8px; }
+.sit-choices { display: flex; flex-direction: column; gap: 5px; }
+.sit-choices button { text-align: left; display: flex; flex-direction: column; }
+.sit-choices button small { font-weight: 600; opacity: .75; font-size: .72rem; }
+.sit-modal { text-align: left; width: min(620px, 94vw); }
+.people { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.npc-card { background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
+.npc-top { display: flex; flex-direction: column; }
+.trustbar { position: relative; height: 6px; background: rgba(255,255,255,.08); border-radius: 3px; }
+.trustbar div { position: absolute; top: 0; height: 100%; border-radius: 3px; }
+.trustbar .pos { background: var(--pos); } .trustbar .neg { background: var(--neg); }
+.trustbar::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #fff6; }
+.negotiation { width: min(640px, 94vw); }
+.negotiation .stats { grid-template-columns: repeat(3, 1fr); }
+.negotiation .bar { height: 9px; background: rgba(255,255,255,.12); border-radius: 5px; overflow: hidden; margin: 6px 0; }
+.negotiation .bar div { height: 100%; background: linear-gradient(90deg, #f87171, #facc15, #4ade80); }
+.neg-log { text-align: left; font-size: .85rem; background: rgba(0,0,0,.25); border-radius: 10px; padding: 8px 8px 8px 24px; margin: 8px 0; }
+.neg-moves { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.neg-moves button { display: flex; flex-direction: column; align-items: center; }
+.neg-moves button small { font-size: .65rem; font-weight: 600; opacity: .75; }
+.career-summary { text-align: left; background: rgba(0,0,0,.25); border-radius: 10px; padding: 8px 12px; margin-top: 8px; }
