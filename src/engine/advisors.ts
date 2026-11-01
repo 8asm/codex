@@ -4,18 +4,24 @@
  * évalués après coup : dans un marché efficient (futures martingales), son taux de réussite tend vers 50 %.
  * Les conseils de portage de l'analyste, eux, reposent sur des calculs exacts.
  */
-import { COMMODITIES, COMMODITY_IDS, RATES } from '../data/commodities';
+import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { addBusinessDays, formatDayShort, monthLabel, ymd } from './calendar';
 import { lastTradingDay, listedMonths, physicalDeliveryDay } from './contracts';
 import { newId } from './ledger';
-import { forwardAt, futuresPrice, fx, spotPrice } from './market';
+import { forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
 import { otcNotional } from './derivatives';
 import { physicalExposureUsd, PHYSICAL_LEVERAGE } from './physical';
 import { chance, pick, uniform } from './rng';
 import { freeCash, rcfHeadroom } from './treasury';
 import { COVENANT_VAR_PCT } from './limits';
-import type { Advice, AdvisorId, CommodityId, GameState } from './types';
+import type { Advice, AdvisorId, CommodityId, ForwardDeal, GameState } from './types';
+import { cpRating } from './credit';
+import { zoneOf } from './world';
+import { CITY_BY_ID } from '../data/cities';
+import { forwardMtm } from './valuation';
+
+const forwardMtmFor = (s: GameState, d: ForwardDeal) => forwardMtm(s, d);
 import { exposures, nav } from './valuation';
 
 const MAX_PER_DAY = 3;
@@ -51,7 +57,7 @@ export function carryOpportunity(state: GameState, c: CommodityId) {
     if (months < 1.5 || months > 7) continue;
     const F = futuresPrice(state.market, c, mi);
     const storage = spec.physical.storagePerUnitMonth * months;
-    const financing = S * (RATES.USD + 0.025) * (months / 12);
+    const financing = S * (rate(state.market, 'USD') + 0.025) * (months / 12);
     const frictions = S * spec.physical.spotSpreadPct * 2 + spec.tick * spec.liquidity.halfSpreadTicks * 2;
     const perUnit = F - S - storage - financing - frictions;
     const total = perUnit * spec.physical.cargoSizes[0]! * spec.valuePerUnit * fx(state.market, spec.currency);
@@ -216,6 +222,35 @@ function rules(state: GameState): Draft[] {
   if (physicalExposureUsd(state) > 0.8 * PHYSICAL_LEVERAGE * Math.max(0, navV)) {
     out.push({ advisor: 'legal', mood: 'worried', rule: 'legal.physcap', cooldown: 10, text: 'Nous approchons le plafond de nos lignes de trade finance. Les banques vont exiger des garanties supplémentaires.' });
   }
+  // ---------------------------------------------------------------- PHASE 3 : monde, contreparties
+  for (const n of todayNews.filter((x) => x.stage === 'rumor' && x.impacts?.length)) {
+    const imp = n.impacts![0]!;
+    out.push({ advisor: 'trader', mood: 'smug', rule: `trader.rumor.${imp.c}`, cooldown: 4, text: `« Achète la rumeur, vends la nouvelle. » Le ${COMMODITIES[imp.c].short} ${imp.dir > 0 ? 'monte' : 'baisse'} sur une rumeur : je prends position avant la confirmation.`, action: { kind: 'trade', action: { type: 'TRADE_FUTURE', commodity: imp.c, month: listedMonths(COMMODITIES[imp.c], state.day)[0]!, lots: 15 * imp.dir }, label: `${imp.dir > 0 ? 'Acheter' : 'Vendre'} 15 lots` }, prediction: { commodity: imp.c, dir: imp.dir, ref: futuresPrice(state.market, imp.c, listedMonths(COMMODITIES[imp.c], state.day)[0]!), month: listedMonths(COMMODITIES[imp.c], state.day)[0]!, evalDay: addBusinessDays(state.day, 5) } });
+    out.push({ advisor: 'analyst', mood: 'neutral', rule: `analyst.rumor.${imp.c}`, cooldown: 4, text: `Ce n’est qu’une rumeur : le marché en a déjà intégré une partie. Si elle est démentie, tout ce mouvement s’efface. Les fausses nouvelles sont fréquentes.`, action: { kind: 'panel', panel: 'news' } });
+  }
+  const cal = state.world.calendar;
+  for (const [day, label] of [[cal.opec, 'réunion du cartel des producteurs'], [cal.fomc, 'décision de la Réserve fédérale'], [cal.ecb, 'décision de la BCE']] as const) {
+    if (addBusinessDays(state.day, 2) === day) out.push({ advisor: 'analyst', mood: 'neutral', rule: `analyst.cal.${label}`, cooldown: 10, text: `Dans deux jours : ${label}. La volatilité implicite intègre déjà l’événement ; une position ouverte maintenant est un pari sur la décision.`, action: { kind: 'panel', panel: 'news' } });
+  }
+  const byCp = new Map<string, number>();
+  for (const d of state.forwards) byCp.set(d.counterpartyId, (byCp.get(d.counterpartyId) ?? 0) + forwardMtmFor(state, d));
+  for (const [cp, mtm] of byCp) {
+    const r = cpRating(state, cp);
+    if (mtm > 0.03 * navV && ['BB', 'B', 'CCC'].includes(r)) {
+      out.push({ advisor: 'risk', mood: 'worried', rule: `risk.cpty.${cp}`, cooldown: 10, text: `${COUNTERPARTY_BY_ID[cp]?.name} (notée ${r}) nous doit ${fmtK(mtm)} en valeur de marché. S’ils font défaut, on récupère au mieux un tiers.${state.credit.insurance ? '' : ' Une assurance-crédit coûterait 0,4 % par an.'}`, action: { kind: 'panel', panel: 'rivals' } });
+    }
+  }
+  const regime = CITY_BY_ID[co.hqCity]!.sanctionsRegime;
+  if (state.world.sanctions.length && regime === 'none' && state.forwards.some((d) => state.world.sanctions.some((x) => x.zone === zoneOf(d.counterpartyId)))) {
+    out.push({ advisor: 'legal', mood: 'worried', rule: 'legal.sanctioned', cooldown: 20, text: 'Nous traitons des barils sous sanctions occidentales. C’est légal depuis notre siège… mais nos banques occidentales n’aiment pas ça, et le droit peut changer.' });
+  }
+  if (state.world.blocTension > 70) {
+    out.push({ advisor: 'legal', mood: 'worried', rule: 'legal.tension', cooldown: 25, text: `Tension entre blocs à ${Math.round(state.world.blocTension)}/100. Des sanctions peuvent tomber du jour au lendemain : vérifions l’origine de nos contreparties.`, action: { kind: 'panel', panel: 'world' } });
+  }
+  if (state.world.effects.some((e) => e.label.startsWith('Ouragan')) && state.forwards.some((d) => d.locationId.endsWith('USGC') || d.locationId === 'WHT_GULF')) {
+    out.push({ advisor: 'ops', mood: 'worried', rule: 'ops.hurricane', cooldown: 10, text: 'Ouragan dans le Golfe : nos cargaisons de Houston risquent des retards et le différentiel local s’effondre.' });
+  }
+
   if (freeCash(state) < 0 && !co.marginCall) {
     out.push({ advisor: 'risk', mood: 'angry', rule: 'risk.freecash', cooldown: 2, text: 'Notre cash libre est négatif. À la clôture, ce sera un appel de marge.', action: { kind: 'panel', panel: 'treasury' } });
   }

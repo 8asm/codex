@@ -8,7 +8,7 @@ Pas de guerre : des cargaisons, des courbes forward, des appels de marge et du c
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 57 tests du moteur (pricing, options, APO, marge SPAN, VaR, P&L expliqué, livraisons, déterminisme)
+npm test           # 77 tests du moteur (pricing, options, marge SPAN, VaR, événements, sanctions, crédit, concurrents, déterminisme)
 npm run build      # build de production dans dist/
 ```
 
@@ -34,9 +34,19 @@ npm run build      # build de production dans dist/
 - **Conséquences** : covenant bancaire (gel puis réduction de la RCF), limites de position des bourses, couverture delta en un clic.
 - **Conseillers animés** : Margot (risk), Dex (trader), Kenji (analyste), Rosa (opérations), Anselme (juriste). Ils réagissent aussi dans le ticket, se contredisent, et tiennent un palmarès de leurs prédictions.
 
+## Phase 3 — ce qui s'ajoute
+
+- **Événements vivants** : rumeurs confirmées ou démenties, fausses nouvelles, impacts différés, effets visibles sur le globe. Réunions du cartel (avec fuites), décisions de la Fed et de la BCE qui font bouger les taux, élections qui changent la fiscalité.
+- **Remakes d'événements réels** : stockages saturés, squeeze sur le cuivre avec suspension de cotation, fraude au double nantissement, faillite d'un négociant qui cachait ses pertes, canal bloqué, sanctions puis plafond de prix, interdiction d'export, embargo charbon, El Niño, ouragans, coup d'État minier…
+- **Géopolitique** : 14 zones (dont 5 fictives), tension entre blocs, sanctions qui s'appliquent selon la ville du siège, contrats frustrés par la force majeure.
+- **Réglementation par ville** : impôt évolutif et régimes spéciaux, délais KYC, coût de reporting des dérivés, contrôle des capitaux, transfert de siège.
+- **28 concurrents simulés** inspirés de maisons réelles : classement, rival, faillites, rachats, scandales. Ils raflent les bonnes cargaisons.
+- **Risque de contrepartie** : notations, défauts avec close-out netting et récupération partielle, assurance-crédit, CSA par banque.
+- **Calques du globe** : tensions, sanctions, météo, prix, concurrents.
+
 ### Raccourcis
 
-`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `C` codex · `Échap` fermer
+`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `C` codex · `Échap` fermer
 
 ## Structure
 

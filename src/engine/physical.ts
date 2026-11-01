@@ -9,12 +9,18 @@
  */
 import { COMMODITIES, COMMODITY_IDS, findLocation } from '../data/commodities';
 import { COUNTERPARTIES, COUNTERPARTY_BY_ID } from '../data/counterparties';
+import { COMPANY_BY_ID } from '../data/companies';
+import { CITY_BY_ID } from '../data/cities';
+import { cpRating } from './credit';
+import { sanctionedDiscount } from './events';
+import { addNews } from './news';
+import { isRestricted, sanctionFor, zoneOf } from './world';
 import { addBusinessDays, monthIndexOf, monthLabel, type Day } from './calendar';
 import { physicalDeliveryDay } from './contracts';
 import { addCash, log, newId } from './ledger';
 import { basis, discount, forwardAt, fx } from './market';
 import { roundTo } from './math';
-import { normal, pick, poisson, randInt, uniform } from './rng';
+import { chance, normal, pick, poisson, randInt, uniform } from './rng';
 import { drawRcf, rcfHeadroom } from './treasury';
 import type { ActionResult, CommodityId, ForwardDeal, GameState, Offer } from './types';
 import { localSpot, nav } from './valuation';
@@ -64,24 +70,59 @@ export function physicalExposureUsd(state: GameState): number {
   return state.forwards.reduce((s, d) => s + notionalUsd(state, d.commodity, d.qty, d.price), 0);
 }
 
+/** Contrepartie « à risque » au sens KYC : notation spéculative ou pays instable. */
+export function kycRisky(state: GameState, cpId: string): boolean {
+  const r = cpRating(state, cpId);
+  const st = state.world.zones[zoneOf(cpId)]?.stability ?? 80;
+  return ['BB', 'B', 'CCC'].includes(r) || st < 50;
+}
+
 export function generateOffers(state: GameState) {
   state.offers = state.offers.filter((o) => o.expiresDay >= state.day);
-  const n = Math.min(MAX_OFFERS - state.offers.length, poisson(state.rng, 1.8));
+  // Les concurrents raflent les bonnes affaires : une offre avantageuse a 25 % de chances par jour de partir.
+  for (const o of [...state.offers]) {
+    if (offerEdge(state, o) > 0 && chance(state.rng, 0.25)) {
+      const rivals = state.companies.filter((c) => c.alive && COMPANY_BY_ID[c.id]!.desks[o.commodity] !== undefined && c.id !== o.counterpartyId);
+      state.offers = state.offers.filter((x) => x !== o);
+      if (rivals.length && offerEdge(state, o) > 40_000) {
+        const r = pick(state.rng, rivals);
+        addNews(state, { headline: `${COMPANY_BY_ID[r.id]!.name} rafle une cargaison de ${COMMODITIES[o.commodity].short} à ${CITY_BY_ID[o.cityId]!.name}`, body: 'Les bonnes affaires ne restent pas longtemps sur la table.', tone: 'neutral', major: false, category: 'entreprises', companyId: r.id, commodity: o.commodity });
+      }
+    }
+  }
+  const kyc = state.world.cityRegs[state.company.hqCity]!.kyc;
+  const n = Math.min(MAX_OFFERS - state.offers.length, poisson(state.rng, 1.9));
   for (let i = 0; i < n; i++) {
     const c = pick(state.rng, COMMODITY_IDS);
     const spec = COMMODITIES[c];
     const loc = pick(state.rng, spec.physical.locations);
-    const side: 1 | -1 = uniform(state.rng) < 0.5 ? 1 : -1;
+    // Contreparties pertinentes : celles qui ont un desk sur cette commodité, vivantes, non frappées d'interdiction.
+    const pool = COUNTERPARTIES.filter((cp) => {
+      if (cp.kind === 'bank' || cp.kind === 'fund') return false;
+      if (COMPANY_BY_ID[cp.id]?.desks[c] === undefined) return false;
+      if (cpRating(state, cp.id) === 'D') return false;
+      if (isRestricted(state, cp.id, c, loc.cityId)) return false;
+      const sa = sanctionFor(state, cp.id, c);
+      if (sa?.kind === 'full') return false;
+      if (kyc > 0.9 && ['B', 'CCC'].includes(cpRating(state, cp.id))) return false;
+      return true;
+    });
+    if (!pool.length) continue;
+    const local = pool.filter((cp) => cp.cityId === loc.cityId);
+    const cp = local.length && uniform(state.rng) < 0.6 ? pick(state.rng, local) : pick(state.rng, pool);
+    const sanctioned = state.world.sanctions.some((x) => x.zone === cp.zone);
+    // Barils sous sanctions ou plafond : ils ne se vendent qu'avec une forte décote, et seulement à l'achat.
+    const side: 1 | -1 = sanctioned ? 1 : uniform(state.rng) < 0.5 ? 1 : -1;
     const month = monthIndexOf(state.day) + randInt(state.rng, 1, 4);
     const f = forwardAt(state.market, c, physicalDeliveryDay(month));
-    const local = COUNTERPARTIES.filter((cp) => cp.cityId === loc.cityId && cp.kind !== 'bank');
-    const traders = COUNTERPARTIES.filter((x) => x.kind !== 'bank');
-    const cp = local.length && uniform(state.rng) < 0.7 ? pick(state.rng, local) : pick(state.rng, traders);
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %).
     const skew = f * (0.0015 + 0.0045 * normal(state.rng));
-    const diff = roundTo(basis(state.market, c, loc.id) + side * skew, spec.tick);
+    let diff = basis(state.market, c, loc.id) + side * skew;
+    if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
+    diff = roundTo(diff, spec.tick);
+    const id = newId(state, 'o');
     state.offers.push({
-      id: newId(state, 'o'),
+      id,
       cityId: loc.cityId,
       commodity: c,
       locationId: loc.id,
@@ -92,13 +133,30 @@ export function generateOffers(state: GameState) {
       counterpartyId: cp.id,
       createdDay: state.day,
       expiresDay: addBusinessDays(state.day, randInt(state.rng, 1, 3)),
+      kycReadyDay: kycRisky(state, cp.id) && kyc > 0.6 ? addBusinessDays(state.day, Math.ceil((kyc - 0.5) * 6)) : undefined,
     });
   }
+}
+
+/** Raison pour laquelle le joueur ne peut pas accepter l'offre (sanctions, plafond, KYC, embargo), ou null. */
+export function offerBlock(state: GameState, o: Offer): string | null {
+  const sa = sanctionFor(state, o.counterpartyId, o.commodity);
+  if (sa?.kind === 'full') return 'Contrepartie sous sanctions applicables à votre siège.';
+  if (sa?.kind === 'pricecap') {
+    const cap = forwardAt(state.market, o.commodity, offerDeliveryDay(o)) * (1 - (sa.capPct ?? 0.25));
+    if (offerPrice(state, o) > cap) return `Prix au-dessus du plafond imposé (${cap.toFixed(2)}).`;
+  }
+  if (isRestricted(state, o.counterpartyId, o.commodity, o.cityId)) return 'Interdiction d’export ou embargo en vigueur.';
+  if (o.kycReadyDay !== undefined && state.day < o.kycReadyDay) return 'Vérifications KYC en cours sur cette contrepartie.';
+  if (cpRating(state, o.counterpartyId) === 'D') return 'Contrepartie en défaut.';
+  return null;
 }
 
 export function acceptOffer(state: GameState, offerId: string): ActionResult {
   const o = state.offers.find((x) => x.id === offerId);
   if (!o) return { ok: false, message: 'Offre expirée.' };
+  const block = offerBlock(state, o);
+  if (block) return { ok: false, message: block };
   const price = offerPrice(state, o);
   const notional = notionalUsd(state, o.commodity, o.qty, price);
   const cap = PHYSICAL_LEVERAGE * Math.max(0, nav(state));
@@ -118,6 +176,7 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
     tradeDay: state.day,
   };
   state.forwards.push(deal);
+  state.company.physVolumeYtd += notional;
   state.offers = state.offers.filter((x) => x.id !== offerId);
   const loc = findLocation(o.commodity, o.locationId);
   const cp = COUNTERPARTY_BY_ID[o.counterpartyId]!;

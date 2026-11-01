@@ -1,12 +1,13 @@
 /**
- * Chocs de fondamentaux et publications programmées (phase 1 : minimal, enrichi en phase 3).
+ * Catalogue des chocs de fondamentaux (tirés par events.ts) et publications programmées
+ * (stocks pétroliers du mercredi, rapport agricole mensuel, météo gaz en hiver).
  * Un choc sur χ est TEMPORAIRE (panne, météo : il se résorbe au rythme κ et déforme le front de courbe) ;
  * un choc sur ξ est STRUCTUREL (il déplace toute la courbe durablement).
  */
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES } from '../data/commodities';
 import { weekday, ymd } from './calendar';
 import { newId } from './ledger';
-import { chance, normal, pick, uniform } from './rng';
+import { normal } from './rng';
 import type { CommodityId, GameState, NewsItem } from './types';
 
 interface ShockTemplate {
@@ -18,7 +19,7 @@ interface ShockTemplate {
   body: string;
 }
 
-const SHOCKS: ShockTemplate[] = [
+export const SHOCKS: ShockTemplate[] = [
   { c: 'BRENT', dir: 1, factor: 'chi', size: 0.06, headline: 'Panne majeure sur un oléoduc de mer du Nord', body: 'Plusieurs champs à l’arrêt : le Dated se tend, le front de courbe s’envole.' },
   { c: 'BRENT', dir: 1, factor: 'xi', size: 0.05, headline: 'Le cartel des producteurs prolonge ses coupes', body: 'Réduction d’offre durable : toute la courbe se réévalue.' },
   { c: 'BRENT', dir: -1, factor: 'xi', size: 0.06, headline: 'Surprise : hausse des quotas de production', body: 'Plus de barils sur le marché pour longtemps.' },
@@ -54,17 +55,7 @@ export function addNews(state: GameState, item: Omit<NewsItem, 'id' | 'day'>) {
 export function dailyNews(state: GameState): NewsItem[] {
   const out: NewsItem[] = [];
   const m = state.market;
-  const freq = state.config.crisisFrequency;
-  for (const c of COMMODITY_IDS) {
-    const p = 0.006 * freq * (m.volRegime === 'stressed' ? 2 : 1);
-    if (!chance(state.rng, p)) continue;
-    const t = pick(state.rng, SHOCKS.filter((s) => s.c === c));
-    const size = t.dir * t.size * (0.6 + 0.8 * uniform(state.rng));
-    m.commodities[c][t.factor] += size;
-    // La peur se lit d'abord dans les options : la vol implicite saute avec la news.
-    m.ivLevel[c] = Math.min(2.2, m.ivLevel[c] + Math.abs(size) * 1.6);
-    out.push(push(state, { headline: t.headline, body: t.body, commodity: c, tone: t.dir > 0 ? 'up' : 'down', major: Math.abs(size) > 0.07 }));
-  }
+  // Les chocs aléatoires sont gérés par le moteur d'événements (events.ts) ; ici, les publications programmées.
   const wd = weekday(state.day);
   const { m: month, d } = ymd(state.day);
   // Mercredi : statistiques hebdomadaires des stocks pétroliers américains.

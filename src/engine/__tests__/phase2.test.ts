@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COMMODITIES } from '../../data/commodities';
 import { listedMonths, lotQty, optionMonths, optionExpiry, fixingDays } from '../contracts';
-import { advanceDay, createGame, dispatch, migrateState } from '../game';
+import { advanceDay, createGame, dispatch, migrateState, SAVE_VERSION } from '../game';
 import { futuresPrice, fx } from '../market';
 import { totalIm } from '../margin';
 import { avgInputs, expectedAverage, otcValueUsd, apoUnitPrice, optionUnitPrice } from '../derivatives';
@@ -235,7 +235,7 @@ describe('P&L expliqué, conseillers, migration', () => {
     for (const k of ['options', 'otc', 'fixings', 'risk', 'explain', 'explainBase', 'advice', 'adviceCooldown', 'track']) delete s[k];
     s.version = 1;
     const m = migrateState(s as unknown as GameState);
-    expect(m.version).toBe(2);
+    expect(m.version).toBe(SAVE_VERSION);
     advanceDay(m);
     expect(m.status).toBe('running');
   });

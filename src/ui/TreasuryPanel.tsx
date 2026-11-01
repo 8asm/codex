@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RATES } from '../data/commodities';
+import { rate } from '../engine/market';
 import { freeCash, rcfHeadroom, rcfLimit, RCF_SPREAD } from '../engine/treasury';
 import type { CashCategory } from '../engine/types';
 import { nav } from '../engine/valuation';
@@ -10,7 +10,7 @@ import { useStore } from './store';
 const CAT_LABEL: Record<CashCategory, string> = {
   vm: 'Marge de variation', commission: 'Commissions', physical: 'Flux physiques', storage: 'Stockage', interest: 'Intérêts',
   overhead: 'Frais généraux', tax: 'Impôts', travel: 'Voyages', liquidation: 'Liquidations forcées',
-  premium: 'Primes d’options', otc: 'Règlements OTC',
+  premium: 'Primes d’options', otc: 'Règlements OTC', compliance: 'Conformité & reporting', credit: 'Crédit (défauts, assurance)',
 };
 
 export function TreasuryPanel() {
@@ -35,7 +35,7 @@ export function TreasuryPanel() {
         <Stat label={<Term id="rcf">RCF tirée</Term>} value={usd(co.rcfDrawn, 2)} sub={`limite ${usd(rcfLimit(g, n))} · dispo ${usd(rcfHeadroom(g, n))}`} />
       </div>
       <p className="muted small">
-        La limite de RCF vaut 2,5× vos fonds propres (plafond 4× le capital initial) au taux {((RATES.USD + RCF_SPREAD) * 100).toFixed(2)} %.
+        La limite de RCF vaut 2,5× vos fonds propres (plafond 4× le capital initial) au taux {((rate(g.market, 'USD') + RCF_SPREAD + g.risk.rcfPenalty) * 100).toFixed(2)} %.
         Si vous perdez de l’argent, la banque réduit la ligne.
       </p>
       <label className="toggle">

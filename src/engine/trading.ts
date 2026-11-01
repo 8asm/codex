@@ -14,7 +14,7 @@ import { monthLabel } from './calendar';
 import { listedOptionSpec, optionExecPrice, optionQuote, optionUnitGreeks, type OptionLike } from './derivatives';
 import { addCash, log, newId } from './ledger';
 import { depthLots, execPrice, halfSpread, liquidityLabel, quote } from './liquidity';
-import { contractVol, futuresPrice, fx, IM_HORIZON, IM_Z } from './market';
+import { contractVol, futuresPrice, fx, IM_HORIZON, IM_Z, isHalted } from './market';
 import { recomputeIm, totalIm } from './margin';
 import { rcfHeadroom } from './treasury';
 import type { ActionResult, CommodityId, FuturesPosition, GameState, OptType, OptionPosition } from './types';
@@ -128,6 +128,7 @@ export function tradeFuture(state: GameState, c: CommodityId, month: number, lot
   const spec = COMMODITIES[c];
   if (!Number.isInteger(lots) || lots === 0) return { ok: false, message: 'Nombre de lots invalide.' };
   if (!listedMonths(spec, state.day).includes(month)) return { ok: false, message: 'Échéance non cotée.' };
+  if (isHalted(state.market, c)) return { ok: false, message: `Cotation du ${spec.short} suspendue par la bourse.` };
   const pv = previewFuture(state, c, month, lots);
   if (pv.limitIssue) return { ok: false, message: pv.limitIssue };
   if (!reduces(state, c, month, lots) && pv.liquidityAfter < 0) {
@@ -176,6 +177,7 @@ export function tradeSpread(state: GameState, c: CommodityId, near: number, far:
   const spec = COMMODITIES[c];
   const months = listedMonths(spec, state.day);
   if (near === far || !months.includes(near) || !months.includes(far) || !Number.isInteger(lots) || lots === 0) return { ok: false, message: 'Spread invalide.' };
+  if (isHalted(state.market, c)) return { ok: false, message: `Cotation du ${spec.short} suspendue par la bourse.` };
   const pv = previewSpread(state, c, near, far, lots);
   for (const f of pv.fills) {
     const issue = positionLimitCheck(state, c, f.mi, f.l);
@@ -304,6 +306,7 @@ function mergeOption(list: OptionPosition[], o: OptionLike, lots: number, price:
 export function tradeOption(state: GameState, c: CommodityId, month: number, type: OptType, strike: number, lots: number): ActionResult {
   const spec = COMMODITIES[c];
   if (!Number.isInteger(lots) || lots === 0 || !(strike > 0)) return { ok: false, message: 'Ordre invalide.' };
+  if (isHalted(state.market, c)) return { ok: false, message: `Cotation du ${spec.short} suspendue par la bourse.` };
   const pv = previewOption(state, c, month, type, strike, lots);
   if (!pv) return { ok: false, message: 'Pas d’options cotées sur cette échéance.' };
   if (lots < 0 && pv.exec <= 0) return { ok: false, message: 'Pas d’acheteur à ce prix.' };

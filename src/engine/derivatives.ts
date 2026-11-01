@@ -197,17 +197,17 @@ export interface OtcQuote {
 }
 
 /** Cotation banque. Swap : prix fixe ; APO : prime par unité (1,5 point de vol de demi-fourchette). */
-export function otcQuote(v: View, kind: 'swap' | 'apo', c: CommodityId, mi: MonthIndex, K?: number, type?: OptType): OtcQuote {
+export function otcQuote(v: View, kind: 'swap' | 'apo', c: CommodityId, mi: MonthIndex, K?: number, type?: OptType, cva = 1): OtcQuote {
   if (kind === 'swap') {
     const mid = expectedAverage(avgInputs(v, c, mi));
-    const hs = swapHalfSpread(v.market, c, mi);
+    const hs = swapHalfSpread(v.market, c, mi) * cva;
     return { mid, bid: mid - hs, ask: mid + hs };
   }
   const mid = apoUnitPrice(v, c, mi, K!, type!);
   const up = apoUnitPrice({ ...v, market: { ...v.market, volShift: (v.market.volShift ?? 0) + 0.01 } }, c, mi, K!, type!);
   const vega = up - mid;
   const stress = v.market.volRegime === 'stressed' ? 2 : 1;
-  const hs = Math.max(COMMODITIES[c].tick, 1.5 * vega * stress);
+  const hs = Math.max(COMMODITIES[c].tick, 1.5 * vega * stress * cva);
   return { mid, bid: Math.max(0, mid - hs), ask: mid + hs, vega };
 }
 
@@ -221,9 +221,15 @@ export function otcNotional(state: GameState): number {
   }, 0);
 }
 
+/** Banque contrepartie du prochain OTC (rotation entre les banques encore en vie). */
 export function pickBank(state: GameState): string {
-  const banks = COUNTERPARTIES.filter((c) => c.kind === 'bank');
-  return banks[state.nextId % banks.length]!.id;
+  const banks = COUNTERPARTIES.filter((c) => c.kind === 'bank' && (state.companies?.find((x) => x.id === c.id)?.alive ?? true));
+  return (banks.length ? banks : COUNTERPARTIES.filter((c) => c.kind === 'bank'))[state.nextId % Math.max(1, banks.length)]!.id;
+}
+
+/** Charge de CVA : sans CSA, la banque élargit sa fourchette pour couvrir son risque de crédit sur vous. */
+export function otcCva(state: GameState, bankId: string): number {
+  return state.credit?.csa[bankId] ? 1 : 1.3;
 }
 
 export function tradeOtc(state: GameState, kind: 'swap' | 'apo', c: CommodityId, mi: MonthIndex, qty: number, navValue: number, strike?: number, type?: OptType): ActionResult {
@@ -231,14 +237,14 @@ export function tradeOtc(state: GameState, kind: 'swap' | 'apo', c: CommodityId,
   if (!otcMonths(state).includes(mi)) return { ok: false, message: 'Mois de moyenne non proposé.' };
   if (!qty) return { ok: false, message: 'Quantité nulle.' };
   if (kind === 'apo' && (!strike || !type)) return { ok: false, message: 'Strike et type requis.' };
-  const q = otcQuote(state, kind, c, mi, strike, type);
+  const bankId = pickBank(state);
+  const q = otcQuote(state, kind, c, mi, strike, type, otcCva(state, bankId));
   const px = roundTo(qty > 0 ? q.ask : q.bid, spec.tick);
   const ref = kind === 'swap' ? px : strike!;
   const notional = Math.abs(qty * ref * spec.valuePerUnit * fx(state.market, spec.currency));
   if (otcNotional(state) + notional > OTC_LEVERAGE * Math.max(0, navValue)) {
     return { ok: false, message: `Les banques refusent : encours OTC plafonné à ${OTC_LEVERAGE}× vos fonds propres.` };
   }
-  const bankId = pickBank(state);
   if (kind === 'apo') {
     const prem = px * qty * spec.valuePerUnit * fx(state.market, spec.currency);
     if (qty > 0 && prem > state.company.cash - state.company.im) return { ok: false, message: 'Cash insuffisant pour payer la prime.' };

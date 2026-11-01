@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { feature } from 'topojson-client';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import landTopo from 'world-atlas/land-50m.json';
+import countriesTopo from 'world-atlas/countries-110m.json';
 import type { City } from '../engine/types';
 
 const W = 4096;
@@ -210,4 +211,49 @@ export function buildTextures(cities: City[]): GlobeTextures {
     return tx;
   };
   return { color: mk(colC), mask: mk(maskC), lights: mk(lightsC), clouds: mk(cloudC, true) };
+}
+
+let countryCache: { id: number; geom: Polygon | MultiPolygon }[] | null = null;
+
+function countries() {
+  if (countryCache) return countryCache;
+  const topo = countriesTopo as unknown as Parameters<typeof feature>[0];
+  const fc = feature(topo, (topo as unknown as { objects: { countries: never } }).objects.countries) as unknown as {
+    features: { id: string; geometry: Polygon | MultiPolygon }[];
+  };
+  countryCache = fc.features.filter((f) => f.geometry).map((f) => ({ id: Number(f.id), geom: f.geometry }));
+  return countryCache;
+}
+
+/** Calque géopolitique : pays colorés (codes ISO numériques) + zones fictives en halos. */
+export function drawOverlay(o: { countries: Record<number, string>; blobs: { lat: number; lon: number; r: number; color: string }[] }): THREE.CanvasTexture {
+  const OW = 2048, OH = 1024;
+  const cv = document.createElement('canvas');
+  cv.width = OW;
+  cv.height = OH;
+  const c = cv.getContext('2d')!;
+  c.scale(OW / W, OH / H);
+  for (const ctry of countries()) {
+    const col = o.countries[ctry.id] ?? 'rgba(100,116,139,0.35)';
+    c.fillStyle = col;
+    c.beginPath();
+    const polys = ctry.geom.type === 'Polygon' ? [ctry.geom.coordinates] : ctry.geom.coordinates;
+    for (const poly of polys) for (const ring of poly) for (const off of [-W, 0, W]) traceRing(c, ring, off);
+    c.fill('evenodd');
+  }
+  for (const b of o.blobs) {
+    const x = px(b.lon), y = py(b.lat), r = (b.r / 360) * W;
+    for (const off of [-W, 0, W]) {
+      const g = c.createRadialGradient(x + off, y, 0, x + off, y, r);
+      g.addColorStop(0, b.color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g;
+      c.beginPath();
+      c.arc(x + off, y, r, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  const tx = new THREE.CanvasTexture(cv);
+  tx.colorSpace = THREE.SRGBColorSpace;
+  return tx;
 }

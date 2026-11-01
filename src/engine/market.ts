@@ -49,6 +49,11 @@ export function createMarket(startDay: Day, volatility = 1): MarketState {
     history: [],
     impact: {},
     ivLevel: Object.fromEntries(COMMODITY_IDS.map((c) => [c, IV_PARAMS.mean])) as Record<CommodityId, number>,
+    rates: { ...RATES },
+    basisShift: {},
+    halted: {},
+    haltPending: {},
+    drift: {},
   };
   for (const id of COMMODITY_IDS) m.commodities[id].imRate = exchangeImRate(m, id);
   snapshot(m);
@@ -85,7 +90,12 @@ export function listedFront(m: MarketState, c: CommodityId): number {
 
 /** Taux sans risque effectif (avec choc transitoire éventuel). */
 export function rate(m: MarketState, ccy: Currency): number {
-  return RATES[ccy] + (m.rateShift ?? 0);
+  return (m.rates?.[ccy] ?? RATES[ccy]) + (m.rateShift ?? 0);
+}
+
+/** Cotation suspendue sur cette commodité ? */
+export function isHalted(m: MarketState, c: CommodityId): boolean {
+  return (m.halted[c] ?? -1) >= m.day;
 }
 
 export function spotPrice(m: MarketState, c: CommodityId): number {
@@ -94,7 +104,7 @@ export function spotPrice(m: MarketState, c: CommodityId): number {
 
 export function basis(m: MarketState, c: CommodityId, locationId: string): number {
   const loc = COMMODITIES[c].physical.locations.find((l) => l.id === locationId)!;
-  return loc.basisMean + (m.commodities[c].basisDev[locationId] ?? 0);
+  return loc.basisMean + (m.commodities[c].basisDev[locationId] ?? 0) + (m.basisShift?.[locationId] ?? 0);
 }
 
 /** USD par unité de devise. */
@@ -150,8 +160,18 @@ export function stepMarket(m: MarketState, rng: RngState, toDay: Day, volatility
     const cm = m.commodities[id];
     const p = COMMODITIES[id].model;
     const next = stepFactors(p, cm.chi, cm.xi, dt, zCorr[i]!, zLong[i]!, m.volMult);
-    cm.chi = next.chi;
-    cm.xi = next.xi;
+    // Narratif de marché : dérive du facteur long sous la probabilité réelle (prime de risque), hors mesure de pricing.
+    const drift = (m.drift[id] ?? 0) * dt;
+    if ((m.halted[id] ?? -1) >= toDay) {
+      // Cotation suspendue : les prix publiés restent figés, les chocs s'accumulent jusqu'à la réouverture.
+      const pend = m.haltPending[id] ?? [0, 0];
+      m.haltPending[id] = [pend[0] + next.chi - cm.chi, pend[1] + next.xi - cm.xi + drift];
+    } else {
+      const pend = m.haltPending[id];
+      cm.chi = next.chi + (pend?.[0] ?? 0);
+      cm.xi = next.xi + drift + (pend?.[1] ?? 0);
+      if (pend) delete m.haltPending[id];
+    }
     // Différentiels physiques : OU autour de leur moyenne.
     for (const loc of COMMODITIES[id].physical.locations) {
       const dev = cm.basisDev[loc.id] ?? 0;
@@ -193,6 +213,7 @@ export function cloneMarket(m: MarketState): MarketState {
   return {
     day: m.day, volRegime: m.volRegime, volMult: m.volMult, fxLog: m.fxLog, commodities,
     history: [], impact: { ...m.impact }, ivLevel: { ...m.ivLevel }, rateShift: m.rateShift, volShift: m.volShift,
+    rates: { ...m.rates }, basisShift: { ...m.basisShift }, halted: { ...m.halted }, haltPending: { ...m.haltPending }, drift: { ...m.drift },
   };
 }
 

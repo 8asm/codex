@@ -10,7 +10,8 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals';
+export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals';
 export type Speed = 0 | 1 | 2 | 5;
 
 export interface Toast {
@@ -41,6 +42,10 @@ interface UIState {
   modal: Modal | null;
   codexSeen: string[];
   codexFocus: string | null;
+  layers: Record<LayerId, boolean>;
+  toggleLayer: (l: LayerId) => void;
+  companyFocus: string | null;
+  focusCompany: (id: string | null) => void;
   newGame: (cfg: Partial<GameConfig>) => void;
   loadState: (s: GameState) => void;
   quit: () => void;
@@ -77,6 +82,17 @@ export const useStore = create<UIState>((set, get) => ({
   modal: null,
   codexSeen: loadSeen(),
   codexFocus: null,
+  layers: { tension: false, sanctions: false, meteo: true, prix: false, rivals: true },
+  toggleLayer: (l) => {
+    const cur = get().layers;
+    // tensions et sanctions partagent le même calque coloré : exclusifs
+    const next = { ...cur, [l]: !cur[l] };
+    if (l === 'tension' && next.tension) next.sanctions = false;
+    if (l === 'sanctions' && next.sanctions) next.tension = false;
+    set({ layers: next });
+  },
+  companyFocus: null,
+  focusCompany: (id) => set({ companyFocus: id, panel: id ? 'rivals' : get().panel }),
 
   newGame: (cfg) => {
     const g = createGame(cfg);

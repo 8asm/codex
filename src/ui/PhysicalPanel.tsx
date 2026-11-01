@@ -5,7 +5,9 @@ import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { basis } from '../engine/market';
 import { roundTo } from '../engine/math';
-import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerDeliveryDay, offerEdge, offerPrice, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerBlock, offerDeliveryDay, offerEdge, offerPrice, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { cpRating } from '../engine/credit';
+import { ZONE_BY_ID } from '../data/world';
 import type { CommodityId, Offer } from '../engine/types';
 import { localSpot } from '../engine/valuation';
 import { Panel, Term } from './common';
@@ -59,6 +61,10 @@ function OfferCard({ o }: { o: Offer }) {
   const edge = offerEdge(g, o);
   const hm = hedgeMonthFor(g, o.commodity, offerDeliveryDay(o));
   const hl = hedgeLots(o.commodity, hm, o.qty);
+  const block = offerBlock(g, o);
+  const rating = cpRating(g, o.counterpartyId);
+  const zone = ZONE_BY_ID[cp.zone];
+  const focusCompany = useStore.getState().focusCompany;
 
   const accept = (hedge: boolean) => {
     const r = act({ type: 'ACCEPT_OFFER', offerId: o.id });
@@ -73,7 +79,7 @@ function OfferCard({ o }: { o: Offer }) {
       <div className="offer-top">
         <span className="mkt-icon">{spec.icon}</span>
         <div className="offer-title">
-          <b>{cp.name}</b> {o.side > 0 ? 'vend' : 'cherche à acheter'} <b>{qty(o.commodity, o.qty)}</b> de {spec.short}
+          <b className="link" onClick={() => focusCompany(cp.id)}>{cp.name}</b> <span className={`rating ${['BB', 'B', 'CCC'].includes(rating) ? 'warn' : ''}`} title="Notation de crédit">{rating}</span>{zone?.fictional && <span className="badge">{zone.name}</span>} {o.side > 0 ? 'vend' : 'cherche à acheter'} <b>{qty(o.commodity, o.qty)}</b> de {spec.short}
           <div className="muted small">
             <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.label}</Term> · livraison {monthLabel(o.month)} ({formatDayShort(offerDeliveryDay(o))}) · {city.name}
           </div>
@@ -86,10 +92,11 @@ function OfferCard({ o }: { o: Offer }) {
         <div><span>Prix fixe</span><b>{price(o.commodity, px)} {spec.priceUnit}</b></div>
         <div><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b></div>
       </div>
+      {block && <div className="offer-block">⛔ {block}{o.kycReadyDay && g.day < o.kycReadyDay ? ` (prêt le ${formatDayShort(o.kycReadyDay)})` : ''}</div>}
       <div className="offer-actions">
         <span className="muted small">expire le {formatDayShort(o.expiresDay)}</span>
-        <button onClick={() => accept(false)}>{o.side > 0 ? 'Acheter' : 'Vendre'}</button>
-        <button className="primary" onClick={() => accept(true)} title={`+ ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}`}>
+        <button disabled={!!block} onClick={() => accept(false)}>{o.side > 0 ? 'Acheter' : 'Vendre'}</button>
+        <button className="primary" disabled={!!block} onClick={() => accept(true)} title={`+ ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}`}>
           {o.side > 0 ? 'Acheter' : 'Vendre'} + <Term id="hedge">couvrir</Term> ({hl} lots {monthLabel(hm)})
         </button>
       </div>

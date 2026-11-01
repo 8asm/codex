@@ -9,6 +9,7 @@ import { useStore, type Speed } from './store';
 import { useState } from 'react';
 import { useLiveVar } from './derived';
 import { COVENANT_VAR_PCT } from '../engine/limits';
+import { leaderboard } from '../engine/companies';
 
 const SPEEDS: { s: Speed; label: string; key: string }[] = [
   { s: 0, label: '❚❚', key: 'Espace' },
@@ -34,11 +35,13 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
   const capacity = Math.max(1, g.company.cash + head);
   const marginUse = g.company.im / capacity;
   const ret = navV / g.company.initialCapital - 1;
+  const board = leaderboard(g);
+  const rank = board.findIndex((r) => r.id === 'player') + 1;
   const where = g.player.travel ? `✈ vers ${CITY_BY_ID[g.player.travel.to]!.name}` : `📍 ${CITY_BY_ID[g.player.cityId!]!.name}`;
   const live = useLiveVar();
   const v = live?.var99 ?? 0;
   const varUse = v / Math.max(1, Math.min(g.risk.limits.varPctNav, COVENANT_VAR_PCT) * navV);
-  const alerts = (g.company.marginCall ? 1 : 0) + (g.market.volRegime === 'stressed' ? 1 : 0) + g.risk.breaches.length + (g.risk.rcfFrozen ? 1 : 0);
+  const alerts = (g.world.sanctions.length ? 1 : 0) + (g.company.marginCall ? 1 : 0) + (g.market.volRegime === 'stressed' ? 1 : 0) + g.risk.breaches.length + (g.risk.rcfFrozen ? 1 : 0);
 
   return (
     <header className="hud">
@@ -71,7 +74,7 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
         <div className="kpi" onClick={() => setPanel('book')}>
           <div className="kpi-label"><Term id="nav">Fonds propres</Term></div>
           <AnimatedNumber value={navV} format={(x) => usd(x, 2)} />
-          <div className={`kpi-sub ${tone(ret)}`}>{(ret * 100).toFixed(1)} % depuis le début</div>
+          <div className={`kpi-sub ${tone(ret)}`}>{(ret * 100).toFixed(1)} % · <span className="rank" onClick={(e) => { e.stopPropagation(); setPanel('rivals'); }}>#{rank}/{board.length}</span></div>
         </div>
         <div className={`kpi big ${tone(dayPnl)}`} onClick={() => setPanel('book')}>
           <div className="kpi-label">P&L du jour</div>
@@ -94,6 +97,9 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
             {g.market.volRegime === 'stressed' && <span title="Marchés en turbulence : vol et marges relevées">🌪️</span>}
             {g.risk.breaches.length > 0 && <span title={`Limites dépassées : ${g.risk.breaches.join(', ')}`}>⚠️</span>}
             {g.risk.rcfFrozen && <span title="Ligne de crédit gelée par la banque">🧊</span>}
+            {g.world.sanctions.length > 0 && <span title="Sanctions internationales en vigueur">🚫</span>}
+            {Object.values(g.market.halted).some((d) => (d ?? -1) >= g.day) && <span title="Cotation suspendue">⏸️</span>}
+            {g.company.frozenCash && g.company.frozenCash.untilDay >= g.day && <span title="Trésorerie partiellement gelée">🔒</span>}
             {!alerts && <span className="calm">✓</span>}
           </div>
         </div>

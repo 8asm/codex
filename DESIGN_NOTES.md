@@ -27,13 +27,13 @@ Décisions :
   - Contango et backwardation émergent naturellement (χ < 0 ou χ > 0), ainsi que l'effet Samuelson.
   - **Pas exact** (discrétisation sans erreur, y compris la covariance χ/ξ sur dt). Tests : propriété de martingale par Monte Carlo (200 000 tirages) et variance du pas comparée à l'intégrale théorique.
   - `μ* = longDrift − ½σξ²`, pour que l'extrémité longue croisse au taux `longDrift`.
-- **Simplification** : primes de risque nulles (λ = 0) et monde simulé directement sous Q. Les futures sont donc un jeu équitable en espérance : le profit vient de l'information (news), du physique (diffs, voyage) et du portage, pas d'une dérive gratuite. *Phase 3 : primes de risque et régimes de marché narratifs.*
-- **Simplification** : la saisonnalité est un cosinus déterministe sur le log-prix (pic de janvier pour le gaz et le charbon, creux de récolte pour le blé). *Phase 3 : saisonnalité stochastique (météo, stocks).*
+- Primes de risque nulles dans le pricing (λ = 0). **Phase 3** : des *narratifs* macro (super-cycle, récession, transition énergétique, surabondance pétrolière) ajoutent, pendant quelques mois, une dérive du facteur long **sous la probabilité réelle seulement** (`market.drift`, ±6 à 20 % par an selon le thème). Les formules de prix ne la voient pas : c'est une prime de risque que le joueur peut capter s'il lit le contexte. Hors narratif, les futures restent un jeu équitable en espérance.
+- Saisonnalité : un cosinus déterministe sur le log-prix (pic de janvier pour le gaz et le charbon, creux de récolte pour le blé). **Phase 3** : une composante stochastique s'y ajoute : indice ENSO (El Niño / La Niña) en processus d'Ornstein-Uhlenbeck lent qui pousse le blé et le charbon, ouragans de juin à novembre, moussons, canicules, vagues de froid.
 - **Régime de volatilité** : chaîne de Markov calme/stress (×1,8 sur les vols). Au changement de régime, `A(τ)` change, donc la courbe saute légèrement : la propriété de martingale ne tient qu'à l'intérieur d'un régime. C'est volontaire (un choc de vol déplace la convexité).
 - **Chocs de news** : sauts additifs sur χ (temporaires) ou ξ (structurels), sans compensateur de drift. Le biais de convexité `e^{½J²}` est négligeable (< 0,3 %).
 - **Corrélations** : matrice 6×6 (5 facteurs courts + EURUSD) décomposée par Cholesky. Les facteurs longs utilisent la même structure de corrélation.
 - **Différentiels physiques (basis)** : processus d'Ornstein-Uhlenbeck autour d'une moyenne par lieu. **Simplification** : courbe de basis plate (le diff du jour s'applique à toutes les échéances). *Phase 4 : courbe de basis et fret explicite.*
-- **Taux** : constants, sans courbe (USD 4 %, EUR 2,25 %), actualisation continue en ACT/365, intérêts de trésorerie en ACT/360. *Phase 7 : courbes de taux.*
+- **Taux** : un taux plat par devise (USD 4 %, EUR 2,25 % au départ), actualisation continue en ACT/365, intérêts de trésorerie en ACT/360. **Phase 3** : les taux bougent par pas de 25 pb aux réunions de la Fed et de la BCE (biais selon le narratif macro), avec effet sur l'EURUSD et les matières premières. *Phase 7 : vraies courbes de taux.*
 - **FX** : EURUSD en OU sur le log. Le TTF se règle en EUR, converti en USD au spot du jour. **Simplification** : un seul compte de trésorerie en USD (en réalité, un compte de marge en EUR).
 
 ## Contrats
@@ -58,7 +58,7 @@ Décisions :
 - **Marge de variation** : réglée en cash à chaque clôture. Les ordres intrajournaliers passent une marge « trade-date » `(mark − p)·Δ`, ce qui rend le P&L exact par lot, quel que soit l'ordre des opérations (testé).
 - **Appel de marge** : si `cash < IM` (plus l'éventuel excédent de dette au-delà de la limite) après tirage automatique de la RCF, l'appel est émis. S'il n'est pas couvert à la clôture suivante, le courtier liquide tous les futures. Si cela ne suffit pas, c'est la faillite. Fonds propres négatifs entraînent aussi la faillite.
 - **RCF** : limite = 2,5 × fonds propres, plafonnée à 4 × le capital initial (covenant). Taux USD + 2,5 %. La ligne rétrécit quand on perd : c'est la spirale de liquidité.
-- **Simplification** : pas de CSA ni de collatéral sur les forwards physiques de gré à gré : leur MTM reste latent jusqu'à la livraison. *Phase 3 (ISDA/CSA, netting).*
+- Pas de collatéral sur les forwards **physiques** (pratique de marché courante : les accords-cadres physiques n'ont souvent pas de CSA). **Phase 3** : risque de défaut avec close-out netting et assurance-crédit optionnelle ; CSA disponible sur les OTC bancaires (voir plus bas).
 
 ## Physique
 
@@ -68,13 +68,17 @@ Décisions :
 - **Simplification** : le gaz physique est livré « en bloc » le 15, au lieu d'un flux horaire sur le mois.
 - **Simplification** : stockage loué sans limite de capacité, à coût fixe par unité et par mois. *Phase 4 (actifs de stockage).*
 - Plafond d'encours physique = 6 × fonds propres (lignes de trade finance).
-- **Simplification** : pas de risque de contrepartie en phase 1. *Phase 3.*
+- Risque de contrepartie : traité en phase 3 (voir plus bas).
 
 ## Comptabilité et fiscalité
 
 - NAV = cash − dette + MTM futures (depuis le dernier marquage) + MTM forwards (actualisé) + stocks au spot local.
 - Frais généraux mensuels : loyer de la ville + 90 k$ × indice de coût du personnel.
-- Impôt annuel sur la variation de NAV de l'exercice (comptabilité en juste valeur, IFRS 9), avec report illimité des pertes. **Simplification** : pas de retenues à la source, pas de régimes spéciaux, taux constant. *Phase 3.*
+- Impôt annuel sur la variation de NAV de l'exercice (comptabilité en juste valeur, IFRS 9), avec report illimité des pertes. **Phase 3** :
+  - le taux de chaque ville évolue avec les élections et les réformes ;
+  - deux régimes spéciaux : Singapour à 10 % si le volume physique annuel dépasse 500 M$ ; zone franche de Dubaï à 0 % moyennant une redevance de 250 k$ par an ;
+  - transfert de siège possible (1,5 M$ + taxe de sortie de 1 % de la NAV, une fois par an).
+  **Simplification restante** : pas de retenues à la source. Elles n'ont de sens qu'avec des dividendes ou des investisseurs : *phase 5 (création de société avec investisseurs)*.
 
 ## Rendu
 
@@ -128,3 +132,64 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Sauvegardes
 - Version 2. Les sauvegardes v1 sont migrées automatiquement (champs ajoutés avec leurs valeurs par défaut).
+
+## Phase 3 — événements, géopolitique, réglementation, concurrents, contreparties
+
+### Moteur d'événements (`engine/events.ts`, `engine/world.ts`)
+- Une trentaine de modèles d'événements avec probabilité quotidienne, saison, conditions, délai minimum entre deux occurrences et pondération par la tension entre blocs pour les événements géopolitiques. Au plus deux événements aléatoires par jour.
+- Les impacts sont des données (`Impact`) appliquées par une seule fonction : facteurs χ/ξ, vol implicite, différentiel, régime de vol, taux, suspension de cotation, stabilité, tension, fiscalité, KYC, reporting, contrôle des capitaux, sanctions, embargos, narratifs, ENSO, effets visibles sur le globe, chocs sur une société, défaut, gel de trésorerie, fraude en entrepôt.
+- **Rumeurs** : 40 % de l'impact est intégré tout de suite ; la confirmation apporte le reste, le démenti l'annule exactement (testé). Il y a aussi de fausses nouvelles pures.
+- **Impacts différés** : prévision puis frappe (ouragans), fuite puis décision (cartel), étapes de suite (réouverture d'un canal, retour d'un différentiel).
+- **Calendrier** : cartel des producteurs environ toutes les 8 semaines, avec une fuite parfois trompeuse 3 jours avant ; Fed et BCE environ toutes les 6 semaines ; élections dans chaque pays réel tous les 4 à 5 ans.
+- **Remakes historiques** (noms et détails modifiés) :
+  - saturation des stockages (le front du Brent s'effondre) ;
+  - squeeze sur le cuivre avec suspension de cotation ;
+  - double nantissement en entrepôt à Shanghai (une partie du stock du joueur peut disparaître) ;
+  - faillite d'un négociant asiatique qui cachait ses pertes ;
+  - enquêtes pour corruption ;
+  - canal bloqué par un porte-conteneurs ;
+  - sanctions massives puis plafond de prix sur un grand producteur ;
+  - interdiction d'export de minerai brut ;
+  - embargo charbon d'un importateur contre un exportateur ;
+  - El Niño / La Niña, ouragans dans le Golfe, explosion de raffinerie, coup d'État dans un pays minier.
+- **Simplification — prix négatifs** : le modèle lognormal ne peut pas produire de prix négatif. Le remake « pétrole à prix négatif » est un effondrement du front avec un contango extrême. Un modèle arithmétique (ou à décalage) sera nécessaire si un brut enclavé type WTI est ajouté (*phase 8*).
+- **Simplification — suspension** : pendant une suspension, les prix publiés sont figés et tous les chocs (marché et news) s'accumulent, puis tombent à la réouverture. Il n'y a pas d'annulation rétroactive des transactions de la journée (contrairement à l'épisode réel du nickel). Seuls les futures et options de la commodité sont bloqués ; le physique continue.
+- **Simplification — délits d'initiés** : les informations obtenues en avance via les relations (risque de délit d'initié) arrivent avec les PNJ et relations en *phase 5*, et la conformité (enquêtes, sanctions) en *phase 7*.
+
+### Géopolitique et réglementation
+- **Zones** : les 9 pays réels des villes, plus 5 zones de production fictives remaniées (Fédération de Sarmatie, Royaumes du Golfe, République du Kassaï, Tauride, Archipel d'Insulinde), chacune avec un bloc et une stabilité qui dérive et réagit aux événements. Tension entre blocs de 0 à 100.
+- **Sanctions selon la juridiction du siège** : régime occidental (Genève, Londres, Rotterdam, Houston, Chicago), ONU seulement (Singapour, Santiago, Johannesburg ; ne s'applique qu'aux sanctions totales en période de très forte tension), oriental (Shanghai), aucun (Dubaï).
+  - Sanctions totales : les offres des entités visées disparaissent, et les contrats en cours sont **frustrés** (force majeure, annulés sans indemnité, le MTM disparaît).
+  - Plafond de prix : achat autorisé uniquement sous le plafond. Les barils sanctionnés se négocient avec une décote de 15 à 25 %.
+  - **Simplification** : traiter des barils sanctionnés depuis Dubaï n'a pas encore de conséquence (sanctions secondaires, banques occidentales) : *phase 7 (conformité)*.
+- **Embargos et interdictions d'export** : les offres concernées sont filtrées, les différentiels régionaux s'écartent.
+- **Réglementation par ville**, évolutive :
+  - impôt ;
+  - exigence KYC (contrepartie à risque = notée BB ou moins, ou pays de stabilité < 50) : délai d'1 à 3 jours ouvrés avant de pouvoir traiter, ou exclusion pure dans une juridiction très stricte ;
+  - coût de déclaration des dérivés par transaction, facturé chaque mois ;
+  - contrôle des capitaux : financement +0,5 %, et risque de gel de 20 % de la trésorerie pendant 10 jours.
+- **Simplification** : licences et bureaux multiples arriveront avec l'ouverture de bureaux (*phase 8*). Le siège unique peut être transféré.
+
+### Sociétés concurrentes (`engine/companies.ts`)
+- 28 sociétés simulées (maisons de négoce, bras trading des majors, maisons agricoles, mineur, 3 banques, 2 fonds) et 10 contreparties à notation fixe (producteurs, utilities, coopératives), dont 4 issues des zones fictives.
+- Chaque jour : P&L = expositions × rendement du marché + marge commerciale bruitée − frais. Rééquilibrage tous les 4 à 8 jours selon les desks, l'appétit, un levier par métier et un signal (tendance + conviction propre).
+- Notation dynamique (santé financière, réputation). Faillite sous 20 % des fonds propres initiaux (10 % pour les acteurs moins risqués). Scandales via les événements.
+- Rachats : les contrats du joueur passent chez l'acheteur par **novation**. Débauchages et gros deals génèrent des news.
+- **Faillite** : liquidation forcée de ses expositions (choc de prix proportionnel à la taille), résiliation et compensation des contrats du joueur.
+- **Concurrence sur le physique** : une offre avantageuse a 25 % de chances par jour d'être raflée par un concurrent.
+- Classement (joueur inclus) et **rival nominatif** (maison de la même ville au profil le plus proche, avec son trader vedette).
+- **Simplification** : les concurrents n'ont pas de livre détaillé (expositions agrégées par commodité) et n'interagissent pas avec le carnet des futures, sauf choc de liquidation. Recrutements et débauchages qui touchent le joueur : *phases 5 et 8*.
+
+### Risque de contrepartie (`engine/credit.ts`)
+- Probabilités de défaut annuelles par notation (AAA 0,01 % … B 4 %, CCC 15 %), doublées en régime de stress. Les contreparties non simulées sont dégradées par l'instabilité de leur pays.
+- **Close-out netting** par contrepartie, avec deux ensembles distincts : physique (accord type GTMA/EFET) et OTC (ISDA). Montant net dû au joueur : récupération de 35 %. Montant dû par le joueur : payé intégralement. Testé, y compris le cas où on doit de l'argent.
+- **Assurance-crédit** : 0,4 % par an de l'encours physique, couvre 90 % de la perte de défaut sur le physique.
+- **CSA par banque** : collatéral égal à −MTM net des OTC avec cette banque, échangé chaque soir. La NAV ne bouge pas, mais le cash, oui (liquidité). Le défaut de la banque devient alors quasi sans perte (testé). Sans CSA, la banque facture une **CVA** (fourchette ×1,3).
+- **Simplifications** : seuil et montant minimum de transfert du CSA nuls ; récupération fixe à 35 % ; pas de lettres de crédit ni de garanties bancaires (*phase 7, financement*).
+
+### Interface
+- Panneaux **Actualités** (filtres par catégorie, statut rumeur / confirmé / démenti, impacts, calendrier des réunions), **Monde** (tension, taux, ENSO, narratifs, sanctions, zones, comparaison réglementaire, transfert de siège) et **Concurrents** (classement, fiches, expositions, assurance, CSA, défauts subis).
+- Calques du globe : tensions (pays et zones colorés par stabilité), sanctions, météo (marqueurs animés), prix (variation du jour par hub), concurrents (badges des sièges, rival entouré). Les calques « routes » et « stocks » viendront avec la logistique (*phase 4*).
+
+### Sauvegardes
+- Version 3. Migration automatique depuis les versions 1 et 2.

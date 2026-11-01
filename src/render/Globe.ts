@@ -8,7 +8,22 @@ import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import type { City, CommodityId } from '../engine/types';
 import { arcPoint, latLonToVec3 } from './geo';
 import { buildAvatar, buildCityCluster, buildHq, buildHubProp, buildPlane } from './models';
-import { buildTextures } from './textures';
+import { buildTextures, drawOverlay } from './textures';
+
+export interface GlobeMarker {
+  id: string;
+  lat: number;
+  lon: number;
+  icon: string;
+  label: string;
+  tone?: 'alert' | 'info' | 'weather';
+}
+
+export interface GlobeOverlay {
+  key: string; // change => texture régénérée
+  countries: Record<number, string>; // code ISO numérique -> couleur CSS
+  blobs: { lat: number; lon: number; r: number; color: string }[];
+}
 
 export interface GlobeView {
   hqCity: string;
@@ -17,6 +32,10 @@ export interface GlobeView {
   selectedCity: string | null;
   /** villes où le joueur a des positions physiques (anneau coloré) */
   activeCities: Record<string, string>;
+  markers?: GlobeMarker[];
+  cityBadges?: Record<string, { initials: string; color: string; title: string; rival?: boolean }[]>;
+  cityChips?: Record<string, { text: string; tone: 'pos' | 'neg' | 'flat' }[]>;
+  overlay?: GlobeOverlay | null;
 }
 
 export interface GlobeOptions {
@@ -117,6 +136,9 @@ export class Globe {
   private clock = new THREE.Clock();
   private focusAnim: null | { from: THREE.Vector3; to: THREE.Vector3; t: number; dist0: number; dist1: number } = null;
   private resizeObs: ResizeObserver;
+  private overlayMesh: THREE.Mesh;
+  private overlayKey = '';
+  private markerEls = new Map<string, { el: HTMLDivElement; pos: THREE.Vector3 }>();
 
   constructor(private container: HTMLElement, private opts: GlobeOptions) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -162,6 +184,13 @@ export class Globe {
       new THREE.MeshLambertMaterial({ map: tex.clouds, transparent: true, opacity: 0.6, depthWrite: false }),
     );
     this.scene.add(this.clouds);
+
+    this.overlayMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1.004, 96, 64),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false }),
+    );
+    this.overlayMesh.visible = false;
+    this.scene.add(this.overlayMesh);
 
     const atmo = new THREE.Mesh(
       new THREE.SphereGeometry(1.05, 64, 48),
@@ -265,6 +294,44 @@ export class Globe {
       n.label.classList.toggle('hq', v.hqCity === n.city.id);
       n.label.classList.toggle('here', v.playerCity === n.city.id);
     }
+    for (const n of this.nodes) {
+      const badges = v.cityBadges?.[n.city.id] ?? [];
+      const chips = v.cityChips?.[n.city.id] ?? [];
+      const html = `<span class="dot"></span><span class="name">${n.city.name}</span>` +
+        (badges.length ? `<span class="badges">${badges.slice(0, 4).map((b) => `<i class="${b.rival ? 'rival' : ''}" style="background:${b.color}" title="${b.title}">${b.initials}</i>`).join('')}${badges.length > 4 ? `<i class="more">+${badges.length - 4}</i>` : ''}</span>` : '') +
+        (chips.length ? `<span class="chips">${chips.map((c) => `<b class="${c.tone}">${c.text}</b>`).join('')}</span>` : '');
+      if (n.label.dataset.html !== html) {
+        n.label.innerHTML = html;
+        n.label.dataset.html = html;
+      }
+    }
+    // marqueurs d'événements
+    const ids = new Set((v.markers ?? []).map((m) => m.id));
+    for (const [id, m] of this.markerEls) if (!ids.has(id)) { m.el.remove(); this.markerEls.delete(id); }
+    for (const mk of v.markers ?? []) {
+      let m = this.markerEls.get(mk.id);
+      if (!m) {
+        const el = document.createElement('div');
+        el.className = `globe-marker ${mk.tone ?? 'info'}`;
+        this.labelLayer.appendChild(el);
+        m = { el, pos: latLonToVec3(mk.lat, mk.lon, 1) };
+        this.markerEls.set(mk.id, m);
+      }
+      m.el.innerHTML = `<span class="icon">${mk.icon}</span><span class="txt">${mk.label}</span>`;
+      m.pos = latLonToVec3(mk.lat, mk.lon, 1);
+    }
+    // calque géopolitique
+    if (v.overlay) {
+      if (v.overlay.key !== this.overlayKey) {
+        this.overlayKey = v.overlay.key;
+        const mat = this.overlayMesh.material as THREE.MeshBasicMaterial;
+        mat.map?.dispose();
+        mat.map = drawOverlay(v.overlay);
+        mat.needsUpdate = true;
+      }
+      this.overlayMesh.visible = true;
+    } else this.overlayMesh.visible = false;
+
     const key = v.travel ? `${v.travel.from}>${v.travel.to}` : '';
     if (key !== this.trailKey) {
       this.trailKey = key;
@@ -385,6 +452,13 @@ export class Globe {
       n.label.style.transform = `translate(-50%, -100%) translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h - 6}px)`;
       n.label.style.opacity = String(Math.min(1, (facing - 0.25) * 4));
       n.label.classList.toggle('compact', dist > 3.6);
+    }
+    for (const m of this.markerEls.values()) {
+      const facing = m.pos.clone().normalize().dot(camDir);
+      if (facing < 0.2) { m.el.style.display = 'none'; continue; }
+      const p = m.pos.clone().multiplyScalar(1.03).project(this.camera);
+      m.el.style.display = '';
+      m.el.style.transform = `translate(-50%, -50%) translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h}px)`;
     }
   }
 

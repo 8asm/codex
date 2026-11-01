@@ -7,6 +7,7 @@ export const CITIES: City[] = [
     corporateTax: 0.14, taxNote: 'IS cantonal + fédéral ≈ 14 %',
     officeRentMonthly: 45_000, staffCostIndex: 1.0, regulator: 'Autorité fédérale des marchés (AFM)',
     kycStrictness: 0.7, politicalStability: 95, capitalControls: false, bankingHub: 0.85, port: false, airportHub: 0.6,
+    sanctionsRegime: 'west', reportingFee: 35,
     blurb: 'Capitale historique du négoce pétrolier et agricole. Banques de trade finance à deux pas.',
   },
   {
@@ -14,6 +15,7 @@ export const CITIES: City[] = [
     corporateTax: 0.25, taxNote: 'IS 25 %',
     officeRentMonthly: 62_000, staffCostIndex: 1.05, regulator: 'Financial Conduct Office (FCO)',
     kycStrictness: 0.8, politicalStability: 88, capitalControls: false, bankingHub: 1.0, port: false, airportHub: 1.0,
+    sanctionsRegime: 'west', reportingFee: 45,
     blurb: 'Bourses des métaux et du pétrole, vivier de talents dérivés, régulation exigeante.',
   },
   {
@@ -21,6 +23,7 @@ export const CITIES: City[] = [
     corporateTax: 0.258, taxNote: 'IS 25,8 %',
     officeRentMonthly: 28_000, staffCostIndex: 0.85, regulator: 'Autorité néerlandaise des marchés (ANM)',
     kycStrictness: 0.7, politicalStability: 92, capitalControls: false, bankingHub: 0.6, port: true, airportHub: 0.5,
+    sanctionsRegime: 'west', reportingFee: 40,
     blurb: 'Premier port d’Europe : brut, produits, charbon ARA, métaux en entrepôt, grains.',
   },
   {
@@ -28,6 +31,7 @@ export const CITIES: City[] = [
     corporateTax: 0.17, taxNote: 'IS 17 % (régimes incitatifs négociant possibles, phase 3)',
     officeRentMonthly: 50_000, staffCostIndex: 0.95, regulator: 'Autorité monétaire (AMS)',
     kycStrictness: 0.75, politicalStability: 96, capitalControls: false, bankingHub: 0.9, port: true, airportHub: 0.95,
+    sanctionsRegime: 'un', reportingFee: 25, specialRegime: { label: 'Statut de négociant agréé', rate: 0.1, minPhysicalVolume: 500_000_000 },
     blurb: 'Hub asiatique du pétrole, du GNL et des métaux. Fiscalité attractive.',
   },
   {
@@ -35,6 +39,7 @@ export const CITIES: City[] = [
     corporateTax: 0.21, taxNote: 'IS fédéral 21 % (pas d’impôt d’État au Texas)',
     officeRentMonthly: 30_000, staffCostIndex: 1.0, regulator: 'Commodity Markets Commission (CMC)',
     kycStrictness: 0.75, politicalStability: 85, capitalControls: false, bankingHub: 0.7, port: true, airportHub: 0.8,
+    sanctionsRegime: 'west', reportingFee: 50,
     blurb: 'Capitale de l’énergie américaine : brut du Golfe, raffineries, GNL. Saison des ouragans.',
   },
   {
@@ -42,6 +47,7 @@ export const CITIES: City[] = [
     corporateTax: 0.09, taxNote: 'IS 9 % (zones franches possibles)',
     officeRentMonthly: 38_000, staffCostIndex: 0.9, regulator: 'Autorité des services financiers (ASF)',
     kycStrictness: 0.45, politicalStability: 82, capitalControls: false, bankingHub: 0.65, port: true, airportHub: 0.95,
+    sanctionsRegime: 'none', reportingFee: 0, specialRegime: { label: 'Zone franche', rate: 0, annualFee: 250_000 },
     blurb: 'Carrefour Moyen-Orient – Asie – Afrique. KYC plus souple… et regard des régulateurs étrangers.',
   },
   {
@@ -49,6 +55,7 @@ export const CITIES: City[] = [
     corporateTax: 0.25, taxNote: 'IS 25 %',
     officeRentMonthly: 34_000, staffCostIndex: 0.75, regulator: 'Commission de régulation des marchés (CRM)',
     kycStrictness: 0.6, politicalStability: 78, capitalControls: true, bankingHub: 0.6, port: true, airportHub: 0.8,
+    sanctionsRegime: 'east', reportingFee: 20,
     blurb: 'Premier consommateur mondial de métaux et de charbon. Contrôle des capitaux.',
   },
   {
@@ -56,6 +63,7 @@ export const CITIES: City[] = [
     corporateTax: 0.28, taxNote: 'IS fédéral 21 % + Illinois ≈ 9,5 %',
     officeRentMonthly: 33_000, staffCostIndex: 1.0, regulator: 'Commodity Markets Commission (CMC)',
     kycStrictness: 0.75, politicalStability: 85, capitalControls: false, bankingHub: 0.75, port: false, airportHub: 0.9,
+    sanctionsRegime: 'west', reportingFee: 50,
     blurb: 'Le berceau des futures agricoles. Rapports de récolte mensuels très suivis.',
   },
   {
@@ -63,6 +71,7 @@ export const CITIES: City[] = [
     corporateTax: 0.27, taxNote: 'IS 27 %',
     officeRentMonthly: 16_000, staffCostIndex: 0.6, regulator: 'Commission des marchés financiers (CMF)',
     kycStrictness: 0.55, politicalStability: 72, capitalControls: false, bankingHub: 0.4, port: false, airportHub: 0.55,
+    sanctionsRegime: 'un', reportingFee: 10,
     blurb: 'Premier producteur mondial de cuivre. Grèves minières et réformes des royalties.',
   },
   {
@@ -70,6 +79,7 @@ export const CITIES: City[] = [
     corporateTax: 0.27, taxNote: 'IS 27 %',
     officeRentMonthly: 14_000, staffCostIndex: 0.55, regulator: 'Autorité de conduite financière (ACF)',
     kycStrictness: 0.55, politicalStability: 62, capitalControls: true, bankingHub: 0.45, port: false, airportHub: 0.6,
+    sanctionsRegime: 'un', reportingFee: 10,
     blurb: 'Charbon de Richards Bay, platinoïdes. Délestages électriques et logistique ferroviaire fragile.',
   },
 ];

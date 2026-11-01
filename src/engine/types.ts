@@ -97,6 +97,12 @@ export interface City {
   bankingHub: number; // 0..1
   port: boolean;
   airportHub: number; // 0..1
+  /** Sanctions applicables aux sociétés domiciliées ici. */
+  sanctionsRegime: 'west' | 'un' | 'east' | 'none';
+  /** Coût de déclaration des dérivés par transaction (type EMIR / Dodd-Frank), USD. */
+  reportingFee: number;
+  /** Régime fiscal spécial éventuel. */
+  specialRegime?: { label: string; rate: number; minPhysicalVolume?: number; annualFee?: number };
   blurb: string;
 }
 
@@ -104,7 +110,8 @@ export interface Counterparty {
   id: string;
   name: string;
   cityId: string;
-  kind: 'trader' | 'major' | 'producer' | 'utility' | 'bank' | 'agri' | 'miner';
+  kind: 'trader' | 'major' | 'producer' | 'utility' | 'bank' | 'agri' | 'miner' | 'fund';
+  zone: string;
 }
 
 // ---------------------------------------------------------------- état de marché
@@ -134,6 +141,15 @@ export interface MarketState {
   impact: Record<string, number>;
   /** Niveau de vol implicite relatif à la vol du modèle (prime de variance, peur), par commodité. */
   ivLevel: Record<CommodityId, number>;
+  /** Taux directeurs (continus) : bougent avec les banques centrales. */
+  rates: Record<Currency, number>;
+  /** Décalages persistants de différentiels (canal bloqué, embargo…), retirés à la fin de l'événement. */
+  basisShift: Record<string, number>;
+  /** Cotation suspendue jusqu'à ce jour (inclus) ; les chocs s'accumulent et tombent à la réouverture. */
+  halted: Partial<Record<CommodityId, number>>;
+  haltPending: Partial<Record<CommodityId, [number, number]>>;
+  /** Dérive du facteur long sous la probabilité réelle (« narratif » de marché = prime de risque), par an. */
+  drift: Partial<Record<CommodityId, number>>;
   /** Chocs transitoires utilisés pour les greeks / stress (jamais persistés en partie). */
   rateShift?: number;
   volShift?: number;
@@ -247,7 +263,7 @@ export interface Advice {
 
 export type AdviceAction =
   | { kind: 'hedge'; commodity: CommodityId }
-  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' }
   | { kind: 'trade'; action: Action; label: string };
 
 export interface Offer {
@@ -264,6 +280,8 @@ export interface Offer {
   counterpartyId: string;
   expiresDay: Day;
   createdDay: Day;
+  /** Contrôles KYC en cours jusqu'à ce jour (offre non acceptable avant). */
+  kycReadyDay?: Day;
 }
 
 export interface Travel {
@@ -285,7 +303,9 @@ export type CashCategory =
   | 'travel'
   | 'liquidation'
   | 'premium'
-  | 'otc';
+  | 'otc'
+  | 'compliance'
+  | 'credit';
 
 export interface Company {
   name: string;
@@ -301,7 +321,13 @@ export interface Company {
   /** Flux de trésorerie cumulés par commodité (pour l'attribution du P&L). */
   cumCashByCommodity: Record<CommodityId, number>;
   cumCashByCategory: Record<CashCategory, number>;
+  frozenCash: null | { amount: number; untilDay: Day };
+  tradesThisMonth: number;
+  physVolumeYtd: number;
+  lastRelocationDay: Day;
 }
+
+export type NewsCategory = 'marché' | 'géopolitique' | 'météo' | 'entreprises' | 'réglementation' | 'macro' | 'logistique';
 
 export interface NewsItem {
   id: string;
@@ -311,6 +337,134 @@ export interface NewsItem {
   commodity?: CommodityId;
   tone: 'up' | 'down' | 'neutral' | 'alert';
   major: boolean;
+  category?: NewsCategory;
+  /** Rumeur (non confirmée), confirmée, démentie. */
+  stage?: 'rumor' | 'confirmed' | 'denied';
+  zone?: string;
+  cityId?: string;
+  companyId?: string;
+  impacts?: { c: CommodityId; dir: 1 | -1 }[];
+}
+
+// ---------------------------------------------------------------- monde (phase 3)
+export type Impact =
+  | { k: 'chi' | 'xi' | 'iv'; c: CommodityId; v: number }
+  | { k: 'basis'; loc: string; v: number }
+  | { k: 'regime' }
+  | { k: 'rate'; ccy: Currency; v: number }
+  | { k: 'halt'; c: CommodityId; days: number }
+  | { k: 'stability'; zone: string; v: number }
+  | { k: 'tension'; v: number }
+  | { k: 'tax'; city: string; v: number }
+  | { k: 'kyc'; city: string; v: number }
+  | { k: 'capctl'; city: string; on: boolean }
+  | { k: 'reporting'; city: string; v: number }
+  | { k: 'sanction'; zone: string; by: 'west' | 'east'; kind: 'full' | 'pricecap'; c?: CommodityId; capPct?: number }
+  | { k: 'liftSanction'; zone: string }
+  | { k: 'restriction'; kind: 'exportBan' | 'embargo'; zone: string; importer?: string; c: CommodityId; days: number }
+  | { k: 'narrative'; id: string; name: string; drift: Partial<Record<CommodityId, number>>; days: number }
+  | { k: 'enso'; v: number }
+  | { k: 'effect'; effect: Omit<ActiveEffect, 'id'> }
+  | { k: 'companyHit'; id: string; navPct: number; rep: number }
+  | { k: 'companyDefault'; id: string }
+  | { k: 'freezeCash'; pct: number; days: number }
+  | { k: 'warehouseFraud'; loc: string; lossPct: number };
+
+export interface ZoneState {
+  stability: number;
+}
+
+export interface Sanction {
+  id: string;
+  zone: string;
+  by: 'west' | 'east';
+  kind: 'full' | 'pricecap';
+  c?: CommodityId;
+  capPct?: number; // plafond = prix benchmark × (1 − capPct)
+  sinceDay: Day;
+}
+
+export interface TradeRestriction {
+  id: string;
+  kind: 'exportBan' | 'embargo';
+  zone: string;
+  importer?: string;
+  c: CommodityId;
+  untilDay: Day;
+}
+
+/** Effet en cours, visible sur le globe (ouragan, canal bloqué, grève…). */
+export interface ActiveEffect {
+  id: string;
+  label: string;
+  icon: string;
+  lat: number;
+  lon: number;
+  untilDay: Day;
+  layer: 'météo' | 'logistique' | 'géopolitique' | 'marché';
+  basisShift?: Record<string, number>;
+}
+
+/** Étape différée d'un événement : confirmation, démenti, impact retardé, fin d'événement. */
+export interface PendingStage {
+  id: string;
+  day: Day;
+  news?: Omit<NewsItem, 'id' | 'day'>;
+  impacts: Impact[];
+}
+
+export interface Narrative {
+  id: string;
+  name: string;
+  drift: Partial<Record<CommodityId, number>>;
+  untilDay: Day;
+}
+
+export interface CityReg {
+  taxRate: number;
+  kyc: number;
+  capitalControls: boolean;
+  reportingFee: number;
+}
+
+export interface WorldState {
+  zones: Record<string, ZoneState>;
+  blocTension: number; // 0..100
+  sanctions: Sanction[];
+  restrictions: TradeRestriction[];
+  effects: ActiveEffect[];
+  pending: PendingStage[];
+  narratives: Narrative[];
+  enso: number; // indice El Niño (−2..+2)
+  cityRegs: Record<string, CityReg>;
+  calendar: { opec: Day; fomc: Day; ecb: Day; elections: Record<string, Day> };
+  eventCooldown: Record<string, Day>;
+}
+
+export interface AICompanyState {
+  id: string;
+  nav: number;
+  initialNav: number;
+  peakNav: number;
+  yearStartNav: number;
+  exposure: Partial<Record<CommodityId, number>>; // notionnel signé (USD)
+  reputation: number;
+  rating: string;
+  alive: boolean;
+  mergedInto?: string;
+  defaultDay?: Day;
+  scandals: number;
+  nextRebalance: Day;
+  history: number[];
+}
+
+export interface CreditState {
+  insurance: boolean;
+  csa: Record<string, boolean>;
+  collateral: Record<string, number>; // collatéral posté (+) ou reçu (−) par banque
+  losses: { day: Day; cp: string; loss: number; recovered: number; insured: number }[];
+  /** Contreparties non simulées en défaut (jusqu'à ce jour : restructuration). */
+  defaulted: Record<string, Day>;
 }
 
 export interface DailyRecord {
@@ -361,6 +515,9 @@ export interface GameState {
   explain: PnlExplain[];
   /** Instantané de fin de journée servant de base au P&L expliqué du lendemain. */
   explainBase: null | { market: MarketState; book: Book; day: Day };
+  world: WorldState;
+  companies: AICompanyState[];
+  credit: CreditState;
   advice: Advice[];
   adviceCooldown: Record<string, Day>;
   track: Record<AdvisorId, { right: number; wrong: number }>;
@@ -402,7 +559,10 @@ export type Action =
   | { type: 'TRADE_OTC'; kind: 'swap' | 'apo'; commodity: CommodityId; month: MonthIndex; qty: number; strike?: number; optType?: OptType }
   | { type: 'HEDGE_DELTA'; commodity: CommodityId; month?: MonthIndex }
   | { type: 'SET_LIMITS'; limits: Partial<InternalLimits> }
-  | { type: 'DISMISS_ADVICE'; id: string };
+  | { type: 'DISMISS_ADVICE'; id: string }
+  | { type: 'RELOCATE_HQ'; city: string }
+  | { type: 'SET_CREDIT_INSURANCE'; on: boolean }
+  | { type: 'SET_CSA'; bankId: string; on: boolean };
 
 export interface ActionResult {
   ok: boolean;

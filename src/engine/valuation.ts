@@ -86,7 +86,8 @@ export function bookValue(v: View, book: Book): number {
 }
 
 export function nav(state: GameState): number {
-  return state.company.cash - state.company.rcfDrawn + bookValue(state, bookOf(state));
+  const coll = Object.values(state.credit?.collateral ?? {}).reduce((a, b) => a + b, 0);
+  return state.company.cash - state.company.rcfDrawn + coll + bookValue(state, bookOf(state));
 }
 
 /** Valeur économique cumulée par commodité (flux cumulés + MTM ouvert). Sa variation = P&L de la commodité. */

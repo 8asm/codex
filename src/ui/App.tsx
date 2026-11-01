@@ -14,6 +14,10 @@ import { TreasuryPanel } from './TreasuryPanel';
 import { OptionsPanel } from './OptionsPanel';
 import { RiskPanel } from './RiskPanel';
 import { AdvisorBar } from './Advisors';
+import { NewsPanel } from './NewsPanel';
+import { WorldPanel } from './WorldPanel';
+import { RivalsPanel } from './RivalsPanel';
+import type { LayerId } from './store';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
 
 const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
@@ -24,6 +28,9 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'risk', icon: '🛡️', label: 'Risque', key: 'R' },
   { id: 'treasury', icon: '🏦', label: 'Trésorerie', key: 'T' },
   { id: 'travel', icon: '✈️', label: 'Voyages', key: 'V' },
+  { id: 'news', icon: '📰', label: 'Actu', key: 'A' },
+  { id: 'world', icon: '🌍', label: 'Monde', key: 'G' },
+  { id: 'rivals', icon: '🏢', label: 'Rivaux', key: 'K' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
 ];
 
@@ -100,7 +107,9 @@ export function App() {
   const hasPositions = !!game && (game.futures.length + game.forwards.length + game.inventory.length + game.options.length + game.otc.length > 0);
   const showOptions = !!game && (hasPositions || game.history.length > 5);
   const showRisk = !!game && (hasPositions || game.history.length > 10);
-  const visible = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : true);
+  const showWorld = !!game && (game.history.length > 8 || game.world.sanctions.length > 0 || game.world.effects.length > 0);
+  const showRivals = !!game && (game.history.length > 4 || game.forwards.length > 0);
+  const visible = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
   return (
     <div className="app">
@@ -114,7 +123,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P O L R T V C : panneaux · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P O L R T V A G K C : panneaux · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -134,7 +143,11 @@ export function App() {
             {panel === 'codex' && <CodexPanel />}
             {panel === 'options' && <OptionsPanel />}
             {panel === 'risk' && <RiskPanel />}
+            {panel === 'news' && <NewsPanel />}
+            {panel === 'world' && <WorldPanel />}
+            {panel === 'rivals' && <RivalsPanel />}
           </div>
+          <LayerBar />
           <AdvisorBar />
           <NewsTicker />
           <Modals />
@@ -143,6 +156,27 @@ export function App() {
       <div className="toasts">
         {toasts.map((t) => <div key={t.id} className={`toast ${t.tone}`}>{t.text}</div>)}
       </div>
+    </div>
+  );
+}
+
+const LAYERS: { id: LayerId; icon: string; label: string }[] = [
+  { id: 'tension', icon: '🌡️', label: 'Tensions' },
+  { id: 'sanctions', icon: '🚫', label: 'Sanctions' },
+  { id: 'meteo', icon: '🌀', label: 'Météo' },
+  { id: 'prix', icon: '📊', label: 'Prix' },
+  { id: 'rivals', icon: '🏢', label: 'Concurrents' },
+];
+
+function LayerBar() {
+  const layers = useStore((s) => s.layers);
+  const toggle = useStore((s) => s.toggleLayer);
+  return (
+    <div className="layerbar">
+      <span className="muted small">Calques</span>
+      {LAYERS.map((l) => (
+        <button key={l.id} className={layers[l.id] ? 'on' : ''} onClick={() => toggle(l.id)} title={l.label}>{l.icon}<small>{l.label}</small></button>
+      ))}
     </div>
   );
 }

@@ -5,13 +5,15 @@
  * symétrique sur le physique couvert reste latent jusqu'à la livraison. Un hedge parfait peut donc
  * vider la trésorerie : c'est le risque de liquidité de financement.
  */
-import { RATES } from '../data/commodities';
+import { rate } from './market';
 import { addCash, log } from './ledger';
 import type { GameState } from './types';
 import { nav } from './valuation';
 
 export const RCF_SPREAD = 0.025;
 export const CASH_HAIRCUT = 0.005;
+/** Contrôle des capitaux dans la ville du siège : financement plus cher (+0,5 %). */
+export const CAPITAL_CONTROLS_SPREAD = 0.005;
 
 /** Limite de RCF : 2,5× les fonds propres, plafonnée à 4× le capital initial (covenant bancaire). */
 export function rcfLimit(state: GameState, navValue = nav(state)): number {
@@ -26,15 +28,21 @@ export function rcfHeadroom(state: GameState, navValue?: number): number {
   return Math.max(0, rcfLimit(state, navValue) - state.company.rcfDrawn);
 }
 
+/** Cash disponible : hors marge initiale et hors cash gelé (contrôle des capitaux). */
 export function freeCash(state: GameState): number {
-  return state.company.cash - state.company.im;
+  return state.company.cash - state.company.im - frozen(state);
+}
+
+export function frozen(state: GameState): number {
+  const f = state.company.frozenCash;
+  return f && f.untilDay >= state.day ? f.amount : 0;
 }
 
 /** Intérêts créditeurs/débiteurs, base ACT/360. */
 export function accrueInterest(state: GameState, days: number) {
   const co = state.company;
   if (days <= 0) return;
-  const r = RATES.USD;
+  const r = rate(state.market, 'USD') + (state.world?.cityRegs[co.hqCity]?.capitalControls ? CAPITAL_CONTROLS_SPREAD : 0);
   if (co.cash > 0) addCash(state, co.cash * (r - CASH_HAIRCUT) * (days / 360), 'interest');
   else addCash(state, co.cash * (r + RCF_SPREAD) * (days / 360), 'interest');
   if (co.rcfDrawn > 0) addCash(state, -co.rcfDrawn * (r + RCF_SPREAD + state.risk.rcfPenalty) * (days / 360), 'interest');
@@ -63,7 +71,7 @@ export function settleTreasury(state: GameState): number {
   const navValue = nav(state);
   const limit = rcfLimit(state, navValue);
   if (co.autoTreasury) {
-    const free = co.cash - co.im;
+    const free = co.cash - co.im - frozen(state);
     const buffer = 0.05 * co.initialCapital;
     if (free < 0) {
       const d = drawRcf(state, -free);
@@ -81,5 +89,5 @@ export function settleTreasury(state: GameState): number {
       excessDebt -= pay;
     }
   }
-  return Math.max(0, co.im - co.cash) + excessDebt;
+  return Math.max(0, co.im + frozen(state) - co.cash) + excessDebt;
 }
