@@ -30,6 +30,23 @@ export function Modals() {
     );
   }
 
+  if (modal.kind === 'limit') {
+    return (
+      <div className="modal-bg">
+        <div className="modal danger">
+          <div className="siren">🏦</div>
+          <h2>Alerte de limite</h2>
+          <p>{modal.text}</p>
+          <p className="small">Le <Term id="covenant">covenant</Term> de votre convention de crédit plafonne la <Term id="var">VaR</Term> à 8 % des fonds propres. Réduisez ou couvrez vos positions.</p>
+          <div className="modal-actions">
+            <button className="primary" onClick={() => { close(); setPanel('risk', true); }}>Ouvrir le panneau Risque</button>
+            <button className="ghost" onClick={close}>Plus tard</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (modal.kind === 'margin_call' || modal.kind === 'liquidation') {
     const head = rcfHeadroom(g);
     const amount = g.company.marginCall?.amount ?? 0;

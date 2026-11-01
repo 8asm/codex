@@ -10,7 +10,7 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk';
 export type Speed = 0 | 1 | 2 | 5;
 
 export interface Toast {
@@ -20,7 +20,7 @@ export interface Toast {
 }
 
 export interface Modal {
-  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation';
+  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation' | 'limit';
   text: string;
 }
 
@@ -47,7 +47,7 @@ interface UIState {
   act: (a: Action, quiet?: boolean) => ActionResult;
   step: () => void;
   setSpeed: (s: Speed) => void;
-  setPanel: (p: PanelId | null) => void;
+  setPanel: (p: PanelId | null, force?: boolean) => void;
   selectCommodity: (c: CommodityId, month?: number | null) => void;
   selectCity: (id: string | null) => void;
   toast: (text: string, tone?: Toast['tone']) => void;
@@ -108,7 +108,14 @@ export const useStore = create<UIState>((set, get) => ({
     let modal: Modal | null = get().modal;
     let pause = false;
     for (const al of alerts) {
-      if (al.kind === 'delivery') get().toast(al.text, 'info');
+      if (al.kind === 'delivery' || al.kind === 'limit_ok') get().toast(al.text, 'info');
+      else if (al.kind === 'advice') continue;
+      else if (al.kind === 'limit') {
+        sfx.alarm();
+        get().toast(`⚠️ ${al.text}`, 'bad');
+        modal ??= { kind: 'limit', text: al.text };
+        pause = true;
+      }
       else if (al.kind === 'major_news') {
         sfx.news();
         get().toast(`📰 ${al.text}`, 'alert');
@@ -128,7 +135,7 @@ export const useStore = create<UIState>((set, get) => ({
   },
 
   setSpeed: (s) => set({ speed: s }),
-  setPanel: (p) => set({ panel: get().panel === p ? null : p }),
+  setPanel: (p, force) => set({ panel: !force && get().panel === p ? null : p }),
   selectCommodity: (c, month) => {
     const g = get().game;
     const months = g ? listedMonths(COMMODITIES[c], g.day) : [];

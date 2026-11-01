@@ -94,3 +94,41 @@ export function stepFactors(
     xi: xi + muStar(p, volMult) * dt + sdXi * zXi,
   };
 }
+
+/**
+ * Variance intégrée du log d'un future de maturité τc entre aujourd'hui et τe (expiration de l'option) :
+ *   ∫_0^{τe} σ_F(τc − s)² ds, avec σ_F(u)² = a e^{−2κu} + b + c e^{−κu}
+ *   a = σχ², b = σξ², c = 2ρσχσξ.
+ * La vol ATM d'une option sur future est √(var / τe) : c'est la structure par terme du modèle.
+ */
+export function integratedVariance(p: ModelParams, tauC: number, tauE: number, volMult = 1): number {
+  const te = Math.max(0, Math.min(tauE, tauC));
+  if (te <= 0) return 0;
+  const k = p.kappa;
+  const sc = p.sigmaChi * volMult;
+  const sx = p.sigmaXi * volMult;
+  const a = sc * sc, b = sx * sx, c = 2 * p.rho * sc * sx;
+  const u0 = tauC - te;
+  return (
+    (a / (2 * k)) * (Math.exp(-2 * k * u0) - Math.exp(-2 * k * tauC)) +
+    b * te +
+    (c / k) * (Math.exp(-k * u0) - Math.exp(-k * tauC))
+  );
+}
+
+/**
+ * Covariance exacte, sous Schwartz-Smith, des log-prix spot fixés aux dates t_i et t_j (années) :
+ *   C_ij = ∫_0^{min(t_i,t_j)} [σχ² e^{−κ(t_i−s)} e^{−κ(t_j−s)} + σξ² + ρσχσξ (e^{−κ(t_i−s)} + e^{−κ(t_j−s)})] ds
+ * Sert à l'appariement des moments des options asiatiques (APO).
+ */
+export function fixingCovariance(p: ModelParams, ti: number, tj: number, volMult = 1): number {
+  const u = Math.max(0, Math.min(ti, tj));
+  if (u <= 0) return 0;
+  const k = p.kappa;
+  const sc = p.sigmaChi * volMult;
+  const sx = p.sigmaXi * volMult;
+  const termA = sc * sc * Math.exp(-k * (ti + tj)) * (Math.exp(2 * k * u) - 1) / (2 * k);
+  const termB = sx * sx * u;
+  const termC = p.rho * sc * sx * ((Math.exp(-k * ti) + Math.exp(-k * tj)) * (Math.exp(k * u) - 1)) / k;
+  return termA + termB + termC;
+}

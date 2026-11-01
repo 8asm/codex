@@ -33,6 +33,8 @@ export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
       seasonalPeak: 6.5,
     },
     liquidity: { halfSpreadTicks: 1, depthLots: 800, commission: 2.5 },
+    options: { style: 'A', expiryRule: 'BRENT', strikeStep: 1, months: 12, skew: -0.05, curvature: 0.025, volHalfSpread: 0.006 },
+    positionLimits: { spotMonth: 2500, allMonths: 12000 },
     physical: {
       cargoSizes: [300_000, 600_000],
       storagePerUnitMonth: 0.45,
@@ -75,6 +77,8 @@ export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
       seasonalPeak: 0.5,
     },
     liquidity: { halfSpreadTicks: 4, depthLots: 300, commission: 3 },
+    options: { style: 'E', expiryRule: 'TTF', strikeStep: 1, months: 12, skew: 0.06, curvature: 0.04, volHalfSpread: 0.012 },
+    positionLimits: { spotMonth: 900, allMonths: 5000 },
     physical: {
       cargoSizes: [50_000, 100_000, 200_000],
       storagePerUnitMonth: 0.25,
@@ -116,6 +120,8 @@ export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
       seasonalPeak: 0,
     },
     liquidity: { halfSpreadTicks: 4, depthLots: 600, commission: 6 },
+    options: { style: 'E', expiryRule: 'LME', strikeStep: 100, months: 12, skew: -0.03, curvature: 0.02, volHalfSpread: 0.006 },
+    positionLimits: { spotMonth: 1800, allMonths: 9000 },
     physical: {
       cargoSizes: [500, 1000, 2000],
       storagePerUnitMonth: 18,
@@ -158,6 +164,8 @@ export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
       seasonalPeak: 1.5,
     },
     liquidity: { halfSpreadTicks: 1, depthLots: 500, commission: 2.5 },
+    options: { style: 'A', expiryRule: 'CBOT', strikeStep: 10, months: 5, skew: 0.05, curvature: 0.03, volHalfSpread: 0.008 },
+    positionLimits: { spotMonth: 1500, allMonths: 7500 },
     physical: {
       cargoSizes: [1_102_300, 2_204_600],
       storagePerUnitMonth: 4,
@@ -201,6 +209,8 @@ export const COMMODITIES: Record<CommodityId, CommoditySpec> = {
       seasonalPeak: 0.5,
     },
     liquidity: { halfSpreadTicks: 3, depthLots: 250, commission: 3 },
+    options: { style: 'E', expiryRule: 'WITH_FUTURE', strikeStep: 2, months: 12, skew: 0.04, curvature: 0.03, volHalfSpread: 0.012 },
+    positionLimits: { spotMonth: 750, allMonths: 4000 },
     physical: {
       cargoSizes: [50_000, 75_000],
       storagePerUnitMonth: 0.9,

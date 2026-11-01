@@ -8,7 +8,7 @@ Pas de guerre : des cargaisons, des courbes forward, des appels de marge et du c
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # tests du moteur (pricing, P&L, marge, livraisons, déterminisme)
+npm test           # 57 tests du moteur (pricing, options, APO, marge SPAN, VaR, P&L expliqué, livraisons, déterminisme)
 npm run build      # build de production dans dist/
 ```
 
@@ -24,9 +24,19 @@ npm run build      # build de production dans dist/
 - **Codex** : chaque terme souligné se débloque au survol.
 - Sauvegarde automatique (IndexedDB), sauvegarde manuelle, export/import JSON.
 
+## Phase 2 — ce qui s'ajoute
+
+- **Options listées** sur les 5 futures : chaîne de strikes avec bid/ask, vol implicite et delta ; smile ; profil de gain ; greeks et VaR incrémentale avant validation. Américaines (BAW) ou européennes (Black-76) selon la bourse. Exercice automatique ou anticipé.
+- **OTC bancaire** : swaps sur moyenne mensuelle et options asiatiques (APO), réglés sur la moyenne des cotations du mois.
+- **Surface de vol** : structure par terme du modèle, skew propre à chaque marché, vol implicite qui saute sur les news.
+- **Liquidité** : fourchette en points de vol pour les options, impact de marché permanent sur les futures, ordres de spread calendaire.
+- **Panneau Risque** : VaR/ES 99 % par Monte Carlo à revalorisation complète, greeks agrégés, échéancier des deltas, 6 stress tests, P&L expliqué (prix/base/change/vol/temps/deals), limites internes avec discipline stricte.
+- **Conséquences** : covenant bancaire (gel puis réduction de la RCF), limites de position des bourses, couverture delta en un clic.
+- **Conseillers animés** : Margot (risk), Dex (trader), Kenji (analyste), Rosa (opérations), Anselme (juriste). Ils réagissent aussi dans le ticket, se contredisent, et tiennent un palmarès de leurs prédictions.
+
 ### Raccourcis
 
-`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `L` livre · `T` trésorerie · `V` voyages · `C` codex · `Échap` fermer
+`Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `C` codex · `Échap` fermer
 
 ## Structure
 

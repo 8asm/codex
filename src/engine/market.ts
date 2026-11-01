@@ -5,7 +5,7 @@
 import { COMMODITIES, COMMODITY_IDS, CORRELATION, RATES } from '../data/commodities';
 import type { Day, MonthIndex } from './calendar';
 import { yearFrac } from './calendar';
-import { pricingDay } from './contracts';
+import { listedMonths, pricingDay } from './contracts';
 import { cholesky, mulLower } from './math';
 import { forwardVol, lnForward, stepFactors } from './model';
 import { chance, normal, type RngState } from './rng';
@@ -19,6 +19,13 @@ const BASIS_KAPPA = 4;
 export const IM_Z = 2.326;
 export const IM_HORIZON = 3 / 365;
 const STRESS_MULT = 1.8;
+/**
+ * Niveau de vol implicite / vol du modèle : OU autour de 1,08 (prime de variance : les options
+ * se paient en moyenne un peu plus cher que la vol réalisée). Saute sur les grosses news.
+ */
+export const IV_PARAMS = { mean: 1.08, kappa: 3, sigma: 0.45, min: 0.7, max: 2.2 };
+/** Décroissance nocturne de l'impact de marché permanent (fraction conservée). */
+export const IMPACT_DECAY = 0.35;
 
 export function createMarket(startDay: Day, volatility = 1): MarketState {
   const commodities = {} as Record<CommodityId, CommodityMarket>;
@@ -40,6 +47,8 @@ export function createMarket(startDay: Day, volatility = 1): MarketState {
     fxLog: FX_PARAMS.mean,
     commodities,
     history: [],
+    impact: {},
+    ivLevel: Object.fromEntries(COMMODITY_IDS.map((c) => [c, IV_PARAMS.mean])) as Record<CommodityId, number>,
   };
   for (const id of COMMODITY_IDS) m.commodities[id].imRate = exchangeImRate(m, id);
   snapshot(m);
@@ -64,8 +73,19 @@ export function forwardAt(m: MarketState, c: CommodityId, deliveryDay: Day, asOf
   return Math.exp(lnForward(p, chi ?? cm.chi, xi ?? cm.xi, yearFrac(asOf, deliveryDay), deliveryDay, volMult ?? m.volMult));
 }
 
+/** Prix d'une échéance cotée : courbe du modèle × impact de marché résiduel sur ce contrat. */
 export function futuresPrice(m: MarketState, c: CommodityId, mi: MonthIndex): number {
-  return forwardAt(m, c, pricingDay(COMMODITIES[c], mi));
+  return forwardAt(m, c, pricingDay(COMMODITIES[c], mi)) * Math.exp(m.impact[`${c}:${mi}`] ?? 0);
+}
+
+/** Prix de la première échéance cotée. */
+export function listedFront(m: MarketState, c: CommodityId): number {
+  return futuresPrice(m, c, listedMonths(COMMODITIES[c], m.day)[0]!);
+}
+
+/** Taux sans risque effectif (avec choc transitoire éventuel). */
+export function rate(m: MarketState, ccy: Currency): number {
+  return RATES[ccy] + (m.rateShift ?? 0);
 }
 
 export function spotPrice(m: MarketState, c: CommodityId): number {
@@ -82,8 +102,8 @@ export function fx(m: MarketState, ccy: Currency): number {
   return ccy === 'USD' ? 1 : Math.exp(m.fxLog);
 }
 
-export function discount(ccy: Currency, from: Day, to: Day): number {
-  return Math.exp(-RATES[ccy] * Math.max(0, yearFrac(from, to)));
+export function discount(m: MarketState, ccy: Currency, from: Day, to: Day): number {
+  return Math.exp(-rate(m, ccy) * Math.max(0, yearFrac(from, to)));
 }
 
 /** Vol (annuelle) du log-prix d'une échéance. */
@@ -143,12 +163,39 @@ export function stepMarket(m: MarketState, rng: RngState, toDay: Day, volatility
   const fxSd = FX_PARAMS.sigma * Math.sqrt((1 - Math.exp(-2 * FX_PARAMS.kappa * dt)) / (2 * FX_PARAMS.kappa));
   m.fxLog = FX_PARAMS.mean + (m.fxLog - FX_PARAMS.mean) * Math.exp(-FX_PARAMS.kappa * dt) + fxSd * zCorr[5]!;
 
+  // Vol implicite : retour à la moyenne + bruit ; les mouvements violents de prix font monter la peur.
+  const ivSd = IV_PARAMS.sigma * Math.sqrt((1 - Math.exp(-2 * IV_PARAMS.kappa * dt)) / (2 * IV_PARAMS.kappa));
+  COMMODITY_IDS.forEach((id, i) => {
+    const cur = m.ivLevel[id];
+    const fear = 0.03 * Math.max(0, Math.abs(zCorr[i]!) - 1.5);
+    const next = IV_PARAMS.mean + (cur - IV_PARAMS.mean) * Math.exp(-IV_PARAMS.kappa * dt) + ivSd * normal(rng) + fear;
+    m.ivLevel[id] = Math.min(IV_PARAMS.max, Math.max(IV_PARAMS.min, next));
+  });
+  // L'impact de marché permanent s'estompe pendant la nuit (les market makers reconstituent le carnet).
+  for (const k of Object.keys(m.impact)) {
+    m.impact[k]! *= IMPACT_DECAY;
+    if (Math.abs(m.impact[k]!) < 1e-6) delete m.impact[k];
+  }
+
   m.day = toDay;
   snapshot(m);
   return info;
 }
 
 /** Courbe forward à une date passée (recalculée depuis l'historique des facteurs), pour comparaison. */
+/** Copie légère du marché (sans historique) pour les scénarios de risque. */
+export function cloneMarket(m: MarketState): MarketState {
+  const commodities = {} as Record<CommodityId, CommodityMarket>;
+  for (const id of COMMODITY_IDS) {
+    const cm = m.commodities[id];
+    commodities[id] = { chi: cm.chi, xi: cm.xi, imRate: cm.imRate, basisDev: { ...cm.basisDev } };
+  }
+  return {
+    day: m.day, volRegime: m.volRegime, volMult: m.volMult, fxLog: m.fxLog, commodities,
+    history: [], impact: { ...m.impact }, ivLevel: { ...m.ivLevel }, rateShift: m.rateShift, volShift: m.volShift,
+  };
+}
+
 export function pastCurve(m: MarketState, c: CommodityId, daysAgo: number, months: MonthIndex[]): number[] | null {
   const target = m.day - daysAgo;
   const snap = [...m.history].reverse().find((h) => h.day <= target);

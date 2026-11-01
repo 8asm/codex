@@ -4,7 +4,11 @@ import { formatDayShort, monthLabel } from '../engine/calendar';
 import { listedMonths } from '../engine/contracts';
 import { quote } from '../engine/liquidity';
 import { futuresPrice, pastCurve } from '../engine/market';
-import { previewFuture } from '../engine/trading';
+import { previewFuture, previewSpread } from '../engine/trading';
+import { computeVar } from '../engine/risk';
+import { nav } from '../engine/valuation';
+import { Portrait } from './Advisors';
+import { bookWithFuture, useLiveVar } from './derived';
 import type { CommodityId } from '../engine/types';
 import { Panel, Sparkline, Term } from './common';
 import { constantMaturitySeries, curveShape, prevPrice } from './derived';
@@ -69,7 +73,7 @@ function CurveAndTicket({ c }: { c: CommodityId }) {
       </div>
       <CurveChart prices={prices} ghost={ghost} labels={months.map(monthLabel)} color={spec.color} selected={months.indexOf(sel)} onPick={(i) => select(c, months[i]!)} />
       <div className="muted small">Trait plein : <Term id="curve">courbe forward</Term> du jour · pointillés : il y a 30 jours. Cliquez une échéance pour la trader.</div>
-      <Ticket c={c} mi={sel} />
+      <TicketSwitch c={c} mi={sel} months={months} />
     </div>
   );
 }
@@ -108,6 +112,85 @@ function CurveChart({ prices, ghost, labels, color, selected, onPick }: { prices
   );
 }
 
+function TicketSwitch({ c, mi, months }: { c: CommodityId; mi: number; months: number[] }) {
+  const [mode, setMode] = useState<'outright' | 'spread'>('outright');
+  return (
+    <>
+      <div className="tabs mode">
+        <button className={mode === 'outright' ? 'on' : ''} onClick={() => setMode('outright')}>Position sèche</button>
+        <button className={mode === 'spread' ? 'on' : ''} onClick={() => setMode('spread')}><Term id="calspread">Spread calendaire</Term></button>
+      </div>
+      {mode === 'outright' ? <Ticket c={c} mi={mi} /> : <SpreadTicket c={c} near={mi} months={months} />}
+    </>
+  );
+}
+
+function SpreadTicket({ c, near, months }: { c: CommodityId; near: number; months: number[] }) {
+  const g = useStore((s) => s.game)!;
+  useStore((s) => s.rev);
+  const act = useStore((s) => s.act);
+  const spec = COMMODITIES[c];
+  const others = months.filter((m) => m > near).slice(0, 8);
+  const [farSel, setFar] = useState<number | null>(null);
+  const far = farSel !== null && others.includes(farSel) ? farSel : others[0];
+  const [side, setSide] = useState<1 | -1>(1);
+  const [lots, setLots] = useState(10);
+  if (far === undefined) return <div className="empty">Choisissez une échéance plus proche pour construire un spread.</div>;
+  const pv = previewSpread(g, c, near, far, side * lots);
+  const legs = previewFuture(g, c, near, side * lots).slippageUsd + previewFuture(g, c, far, -side * lots).slippageUsd + 2 * previewFuture(g, c, near, lots).commissionUsd;
+  return (
+    <div className="ticket">
+      <div className="ticket-row">
+        <div className="seg">
+          <button className={side > 0 ? 'on buy' : ''} onClick={() => setSide(1)}>Acheter</button>
+          <button className={side < 0 ? 'on sell' : ''} onClick={() => setSide(-1)}>Vendre</button>
+        </div>
+        <div className="contract">
+          <span>Spread {spec.short} <b>{monthLabel(near)} / {monthLabel(far)}</b></span>
+          <small>{side > 0 ? 'achat' : 'vente'} de {monthLabel(near)}, {side > 0 ? 'vente' : 'achat'} de {monthLabel(far)}</small>
+        </div>
+        <div className="lots">
+          <button onClick={() => setLots(Math.max(1, lots - (lots > 10 ? 10 : 1)))}>−</button>
+          <input type="number" min={1} value={lots} onChange={(e) => setLots(Math.max(1, Math.floor(Number(e.target.value) || 1)))} />
+          <button onClick={() => setLots(lots + (lots >= 10 ? 10 : 1))}>+</button>
+        </div>
+      </div>
+      <div className="chips">{others.map((m) => <button key={m} className={m === far ? 'on' : ''} onClick={() => setFar(m)}>{monthLabel(m)}</button>)}</div>
+      <div className="preview">
+        <div><span>Spread (mid)</span><b>{price(c, pv.spreadMid)}</b></div>
+        <div><span>Spread exécuté</span><b>{price(c, pv.spreadExec)}</b></div>
+        <div><span>Coût en un ordre</span><b>{usd(pv.cost)}</b></div>
+        <div><span>Coût jambe par jambe</span><b className="neg">{usd(legs)}</b></div>
+        <div><span><Term id="spancredit">Marge</Term> après</span><b>{usd(pv.imAfter)}</b></div>
+        <div><span>Liquidité restante</span><b className={pv.liquidityAfter < 0 ? 'neg' : ''}>{usd(pv.liquidityAfter)}</b></div>
+      </div>
+      <p className="muted small">Un spread parie sur la <b>forme</b> de la courbe, pas sur son niveau : il gagne si {monthLabel(near)} {side > 0 ? 'se renchérit' : 'baisse'} par rapport à {monthLabel(far)}.</p>
+      <button className={`primary big ${side > 0 ? 'buy' : 'sell'}`} onClick={() => act({ type: 'TRADE_SPREAD', commodity: c, near, far, lots: side * lots })}>
+        {side > 0 ? 'Acheter' : 'Vendre'} {lots} spreads {monthLabel(near)}/{monthLabel(far)}
+      </button>
+    </div>
+  );
+}
+
+function Reactions({ varBefore, varAfter, lots, depth, limitIssue, navV, limitPct }: { varBefore: number; varAfter: number; lots: number; depth: number; limitIssue: string | null; navV: number; limitPct: number }) {
+  const limit = limitPct * navV;
+  const ratio = varAfter / Math.max(1, limit);
+  const risk = varAfter <= varBefore
+    ? { mood: 'happy' as const, t: `Ça réduit notre risque : VaR ${usd(varBefore)} → ${usd(varAfter)}.` }
+    : ratio > 1 ? { mood: 'angry' as const, t: `VaR ${usd(varAfter)} : au-delà de notre limite (${usd(limit)}). Non.` }
+    : ratio > 0.7 ? { mood: 'worried' as const, t: `VaR ${usd(varAfter)}, soit ${Math.round(ratio * 100)} % de la limite. Ça commence à peser.` }
+    : { mood: 'neutral' as const, t: `VaR ${usd(varBefore)} → ${usd(varAfter)}. Acceptable.` };
+  const r = Math.abs(lots) / depth;
+  const trader = r > 1 ? { mood: 'worried' as const, t: 'Le carnet est trop mince pour ça, on va payer l’impact.' } : r < 0.03 ? { mood: 'smug' as const, t: 'Petit bras…' } : { mood: 'happy' as const, t: 'Ça, c’est une position !' };
+  return (
+    <div className="reactions">
+      <div><Portrait id="risk" mood={risk.mood} size={30} /><span>{risk.t}</span></div>
+      <div><Portrait id="trader" mood={trader.mood} size={30} /><span>{trader.t}</span></div>
+      {limitIssue && <div><Portrait id="legal" mood="angry" size={30} /><span>{limitIssue} Ordre refusé par la bourse.</span></div>}
+    </div>
+  );
+}
+
 function Ticket({ c, mi }: { c: CommodityId; mi: number }) {
   const g = useStore((s) => s.game)!;
   useStore((s) => s.rev);
@@ -119,6 +202,8 @@ function Ticket({ c, mi }: { c: CommodityId; mi: number }) {
   useEffect(() => setLots((l) => Math.max(1, l)), [c]);
   const pv = previewFuture(g, c, mi, side * lots);
   const q = quote(g.market, c, mi);
+  const live = useLiveVar();
+  const varAfter = computeVar(g, bookWithFuture(g, c, mi, side * lots, pv.exec)).var99;
   const submit = () => act({ type: 'TRADE_FUTURE', commodity: c, month: mi, lots: side * lots });
   const liqClass = { profonde: 'pos', correcte: 'flat', mince: 'warn', illiquide: 'neg' }[pv.liquidity];
 
@@ -156,6 +241,7 @@ function Ticket({ c, mi }: { c: CommodityId; mi: number }) {
         <div><span>Liquidité restante</span><b className={pv.liquidityAfter < 0 ? 'neg' : ''}>{usd(pv.liquidityAfter)}</b></div>
         <div><span><Term id="ltd">Dernier jour</Term></span><b>{formatDayShort(pv.ltd)}</b></div>
       </div>
+      <Reactions varBefore={live?.var99 ?? 0} varAfter={varAfter} lots={lots} depth={pv.depth} limitIssue={pv.limitIssue} navV={nav(g)} limitPct={g.risk.limits.varPctNav} />
       <button className={`primary big ${side > 0 ? 'buy' : 'sell'}`} disabled={pv.liquidityAfter < 0 && !pos} onClick={submit}>
         {side > 0 ? 'Acheter' : 'Vendre'} {lots} lot{lots > 1 ? 's' : ''} · {monthLabel(mi)}
       </button>

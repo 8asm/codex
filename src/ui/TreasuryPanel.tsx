@@ -10,6 +10,7 @@ import { useStore } from './store';
 const CAT_LABEL: Record<CashCategory, string> = {
   vm: 'Marge de variation', commission: 'Commissions', physical: 'Flux physiques', storage: 'Stockage', interest: 'Intérêts',
   overhead: 'Frais généraux', tax: 'Impôts', travel: 'Voyages', liquidation: 'Liquidations forcées',
+  premium: 'Primes d’options', otc: 'Règlements OTC',
 };
 
 export function TreasuryPanel() {

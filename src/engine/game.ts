@@ -17,13 +17,23 @@ import { recomputeIm } from './margin';
 import { addNews, dailyNews } from './news';
 import { acceptOffer, chargeStorage, generateOffers, processDeliveries, spotBuy, spotSell } from './physical';
 import { seedRng } from './rng';
-import { expireContracts, liquidateAllFutures, settleVariationMargin, tradeFuture } from './trading';
+import { exerciseOption, expireContracts, expireOptions, liquidateAllFutures, settleVariationMargin, tradeFuture, tradeOption, tradeSpread } from './trading';
+import { recordFixings, settleOtc, tradeOtc } from './derivatives';
+import { computeExplain, snapshotForExplain } from './explain';
+import { computeVar } from './risk';
+import { DEFAULT_LIMITS, evaluateLimits, guarded } from './limits';
+import { morningAdvice } from './advisors';
+import { listedMonths, lotQty } from './contracts';
+import { futuresPrice, fx } from './market';
+import { exposures } from './valuation';
+import type { AdvisorId, RiskState } from './types';
 import { flightInfo } from './travel';
 import { accrueInterest, drawRcf, repayRcf, settleTreasury } from './treasury';
 import type { Action, ActionResult, CashCategory, CommodityId, GameConfig, GameState } from './types';
 import { nav, valueByCommodity } from './valuation';
+import { COMMODITIES as SPECS } from '../data/commodities';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const STAFF_MONTHLY = 90_000; // 3 personnes, base Genève
 /** Le marché est simulé ~3 mois avant le jour 1 : historique de prix et courbe « il y a 30 jours » dès le départ. */
 const WARMUP_DAYS = 91;
@@ -36,6 +46,8 @@ function warmUpMarket(state: GameState) {
     if (next > state.startDay) break;
     stepMarket(m, state.rng, next, state.config.volatility, state.config.crisisFrequency);
     d = next;
+    state.day = d;
+    if (d < state.startDay) recordFixings(state);
   }
   m.day = state.startDay;
   // On démarre toujours en régime calme : la première crise doit se mériter.
@@ -57,13 +69,24 @@ export const DEFAULT_CONFIG: GameConfig = {
   crisisFrequency: 1,
 };
 
+export function defaultRisk(capital: number): RiskState {
+  return {
+    var99: 0, es99: 0, varBy: zeroBy(), covenantBreachDays: 0, rcfFrozen: false, rcfPenalty: 0,
+    monthStartNav: capital, limits: { ...DEFAULT_LIMITS }, breaches: [],
+  };
+}
+
+const zeroTrack = (): Record<AdvisorId, { right: number; wrong: number }> => ({
+  risk: { right: 0, wrong: 0 }, trader: { right: 0, wrong: 0 }, legal: { right: 0, wrong: 0 }, ops: { right: 0, wrong: 0 }, analyst: { right: 0, wrong: 0 },
+});
+
 const zeroBy = () => Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as Record<CommodityId, number>;
 
 export function createGame(partial: Partial<GameConfig> = {}): GameState {
   const config: GameConfig = { ...DEFAULT_CONFIG, ...partial };
   const startDay = adjustFollowing(dayFromYMD(config.startYear, 1, 4));
   const endDay = dayFromYMD(config.startYear + config.years, 1, 1) - 1;
-  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation'];
+  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc'];
   const state: GameState = {
     version: SAVE_VERSION,
     config,
@@ -90,6 +113,15 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     futures: [],
     forwards: [],
     inventory: [],
+    options: [],
+    otc: [],
+    fixings: Object.fromEntries(COMMODITY_IDS.map((c) => [c, []])) as unknown as GameState['fixings'],
+    risk: defaultRisk(config.capital),
+    explain: [],
+    explainBase: null,
+    advice: [],
+    adviceCooldown: {},
+    track: zeroTrack(),
     offers: [],
     news: [],
     history: [],
@@ -102,6 +134,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     pendingAlerts: [],
   };
   warmUpMarket(state);
+  state.day = startDay;
   const city = CITY_BY_ID[config.hqCity]!;
   addNews(state, {
     headline: `${config.companyName} ouvre ses bureaux à ${city.name}`,
@@ -140,14 +173,19 @@ function openDay(state: GameState) {
   recomputeIm(state);
   for (const n of dailyNews(state)) if (n.major) state.pendingAlerts.push({ kind: 'major_news', text: n.headline });
   generateOffers(state);
+  morningAdvice(state);
 }
 
 function closeDay(state: GameState) {
   const co = state.company;
   const days = state.day - state.lastCloseDay;
+  // L'exercice des options précède la VM : les futures reçus au strike sont réglés dès ce soir.
+  for (const msg of expireOptions(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   settleVariationMargin(state);
   expireContracts(state);
   for (const msg of processDeliveries(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  recordFixings(state);
+  for (const msg of settleOtc(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   chargeStorage(state, days);
   accrueInterest(state, days);
 
@@ -207,6 +245,21 @@ function closeDay(state: GameState) {
   for (const c of COMMODITY_IDS) pnlBy[c] = vb[c] - state.lastValueBy[c];
   state.history.push({ day: state.day, nav: navNow, pnl: navNow - state.lastNav, cash: co.cash, im: co.im, pnlBy });
   if (state.history.length > 1500) state.history.shift();
+
+  const ex = computeExplain(state, navNow - state.lastNav);
+  if (ex) {
+    state.explain.push(ex);
+    if (state.explain.length > 260) state.explain.shift();
+  }
+  snapshotForExplain(state);
+
+  if (monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay)) state.risk.monthStartNav = state.lastNav;
+  const v = computeVar(state);
+  state.risk.var99 = v.var99;
+  state.risk.es99 = v.es99;
+  state.risk.varBy = v.varBy;
+  if (state.status === 'running') evaluateLimits(state, navNow);
+
   state.lastValueBy = vb;
   state.lastNav = navNow;
   state.lastCloseDay = state.day;
@@ -240,11 +293,29 @@ export function dispatch(state: GameState, action: Action): ActionResult {
   if (state.status !== 'running') return { ok: false, message: 'La partie est terminée.' };
   switch (action.type) {
     case 'TRADE_FUTURE':
-      return tradeFuture(state, action.commodity, action.month, action.lots);
+      return guarded(state, () => tradeFuture(state, action.commodity, action.month, action.lots));
+    case 'TRADE_SPREAD':
+      return guarded(state, () => tradeSpread(state, action.commodity, action.near, action.far, action.lots));
+    case 'TRADE_OPTION':
+      return guarded(state, () => tradeOption(state, action.commodity, action.month, action.optType, action.strike, action.lots));
+    case 'EXERCISE_OPTION':
+      return exerciseOption(state, action.id);
+    case 'TRADE_OTC':
+      return guarded(state, () => tradeOtc(state, action.kind, action.commodity, action.month, action.qty, nav(state), action.strike, action.optType));
+    case 'HEDGE_DELTA':
+      return hedgeDelta(state, action.commodity, action.month);
+    case 'SET_LIMITS':
+      state.risk.limits = { ...state.risk.limits, ...action.limits };
+      return { ok: true, message: 'Limites internes mises à jour.' };
+    case 'DISMISS_ADVICE': {
+      const a = state.advice.find((x) => x.id === action.id);
+      if (a) a.seen = true;
+      return { ok: true, message: '' };
+    }
     case 'ACCEPT_OFFER':
-      return acceptOffer(state, action.offerId);
+      return guarded(state, () => acceptOffer(state, action.offerId));
     case 'SPOT_BUY':
-      return spotBuy(state, action.commodity, action.locationId, action.qty);
+      return guarded(state, () => spotBuy(state, action.commodity, action.locationId, action.qty));
     case 'SPOT_SELL':
       return spotSell(state, action.lotId, action.qty);
     case 'TRAVEL': {
@@ -270,6 +341,49 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       state.company.autoTreasury = action.on;
       return { ok: true, message: action.on ? 'Trésorerie automatique activée.' : 'Trésorerie en manuel.' };
   }
+}
+
+/**
+ * Neutralise le delta d'une commodité avec l'échéance choisie (front par défaut) :
+ * lots = −delta(+1 %) / delta(+1 %) d'un lot. Couverture de premier ordre : le gamma, la base et le
+ * calendrier restent (et c'est justement la leçon).
+ */
+export function hedgeDeltaLots(state: GameState, c: CommodityId, month?: number): { lots: number; month: number } {
+  const spec = SPECS[c];
+  const mi = month ?? listedMonths(spec, state.day)[0]!;
+  const e = exposures(state).find((x) => x.commodity === c)!;
+  const perLot = lotQty(spec, mi) * futuresPrice(state.market, c, mi) * spec.valuePerUnit * fx(state.market, spec.currency) * 0.01;
+  return { lots: -Math.round(e.delta1pct / perLot), month: mi };
+}
+
+function hedgeDelta(state: GameState, c: CommodityId, month?: number): ActionResult {
+  const { lots, month: mi } = hedgeDeltaLots(state, c, month);
+  if (lots === 0) return { ok: false, message: 'Delta déjà neutre à un lot près.' };
+  const r = tradeFuture(state, c, mi, lots);
+  return r.ok ? { ok: true, message: `Couverture : ${lots > 0 ? 'achat' : 'vente'} de ${Math.abs(lots)} lots. ${r.message}` } : r;
+}
+
+/** Migration des sauvegardes d'anciennes versions. */
+export function migrateState(raw: GameState): GameState {
+  const s = raw as GameState & { version: number };
+  if (s.version === 1) {
+    s.options = [];
+    s.otc = [];
+    s.fixings = Object.fromEntries(COMMODITY_IDS.map((c) => [c, []])) as unknown as GameState['fixings'];
+    s.risk = defaultRisk(s.company.initialCapital);
+    s.risk.monthStartNav = s.lastNav;
+    s.explain = [];
+    s.explainBase = null;
+    s.advice = [];
+    s.adviceCooldown = {};
+    s.track = zeroTrack();
+    s.market.impact = {};
+    s.market.ivLevel = Object.fromEntries(COMMODITY_IDS.map((c) => [c, 1.08])) as Record<CommodityId, number>;
+    s.company.cumCashByCategory.premium = 0;
+    s.company.cumCashByCategory.otc = 0;
+    s.version = 2;
+  }
+  return s;
 }
 
 export function consumeAlerts(state: GameState) {

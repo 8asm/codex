@@ -111,8 +111,9 @@ describe('physique', () => {
   it('MTM d’un forward = (fwd local − prix) × qté × DF, puis livraison en stock', () => {
     const s = createGame({ seed: 'phys', ...quiet });
     let tries = 0;
-    while (!s.offers.some((o) => o.side === 1) && tries++ < 20) advanceDay(s);
-    const o = s.offers.find((x) => x.side === 1)!;
+    const usdBuy = (x: (typeof s.offers)[number]) => x.side === 1 && COMMODITIES[x.commodity].currency === 'USD';
+    while (!s.offers.some(usdBuy) && tries++ < 40) advanceDay(s);
+    const o = s.offers.find(usdBuy)!;
     const px = offerPrice(s, o);
     expect(acceptOffer(s, o.id).ok).toBe(true);
     const d = s.forwards[0]!;
@@ -126,7 +127,7 @@ describe('physique', () => {
     expect(s.inventory.length).toBeGreaterThan(0);
     expect(s.inventory[0]!.qty).toBe(d.qty);
     const spec = COMMODITIES[d.commodity];
-    expect(s.company.cumCashByCategory.physical).toBeCloseTo(-d.qty * d.price * spec.valuePerUnit * (spec.currency === 'EUR' ? fx(s.market, 'EUR') : 1), -2);
+    expect(s.company.cumCashByCategory.physical).toBeCloseTo(-d.qty * d.price * spec.valuePerUnit, -2);
   });
 
   it('couverture : forward long + futures short => exposition nette faible', async () => {

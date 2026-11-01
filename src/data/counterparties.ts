@@ -23,6 +23,10 @@ export const COUNTERPARTIES: Counterparty[] = [
   { id: 'albion', name: 'Albion Gas Supply', cityId: 'london', kind: 'utility' },
   { id: 'straits', name: 'Straits Energy', cityId: 'singapore', kind: 'trader' },
   { id: 'prairie', name: 'Prairie Grain Coop', cityId: 'chicago', kind: 'agri' },
+  // Banques de dérivés (contreparties OTC : swaps et options asiatiques)
+  { id: 'bln', name: 'Banque Lémanique de Négoce', cityId: 'geneva', kind: 'bank' },
+  { id: 'atlas', name: 'Atlas Commodities Bank', cityId: 'london', kind: 'bank' },
+  { id: 'orientpac', name: 'Orient Pacific Bank', cityId: 'singapore', kind: 'bank' },
 ];
 
 export const COUNTERPARTY_BY_ID: Record<string, Counterparty> = Object.fromEntries(

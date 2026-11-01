@@ -7,6 +7,8 @@ import { signedUsd, tone, usd } from './format';
 import { isMuted, setMuted } from './sound';
 import { useStore, type Speed } from './store';
 import { useState } from 'react';
+import { useLiveVar } from './derived';
+import { COVENANT_VAR_PCT } from '../engine/limits';
 
 const SPEEDS: { s: Speed; label: string; key: string }[] = [
   { s: 0, label: '❚❚', key: 'Espace' },
@@ -33,7 +35,10 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
   const marginUse = g.company.im / capacity;
   const ret = navV / g.company.initialCapital - 1;
   const where = g.player.travel ? `✈ vers ${CITY_BY_ID[g.player.travel.to]!.name}` : `📍 ${CITY_BY_ID[g.player.cityId!]!.name}`;
-  const alerts = (g.company.marginCall ? 1 : 0) + (g.market.volRegime === 'stressed' ? 1 : 0);
+  const live = useLiveVar();
+  const v = live?.var99 ?? 0;
+  const varUse = v / Math.max(1, Math.min(g.risk.limits.varPctNav, COVENANT_VAR_PCT) * navV);
+  const alerts = (g.company.marginCall ? 1 : 0) + (g.market.volRegime === 'stressed' ? 1 : 0) + g.risk.breaches.length + (g.risk.rcfFrozen ? 1 : 0);
 
   return (
     <header className="hud">
@@ -77,11 +82,18 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
           <div className="bar"><div style={{ width: `${Math.min(100, marginUse * 100)}%` }} /></div>
           <div className="kpi-sub">{usd(g.company.im)} / {usd(capacity)}</div>
         </div>
+        <div className={`kpi ${varUse > 1 ? 'danger' : varUse > 0.8 ? 'warn' : ''}`} onClick={() => setPanel('risk')}>
+          <div className="kpi-label"><Term id="var">Risque (VaR 1 j)</Term></div>
+          <div className="bar"><div style={{ width: `${Math.min(100, varUse * 100)}%` }} /></div>
+          <div className="kpi-sub">{usd(v)} · {(v / Math.max(1, navV) * 100).toFixed(1)} % FP</div>
+        </div>
         <div className={`kpi alerts ${alerts ? 'on' : ''}`} title="Alertes">
           <div className="kpi-label">Alertes</div>
           <div className="alert-icons">
             {g.company.marginCall && <span title="Appel de marge en cours">🚨</span>}
             {g.market.volRegime === 'stressed' && <span title="Marchés en turbulence : vol et marges relevées">🌪️</span>}
+            {g.risk.breaches.length > 0 && <span title={`Limites dépassées : ${g.risk.breaches.join(', ')}`}>⚠️</span>}
+            {g.risk.rcfFrozen && <span title="Ligne de crédit gelée par la banque">🧊</span>}
             {!alerts && <span className="calm">✓</span>}
           </div>
         </div>

@@ -1,3 +1,9 @@
+import { useMemo } from 'react';
+import { computeVar, type VarResult } from '../engine/risk';
+import { bookOf } from '../engine/valuation';
+import type { Book, OptType } from '../engine/types';
+import { optionExpiry } from '../engine/contracts';
+import { useStore } from './store';
 import { COMMODITIES } from '../data/commodities';
 import type { Day, MonthIndex } from '../engine/calendar';
 import { listedMonths, lotQty, pricingDay } from '../engine/contracts';
@@ -37,4 +43,35 @@ export function curveShape(prices: number[]): { label: 'contango' | 'backwardati
   if (slope > 0.005) return { label: 'contango', slope };
   if (slope < -0.005) return { label: 'backwardation', slope };
   return { label: 'plate', slope };
+}
+
+// ------------------------------------------------------------------ risque « live » et livres hypothétiques
+
+/** VaR du livre courant, recalculée à chaque mutation de l'état. */
+export function useLiveVar(): VarResult | null {
+  const g = useStore((s) => s.game);
+  const rev = useStore((s) => s.rev);
+  return useMemo(() => (g ? computeVar(g) : null), [g, rev]);
+}
+
+export function bookWithFuture(state: GameState, c: CommodityId, month: number, lots: number, price: number): Book {
+  const b = bookOf(state);
+  const futures = b.futures.map((p) => ({ ...p }));
+  const p = futures.find((x) => x.commodity === c && x.month === month);
+  if (p) p.lots += lots;
+  else futures.push({ commodity: c, month, lots, mark: price, avgPrice: price });
+  return { ...b, futures: futures.filter((x) => x.lots !== 0) };
+}
+
+export function bookWithOption(state: GameState, c: CommodityId, month: number, type: OptType, strike: number, lots: number, price: number): Book {
+  const b = bookOf(state);
+  return {
+    ...b,
+    options: [...b.options, { id: 'hyp', commodity: c, month, type, strike, expiry: optionExpiry(COMMODITIES[c], month), style: COMMODITIES[c].options.style, lots, avgPremium: price }],
+  };
+}
+
+export function bookWithOtc(state: GameState, kind: 'swap' | 'apo', c: CommodityId, month: number, qty: number, strike: number, type?: OptType): Book {
+  const b = bookOf(state);
+  return { ...b, otc: [...b.otc, { id: 'hyp', kind, commodity: c, month, qty, strike, type, bankId: 'bln', tradeDay: state.day, avgPremium: 0 }] };
 }

@@ -1,6 +1,6 @@
 /** Sauvegardes locales en IndexedDB + export/import JSON. Aucun backend. */
 import type { GameState } from '../engine/types';
-import { SAVE_VERSION } from '../engine/game';
+import { migrateState, SAVE_VERSION } from '../engine/game';
 
 const DB = 'tradewinds';
 const STORE = 'saves';
@@ -50,8 +50,12 @@ export async function listSaves(): Promise<SaveMeta[]> {
 }
 
 export function validate(raw: unknown): GameState {
-  const s = raw as GameState;
-  if (!s || typeof s !== 'object' || s.version !== SAVE_VERSION || !s.market || !s.company) {
+  const s0 = raw as GameState;
+  if (!s0 || typeof s0 !== 'object' || !s0.market || !s0.company || s0.version > SAVE_VERSION) {
+    throw new Error('Sauvegarde invalide ou d’une version incompatible.');
+  }
+  const s = migrateState(s0);
+  if (s.version !== SAVE_VERSION) {
     throw new Error('Sauvegarde invalide ou d’une version incompatible.');
   }
   return s;

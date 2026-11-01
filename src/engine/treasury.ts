@@ -15,10 +15,14 @@ export const CASH_HAIRCUT = 0.005;
 
 /** Limite de RCF : 2,5× les fonds propres, plafonnée à 4× le capital initial (covenant bancaire). */
 export function rcfLimit(state: GameState, navValue = nav(state)): number {
-  return Math.max(0, Math.min(2.5 * Math.max(0, navValue), 4 * state.company.initialCapital));
+  // Covenant de VaR violé depuis 7 jours : la banque divise la ligne par deux.
+  const cut = state.risk.covenantBreachDays >= 7 ? 0.5 : 1;
+  return Math.max(0, Math.min(2.5 * Math.max(0, navValue), 4 * state.company.initialCapital) * cut);
 }
 
+/** Capacité de tirage. Nulle si la banque a gelé la ligne (covenant violé). */
 export function rcfHeadroom(state: GameState, navValue?: number): number {
+  if (state.risk.rcfFrozen) return 0;
   return Math.max(0, rcfLimit(state, navValue) - state.company.rcfDrawn);
 }
 
@@ -33,7 +37,7 @@ export function accrueInterest(state: GameState, days: number) {
   const r = RATES.USD;
   if (co.cash > 0) addCash(state, co.cash * (r - CASH_HAIRCUT) * (days / 360), 'interest');
   else addCash(state, co.cash * (r + RCF_SPREAD) * (days / 360), 'interest');
-  if (co.rcfDrawn > 0) addCash(state, -co.rcfDrawn * (r + RCF_SPREAD) * (days / 360), 'interest');
+  if (co.rcfDrawn > 0) addCash(state, -co.rcfDrawn * (r + RCF_SPREAD + state.risk.rcfPenalty) * (days / 360), 'interest');
 }
 
 export function drawRcf(state: GameState, amount: number): number {

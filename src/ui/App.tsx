@@ -11,12 +11,17 @@ import { PhysicalPanel } from './PhysicalPanel';
 import { StartScreen } from './StartScreen';
 import { TravelPanel } from './TravelPanel';
 import { TreasuryPanel } from './TreasuryPanel';
+import { OptionsPanel } from './OptionsPanel';
+import { RiskPanel } from './RiskPanel';
+import { AdvisorBar } from './Advisors';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
 
 const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'market', icon: '📈', label: 'Marchés', key: 'M' },
   { id: 'physical', icon: '🚢', label: 'Physique', key: 'P' },
+  { id: 'options', icon: '🎯', label: 'Options', key: 'O' },
   { id: 'book', icon: '📒', label: 'Livre', key: 'L' },
+  { id: 'risk', icon: '🛡️', label: 'Risque', key: 'R' },
   { id: 'treasury', icon: '🏦', label: 'Trésorerie', key: 'T' },
   { id: 'travel', icon: '✈️', label: 'Voyages', key: 'V' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
@@ -92,6 +97,10 @@ export function App() {
 
   // Divulgation progressive : la trésorerie n'apparaît qu'une fois des marges ou de la dette en jeu.
   const showTreasury = !!game && (game.company.im > 0 || game.company.rcfDrawn > 0 || game.history.length > 15);
+  const hasPositions = !!game && (game.futures.length + game.forwards.length + game.inventory.length + game.options.length + game.otc.length > 0);
+  const showOptions = !!game && (hasPositions || game.history.length > 5);
+  const showRisk = !!game && (hasPositions || game.history.length > 10);
+  const visible = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : true);
 
   return (
     <div className="app">
@@ -105,11 +114,11 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P L T V C : panneaux · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · M P O L R T V C : panneaux · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
-            {DOCK.filter((d) => d.id !== 'treasury' || showTreasury).map((d) => (
+            {DOCK.filter((d) => visible(d.id)).map((d) => (
               <button key={d.id} className={panel === d.id ? 'on' : ''} onClick={() => setPanel(d.id)} title={`${d.label} (${d.key})`}>
                 <span>{d.icon}</span>
                 <small>{d.label}</small>
@@ -123,7 +132,10 @@ export function App() {
             {panel === 'treasury' && <TreasuryPanel />}
             {panel === 'travel' && <TravelPanel />}
             {panel === 'codex' && <CodexPanel />}
+            {panel === 'options' && <OptionsPanel />}
+            {panel === 'risk' && <RiskPanel />}
           </div>
+          <AdvisorBar />
           <NewsTicker />
           <Modals />
         </>

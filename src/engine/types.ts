@@ -7,6 +7,11 @@ export type Incoterm = 'FOB' | 'CFR' | 'CIF' | 'DAP' | 'DES' | 'FCA' | 'HUB';
 
 /** Règle de dernier jour de cotation (Last Trading Day) calquée sur les vraies bourses. */
 export type LtdRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'LAST_FRIDAY';
+export type OptType = 'C' | 'P';
+export type OptStyle = 'A' | 'E';
+/** Règle d'expiration des options sur futures. */
+export type OptionExpiryRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'WITH_FUTURE';
+export type AdvisorId = 'risk' | 'trader' | 'legal' | 'ops' | 'analyst';
 
 /** Paramètres du modèle de Schwartz-Smith (2000) à deux facteurs, sous mesure risque-neutre. */
 export interface ModelParams {
@@ -49,6 +54,19 @@ export interface CommoditySpec {
   ltdRule: LtdRule;
   model: ModelParams;
   liquidity: { halfSpreadTicks: number; depthLots: number; commission: number };
+  options: {
+    style: OptStyle;
+    expiryRule: OptionExpiryRule;
+    strikeStep: number;
+    months: number;
+    /** Paramètres de smile : σ(K) = σ_ATM (1 + skew·x + curvature·x²), x = ln(K/F)/(σ_ATM √T). */
+    skew: number;
+    curvature: number;
+    /** Demi-fourchette de base en points de vol. */
+    volHalfSpread: number;
+  };
+  /** Limites de position de la bourse (lots) : mois spot et toutes échéances. */
+  positionLimits: { spotMonth: number; allMonths: number };
   physical: {
     cargoSizes: number[];
     storagePerUnitMonth: number;
@@ -112,6 +130,13 @@ export interface MarketState {
   fxLog: number; // ln(EURUSD)
   commodities: Record<CommodityId, CommodityMarket>;
   history: FactorSnapshot[];
+  /** Impact de marché permanent par échéance (décalage log du prix), qui s'estompe chaque nuit. */
+  impact: Record<string, number>;
+  /** Niveau de vol implicite relatif à la vol du modèle (prime de variance, peur), par commodité. */
+  ivLevel: Record<CommodityId, number>;
+  /** Chocs transitoires utilisés pour les greeks / stress (jamais persistés en partie). */
+  rateShift?: number;
+  volShift?: number;
 }
 
 // ---------------------------------------------------------------- portefeuille
@@ -146,6 +171,85 @@ export interface InventoryLot {
   sinceDay: Day;
 }
 
+export interface OptionPosition {
+  id: string;
+  commodity: CommodityId;
+  month: MonthIndex; // future sous-jacent
+  type: OptType;
+  strike: number;
+  expiry: Day;
+  style: OptStyle;
+  lots: number; // signé
+  avgPremium: number; // prime moyenne par unité (devise de cotation)
+}
+
+/** Dérivés de gré à gré avec une banque : swap sur moyenne mensuelle ou option asiatique (APO). */
+export interface OtcPosition {
+  id: string;
+  kind: 'swap' | 'apo';
+  commodity: CommodityId;
+  month: MonthIndex; // mois de moyenne
+  qty: number; // signé, unités physiques (+ = long le flottant / acheteur de l'option)
+  strike: number; // prix fixe du swap ou strike de l'APO
+  type?: OptType;
+  bankId: string;
+  tradeDay: Day;
+  avgPremium: number; // par unité (APO), 0 pour un swap
+}
+
+export interface Fixing {
+  day: Day;
+  px: number;
+}
+
+export interface InternalLimits {
+  varPctNav: number; // limite de VaR interne en % des fonds propres
+  stopLossPctNav: number; // perte mensuelle maximale en % des fonds propres de début de mois
+  deltaPctNav: number; // |delta pour +1 %| maximum par commodité, en % des fonds propres
+  strict: boolean; // discipline stricte : bloque les ordres qui augmentent le risque hors limite
+}
+
+export interface RiskState {
+  var99: number;
+  es99: number;
+  varBy: Record<CommodityId, number>;
+  covenantBreachDays: number;
+  rcfFrozen: boolean;
+  rcfPenalty: number; // marge supplémentaire sur la RCF (fraction)
+  monthStartNav: number;
+  limits: InternalLimits;
+  breaches: string[];
+}
+
+export interface PnlExplain {
+  day: Day;
+  price: number;
+  basis: number;
+  fx: number;
+  vol: number;
+  time: number;
+  other: number; // nouveaux deals, coûts, intérêts, frais
+  total: number;
+}
+
+export interface Advice {
+  id: string;
+  day: Day;
+  advisor: AdvisorId;
+  mood: 'neutral' | 'happy' | 'worried' | 'angry' | 'smug';
+  text: string;
+  rule: string;
+  action?: AdviceAction;
+  /** Prédiction directionnelle évaluée plus tard (track record). */
+  prediction?: { commodity: CommodityId; dir: 1 | -1; ref: number; month: MonthIndex; evalDay: Day; outcome?: 'right' | 'wrong' };
+  seen?: boolean;
+}
+
+export type AdviceAction =
+  | { kind: 'hedge'; commodity: CommodityId }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' }
+  | { kind: 'trade'; action: Action; label: string };
+
 export interface Offer {
   id: string;
   cityId: string;
@@ -179,7 +283,9 @@ export type CashCategory =
   | 'overhead'
   | 'tax'
   | 'travel'
-  | 'liquidation';
+  | 'liquidation'
+  | 'premium'
+  | 'otc';
 
 export interface Company {
   name: string;
@@ -248,6 +354,16 @@ export interface GameState {
   futures: FuturesPosition[];
   forwards: ForwardDeal[];
   inventory: InventoryLot[];
+  options: OptionPosition[];
+  otc: OtcPosition[];
+  fixings: Record<CommodityId, Fixing[]>;
+  risk: RiskState;
+  explain: PnlExplain[];
+  /** Instantané de fin de journée servant de base au P&L expliqué du lendemain. */
+  explainBase: null | { market: MarketState; book: Book; day: Day };
+  advice: Advice[];
+  adviceCooldown: Record<string, Day>;
+  track: Record<AdvisorId, { right: number; wrong: number }>;
   offers: Offer[];
   news: NewsItem[];
   history: DailyRecord[];
@@ -260,7 +376,15 @@ export interface GameState {
   lastNav: number;
   lastCloseDay: Day;
   /** Événements de la dernière clôture, consommés par l'UI (pause auto, sons…). */
-  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended'; text: string }[];
+  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended' | 'limit' | 'limit_ok' | 'advice'; text: string }[];
+}
+
+export interface Book {
+  futures: FuturesPosition[];
+  forwards: ForwardDeal[];
+  inventory: InventoryLot[];
+  options: OptionPosition[];
+  otc: OtcPosition[];
 }
 
 export type Action =
@@ -271,7 +395,14 @@ export type Action =
   | { type: 'TRAVEL'; to: string }
   | { type: 'RCF_DRAW'; amount: number }
   | { type: 'RCF_REPAY'; amount: number }
-  | { type: 'SET_AUTO_TREASURY'; on: boolean };
+  | { type: 'SET_AUTO_TREASURY'; on: boolean }
+  | { type: 'TRADE_SPREAD'; commodity: CommodityId; near: MonthIndex; far: MonthIndex; lots: number }
+  | { type: 'TRADE_OPTION'; commodity: CommodityId; month: MonthIndex; optType: OptType; strike: number; lots: number }
+  | { type: 'EXERCISE_OPTION'; id: string }
+  | { type: 'TRADE_OTC'; kind: 'swap' | 'apo'; commodity: CommodityId; month: MonthIndex; qty: number; strike?: number; optType?: OptType }
+  | { type: 'HEDGE_DELTA'; commodity: CommodityId; month?: MonthIndex }
+  | { type: 'SET_LIMITS'; limits: Partial<InternalLimits> }
+  | { type: 'DISMISS_ADVICE'; id: string };
 
 export interface ActionResult {
   ok: boolean;

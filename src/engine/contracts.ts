@@ -14,11 +14,14 @@ import {
   dayFromYMD,
   daysInMonth,
   firstDayOfMonth,
+  isBusinessDay,
   lastBusinessDayOfMonth,
+  lastDayOfMonth,
   lastWeekdayOfMonth,
   monthIndexOf,
   nthWeekdayOfMonth,
   prevBusinessDay,
+  weekday,
   type Day,
   type MonthIndex,
 } from './calendar';
@@ -69,3 +72,52 @@ export function listedMonths(spec: CommoditySpec, today: Day): MonthIndex[] {
 }
 
 export const contractKey = (commodity: string, mi: MonthIndex) => `${commodity}:${mi}`;
+
+/**
+ * Expiration des options sur futures (calquée sur les contrats réels) :
+ *  - Brent ICE : 3 jours ouvrés avant le dernier jour de cotation du future ;
+ *  - TTF ICE Endex : 5 jours calendaires avant le premier jour du mois de livraison (jour ouvré précédent) ;
+ *  - LME : premier mercredi du mois du prompt ;
+ *  - CBOT : dernier vendredi précédant d'au moins 2 jours ouvrés le dernier jour ouvré du mois précédant le contrat ;
+ *  - API2 : avec le future.
+ */
+export function optionExpiry(spec: CommoditySpec, mi: MonthIndex): Day {
+  switch (spec.options.expiryRule) {
+    case 'BRENT':
+      return addBusinessDays(lastTradingDay(spec, mi), -3);
+    case 'TTF':
+      return adjustPreceding(firstDayOfMonth(mi) - 5);
+    case 'LME':
+      return adjustPreceding(nthWeekdayOfMonth(mi, 3, 1));
+    case 'CBOT': {
+      let d = addBusinessDays(lastBusinessDayOfMonth(mi - 1), -2);
+      while (weekday(d) !== 5) d--;
+      return adjustPreceding(d);
+    }
+    case 'WITH_FUTURE':
+      return lastTradingDay(spec, mi);
+  }
+}
+
+/** Échéances sur lesquelles des options sont cotées. */
+export function optionMonths(spec: CommoditySpec, today: Day): MonthIndex[] {
+  return listedMonths(spec, today)
+    .filter((mi) => optionExpiry(spec, mi) >= today)
+    .slice(0, spec.options.months);
+}
+
+/** Grille de strikes centrée sur la monnaie. */
+export function strikeGrid(spec: CommoditySpec, F: number, n = 7): number[] {
+  const step = spec.options.strikeStep * Math.max(1, Math.round(F / spec.options.strikeStep / 40));
+  const atm = Math.round(F / step) * step;
+  const out: number[] = [];
+  for (let i = -n; i <= n; i++) if (atm + i * step > 0) out.push(Number((atm + i * step).toFixed(6)));
+  return out;
+}
+
+/** Jours de fixing d'un swap / d'une APO mensuelle : tous les jours ouvrés du mois. */
+export function fixingDays(mi: MonthIndex): Day[] {
+  const out: Day[] = [];
+  for (let d = firstDayOfMonth(mi); d <= lastDayOfMonth(mi); d++) if (isBusinessDay(d)) out.push(d);
+  return out;
+}

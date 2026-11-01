@@ -61,6 +61,8 @@ export function dailyNews(state: GameState): NewsItem[] {
     const t = pick(state.rng, SHOCKS.filter((s) => s.c === c));
     const size = t.dir * t.size * (0.6 + 0.8 * uniform(state.rng));
     m.commodities[c][t.factor] += size;
+    // La peur se lit d'abord dans les options : la vol implicite saute avec la news.
+    m.ivLevel[c] = Math.min(2.2, m.ivLevel[c] + Math.abs(size) * 1.6);
     out.push(push(state, { headline: t.headline, body: t.body, commodity: c, tone: t.dir > 0 ? 'up' : 'down', major: Math.abs(size) > 0.07 }));
   }
   const wd = weekday(state.day);

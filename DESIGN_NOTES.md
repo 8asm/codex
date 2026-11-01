@@ -17,7 +17,7 @@ c'est écrit ici, avec la phase prévue pour corriger.
 Décisions :
 - **Three.js pur plutôt que react-three-fiber** : le globe est une classe autonome (`Globe`) pilotée par `setView()`. Le rendu ne dépend pas de React et React ne re-rend pas la scène 3D.
 - **Le moteur mute l'état** au lieu de le recopier (plus simple et rapide, partie sérialisable telle quelle). L'UI incrémente un compteur `rev` après chaque mutation.
-- **Pas de Web Worker en phase 1** : une journée simulée prend moins d'une milliseconde. Le moteur n'a aucune dépendance au DOM, donc on pourra le déplacer dans un worker sans réécriture (phase 3–4, quand les sociétés IA et le Monte Carlo arriveront).
+- **Pas de Web Worker (phases 1–2)** : une journée simulée prend environ 26 ms avec un livre chargé (5 futures, 15 options), VaR à 400 scénarios comprise (test de performance). Le moteur n'a aucune dépendance au DOM, donc on pourra le déplacer dans un worker sans réécriture (phase 3–4, quand les sociétés IA et le Monte Carlo arriveront).
 - **RNG sfc32 sérialisé dans l'état** : même seed + mêmes actions = même partie (testé).
 - **Toute la trésorerie passe par `addCash`**, ventilée par catégorie et par commodité, ce qui donne l'attribution du P&L par commodité.
 
@@ -48,12 +48,13 @@ Décisions :
 
 - Demi-fourchette = `tick × base × (1 + 0,12·o + 0,01·o²)`, où o est le rang de l'échéance. Profondeur = `depth × e^{−o/8}`. En régime de stress : fourchette ×2, profondeur ÷2.
 - Prix d'exécution = mid ± demi-fourchette × (1 + lots/profondeur), arrondi au tick défavorable.
-- **Simplification** : l'impact de marché est temporaire (il ne déplace pas le mid). *Phase 2 : impact permanent et carnet.*
+- **Impact permanent (phase 2)** : chaque ordre futures ajoute au contrat traité un décalage log `signe × (demi-fourchette/mid) × (lots/profondeur)`, qui s'applique au prix de règlement (donc à votre propre MTM) et décroît de 65 % chaque nuit. **Simplification** : l'impact reste propre à l'échéance traitée. Il ne se propage pas aux échéances voisines, ni au prix forward du modèle utilisé pour le physique, ni à la vol implicite (les ordres d'options n'ont pas d'impact).
+- **Spreads calendaires** : un ordre unique paie 50 % de la demi-fourchette de chaque jambe, sur une profondeur ×1,5.
 - Un prix par jour : on traite aux prix du jour (bid/ask), marqués au mid à la clôture.
 
 ## Marge et trésorerie
 
-- **Marge initiale « SPAN-lite »** par commodité : `|L − S| + 30 % × min(L, S)`, avec L et S les expositions longues et courtes × taux de marge de la bourse. Taux de marge = quantile 99 % × vol du front × √(3/365) (environ deux jours ouvrés de liquidation). Révision chaque lundi, et en urgence si la vol saute de plus de 25 %.
+- **Marge initiale SPAN par scénarios (phase 2)**, par commodité, futures + options : 14 scénarios (prix ∈ {0, ±⅓, ±⅔, ±1} × fourchette de scan, vol ±25 %), plus deux extrêmes (±2×, comptés à 35 %), avec revalorisation complète des options. On retient la pire perte, on ajoute une charge de spread intra-commodité de 30 % × min(L, S) sur les futures, puis on retire la valeur nette des options (options achetées en crédit, vendues en charge). Plancher par option vendue. Pour des futures seuls, cela redonne exactement `|L − S| + 30 % × min(L, S)` (testé). Fourchette de scan = quantile 99 % × vol du front × √(3/365). Révision chaque lundi, et en urgence si la vol saute de plus de 25 %. **Simplifications** : pas de crédits inter-commodités ; le choc de vol est relatif (×1 ± 25 %) et non un écart absolu en points.
 - **Marge de variation** : réglée en cash à chaque clôture. Les ordres intrajournaliers passent une marge « trade-date » `(mark − p)·Δ`, ce qui rend le P&L exact par lot, quel que soit l'ordre des opérations (testé).
 - **Appel de marge** : si `cash < IM` (plus l'éventuel excédent de dette au-delà de la limite) après tirage automatique de la RCF, l'appel est émis. S'il n'est pas couvert à la clôture suivante, le courtier liquide tous les futures. Si cela ne suffit pas, c'est la faillite. Fonds propres négatifs entraînent aussi la faillite.
 - **RCF** : limite = 2,5 × fonds propres, plafonnée à 4 × le capital initial (covenant). Taux USD + 2,5 %. La ligne rétrécit quand on perd : c'est la spirale de liquidité.
@@ -85,3 +86,45 @@ Décisions :
 ## Notions métier ajoutées en avance
 
 Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges par la bourse, covenant de RCF, cash-and-carry, rachat d'urgence d'un short physique (squeeze du vendeur à découvert), risque de change sur le TTF, roll des positions.
+
+## Phase 2 — options, risque, conseillers
+
+### Pricing (`engine/pricing.ts`, testé)
+- **Black-76** pour les européennes sur futures. Greeks analytiques (delta, gamma, vega pour 1 point, theta par jour calendaire, rho pour 1 %), vérifiés par différences finies et sur une valeur de référence publiée (Haug).
+- **Barone-Adesi & Whaley** pour les américaines sur futures (b = 0), prix critique résolu par Newton avec la graine de Haug. Validé contre un arbre **CRR** à 2 000 pas : écart < 0,5 % aux taux du jeu. **Limite connue de BAW** : jusqu'à environ 1,5 % pour des options longues (2 ans) très dans la monnaie à taux élevé (10 %). Greeks américains par différences finies.
+- **Volatilité implicite** : Newton sécurisé par bissection.
+- **APO (asiatiques sur moyenne mensuelle du spot)** : approximation de Lévy / Turnbull-Wakeman, c'est-à-dire une lognormale ajustée sur les deux premiers moments de la moyenne arithmétique. La **covariance des fixings est exacte sous Schwartz-Smith** (formule fermée `fixingCovariance`). Les fixings passés sont gérés par ajustement du strike ; si le strike ajusté est négatif ou nul, la valeur forward est exacte. Validé par Monte Carlo sur le modèle (40 000 trajectoires) et par la parité call − put = swap.
+
+### Surface de volatilité (`engine/volsurface.ts`)
+- σ_ATM(contrat, expiration) = √(variance intégrée du modèle / τ) × `ivLevel` : la structure par terme vient du modèle (effet Samuelson), `ivLevel` porte la prime de variance (moyenne 1,08) et la peur. `ivLevel` suit un processus d'Ornstein-Uhlenbeck, monte sur les gros mouvements et saute avec les news majeures.
+- Smile : σ(K) = σ_ATM × (1 + skew·x + courbure·x²), avec x = ln(K/F)/(σ_ATM √τ) borné à ±3. Put skew sur le Brent et le cuivre, call skew sur le TTF, le blé et le charbon. ×1,5 en régime de stress.
+- **Simplification** : le smile est une couche de cotation (« sticky moneyness ») superposée au modèle. Le monde simulé n'a pas de dynamique de smile propre, au-delà des sauts de news et des changements de régime qui épaississent les queues. Pas de contrôle formel d'arbitrage de papillon : les paramètres sont choisis petits pour rester convexes sur la grille cotée.
+- APO : covariance du modèle × (ivLevel × smile(K))². Approximation de cotation, notée comme telle.
+
+### Instruments
+- **Options listées sur futures** : styles et expirations calqués sur les bourses (Brent américaine, 3 jours ouvrés avant le future ; TTF européenne, 5 jours calendaires avant le mois ; cuivre européenne, 1ᵉʳ mercredi ; blé américaine, règle du vendredi CBOT ; API2 européenne, avec le future). Prime payée à l'achat (style ICE), commission par lot, fourchette en points de vol (plus large hors de la monnaie, sur les échéances lointaines et en crise), profondeur décroissante avec la distance au strike.
+- Exercice automatique à l'expiration si l'option est dans la monnaie : on reçoit le future au strike (avant la VM du soir), ou un règlement en cash de la valeur intrinsèque si le future a expiré. Exercice anticipé manuel pour les américaines. **Simplification** : pas d'exercice anticipé automatique ; l'assignation d'un vendeur n'a lieu qu'à l'expiration.
+- **Swaps sur moyenne mensuelle et APO** de gré à gré avec trois banques fictives, réglés en cash sur la moyenne des fixings spot quotidiens (jours ouvrés du mois). Fourchette banque : 2× celle du future voisin pour un swap, 1,5 point de vol pour une APO. Plafond d'encours OTC de 3× les fonds propres. **Simplification** : pas de CSA ni de risque de défaut bancaire (phase 3) ; l'index de fixing est le spot du modèle.
+
+### Risque (`engine/risk.ts`, `engine/limits.ts`)
+- **VaR et ES 99 % à 1 jour** par Monte Carlo avec revalorisation complète : 400 scénarios tirés de la dynamique du modèle (χ/ξ corrélés, différentiels, EURUSD, vol implicite), sur un horizon de 1,4 jour calendaire. Les scénarios d'un jour donné sont fixés (graine propre, aléa de la partie non consommé), ce qui rend la VaR incrémentale d'un ordre stable. VaR « seule » par commodité, ce qui montre l'effet de diversification. **Simplification** : pas de changement de régime ni de saut dans les scénarios de VaR ; les stress tests couvrent ces cas.
+- **Stress tests** : six scénarios déterministes (krach pétrolier, hiver glacial, ralentissement chinois, sécheresse, choc de vol, dollar fort).
+- **Greeks agrégés** par chocs : delta et gamma par dérivée en log-prix (choc parallèle de ξ, tous les prix de la courbe ±0,5 %) ; vega par +1 point de vol ; theta « prix inchangés » (options et APO uniquement : les futures n'ont pas de theta) ; rho par +1 % de taux.
+- **Échéancier des deltas** par mois (futures, forwards actualisés, stocks au mois courant, options, swaps au prorata des fixings restants, APO par sensibilité).
+- **Couverture delta en un clic** : lots = −delta(+1 %) / delta(+1 %) d'un lot de l'échéance choisie. Couverture de premier ordre : gamma, base et calendrier restent, et c'est voulu, c'est la leçon.
+- **Limites** :
+  - covenant bancaire, VaR ≤ 8 % des fonds propres : avertissement à J1, gel de la RCF et marge +1 % à J3, ligne divisée par deux à J7, retour à la normale quand la VaR repasse sous la limite ;
+  - limites internes (VaR, stop-loss mensuel, delta par commodité) avec mode « discipline stricte » : l'ordre est exécuté puis annulé s'il aggrave une limite dépassée ;
+  - limites de position des bourses (mois spot et toutes échéances nettes).
+  **Simplification** : en Sandbox, le joueur est le patron. Les sanctions de type remontrance ou licenciement arriveront avec le mode Histoire (phase 5).
+
+### P&L expliqué (`engine/explain.ts`)
+- Décomposition quotidienne du livre de la veille en prix, base, change, vol et temps, chaque instrument dans ses propres coordonnées (forward du contrat, basis, actualisation, vol au strike, maturité). Le résidu « deals & coûts » rend le total exact (testé). Pour les options, l'ordre est séquentiel (prix → vol → temps).
+- **Simplification** : pour les APO, l'attribution est au premier ordre (theta et vega de la veille, avec une conversion approximative du choc de niveau de vol en points), le reste allant dans « prix ».
+
+### Conseillers (`engine/advisors.ts`)
+- Cinq personnages originaux (risk, trader, analyste, opérations, juriste), avec des règles déterministes qui lisent l'état. Au plus 3 conseils par jour, un délai minimum par règle, et une priorité colère > inquiétude > le reste.
+- Ils se contredisent volontairement (risk « coupe » contre trader « tiens bon »). Les paris directionnels du trader sont évalués à 10 jours ouvrés (palmarès affiché) : le monde étant martingale, il a raison environ une fois sur deux. C'est la leçon. Les conseils de portage de l'analyste sont calculés exactement (courbe − stockage − financement − frictions).
+
+### Sauvegardes
+- Version 2. Les sauvegardes v1 sont migrées automatiquement (champs ajoutés avec leurs valeurs par défaut).

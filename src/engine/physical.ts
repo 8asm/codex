@@ -52,7 +52,7 @@ export function offerEdge(state: GameState, o: Offer): number {
   const spec = COMMODITIES[o.commodity];
   const fair = basis(state.market, o.commodity, o.locationId);
   const perUnit = o.side * (fair - effectiveDiff(state, o));
-  return perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(spec.currency, state.day, offerDeliveryDay(o));
+  return perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, offerDeliveryDay(o));
 }
 
 export function notionalUsd(state: GameState, c: CommodityId, qty: number, price: number) {
@@ -74,8 +74,9 @@ export function generateOffers(state: GameState) {
     const side: 1 | -1 = uniform(state.rng) < 0.5 ? 1 : -1;
     const month = monthIndexOf(state.day) + randInt(state.rng, 1, 4);
     const f = forwardAt(state.market, c, physicalDeliveryDay(month));
-    const local = COUNTERPARTIES.filter((cp) => cp.cityId === loc.cityId);
-    const cp = local.length && uniform(state.rng) < 0.7 ? pick(state.rng, local) : pick(state.rng, COUNTERPARTIES);
+    const local = COUNTERPARTIES.filter((cp) => cp.cityId === loc.cityId && cp.kind !== 'bank');
+    const traders = COUNTERPARTIES.filter((x) => x.kind !== 'bank');
+    const cp = local.length && uniform(state.rng) < 0.7 ? pick(state.rng, local) : pick(state.rng, traders);
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %).
     const skew = f * (0.0015 + 0.0045 * normal(state.rng));
     const diff = roundTo(basis(state.market, c, loc.id) + side * skew, spec.tick);

@@ -35,5 +35,6 @@ export const sfx = {
   alarm: () => { for (let i = 0; i < 3; i++) { tone(740, 0.16, 'square', 0.05, i * 0.32); tone(554, 0.16, 'square', 0.05, i * 0.32 + 0.16); } },
   news: () => { tone(660, 0.1, 'sine', 0.05); tone(990, 0.18, 'sine', 0.05, 0.08); },
   error: () => tone(180, 0.2, 'sawtooth', 0.05),
+  advisor: () => { tone(587, 0.07, 'triangle', 0.04); tone(784, 0.09, 'triangle', 0.04, 0.07); },
   takeoff: () => { tone(220, 0.6, 'sine', 0.04); tone(330, 0.6, 'sine', 0.03, 0.2); },
 };
