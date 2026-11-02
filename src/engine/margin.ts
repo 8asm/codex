@@ -88,7 +88,7 @@ export function totalIm(m: MarketState, positions: FuturesPosition[], options: O
 }
 
 export function recomputeIm(state: GameState) {
-  state.company.im = totalIm(state.market, state.futures, state.options) + ffaIm(state);
+  state.company.im = totalIm(state.market, state.desks?.positions.length ? [...state.futures, ...state.desks.positions] : state.futures, state.options) + ffaIm(state);
 }
 
 /** Marge par lot de future (devise de cotation) pour affichage. */

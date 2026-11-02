@@ -91,7 +91,7 @@ function lotValueUsd(state: GameState, lotId: string): number {
   const lot = state.inventory.find((l) => l.id === lotId);
   if (!lot) return 0;
   const spec = COMMODITIES[lot.commodity];
-  return lot.qty * localSpot(state, lot.commodity, lot.locationId) * (lot.quality ?? 1) * spec.valuePerUnit * fx(state.market, spec.currency);
+  return lot.qty * localSpot(state, lot.commodity, lot.locationId, lot.grade) * (lot.quality ?? 1) * spec.valuePerUnit * fx(state.market, spec.currency);
 }
 
 export function financeLot(state: GameState, lotId: string): ActionResult {

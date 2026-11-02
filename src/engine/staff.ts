@@ -25,6 +25,7 @@ import { npcsOf, remember } from './npcs';
 import { hashUniform } from './rng';
 import type { ActionResult, CommoditySpec, Employee, GameState, StaffRole, StaffState } from './types';
 import { nav } from './valuation';
+import { closeDesk } from './desks';
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   trader: 'Trader', analyst: 'Analyste', operations: 'Opérateur logistique', risk: 'Risk manager', legal: 'Juriste conformité', chartering: 'Affréteur',
@@ -180,6 +181,7 @@ export function fireEmployee(s: GameState, id: string): ActionResult {
   const t = st(s);
   const e = t.employees.find((x) => x.id === id);
   if (!e) return { ok: false, message: 'Introuvable.' };
+  closeDesk(s, e.id);
   addCash(s, -e.salary * 3, 'overhead');
   t.employees = t.employees.filter((x) => x !== e);
   t.poach = t.poach.filter((p) => p.employeeId !== id);
@@ -253,6 +255,7 @@ export function staffMonth(s: GameState) {
   for (const p of t.poach.filter((x) => x.expiresDay < s.day)) {
     const e = t.employees.find((x) => x.id === p.employeeId);
     if (!e) continue;
+    closeDesk(s, e.id);
     t.employees = t.employees.filter((x) => x !== e);
     const co = COMPANIES.find((c) => c.id === p.companyId);
     if (e.role === 'trader') for (const n of npcsOf(s, 'client').slice(0, e.network)) remember(s, n.id, -3, `${e.name} est parti chez ${co?.name}`);
@@ -282,4 +285,69 @@ export function staffMonth(s: GameState) {
     addNews(s, { headline: `Note de ${a.name} : tendance de fond ${v! > 0 ? 'haussière' : 'baissière'} sur ${COMMODITIES[c as keyof typeof COMMODITIES]?.short ?? c}`, body: `Notre recherche estime la dérive structurelle à ${((v ?? 0) * 100).toFixed(0)} % par an (hors aléas). Information interne.`, tone: v! > 0 ? 'up' : 'down', major: false, category: 'marché' });
   }
   refreshCandidates(s);
+}
+
+// ------------------------------------------------------------------ fiscalité des bureaux
+
+export interface TaxPart {
+  cityId: string;
+  /** bénéfice imposable imputé au site */
+  base: number;
+  rate: number;
+  tax: number;
+  /** retenue au rapatriement (pays à contrôle des capitaux) */
+  withholding: number;
+  /** dont imputation directe (P&L des desks du bureau) */
+  direct: number;
+}
+
+/**
+ * Répartition du bénéfice imposable entre le siège et les bureaux (établissements stables).
+ *  1. Imputation directe : le P&L positif de l'exercice des desks rattachés à un bureau y est imposé
+ *     (les « fonctions humaines significatives » qui portent le risque sont sur place, principe OCDE).
+ *  2. Le reste est réparti au prorata de la masse salariale de chaque site (clé de répartition « payroll »),
+ *     le siège comptant son équipe de base.
+ * Chaque part est imposée au taux de sa ville (le siège garde son régime spécial éventuel). Dans un pays à
+ * contrôle des capitaux, rapatrier le bénéfice net coûte en plus une retenue de 10 %.
+ * Simplifications : report des pertes global, pas de prix de transfert sur les flux physiques.
+ */
+export function taxSplit(s: GameState, taxable: number, hqRate: number, hqBasePayroll: number): TaxPart[] {
+  const hq = s.company.hqCity;
+  const parts = new Map<string, TaxPart>();
+  const part = (cityId: string) => {
+    let p = parts.get(cityId);
+    if (!p) {
+      const rate = cityId === hq ? hqRate : s.world.cityRegs[cityId]?.taxRate ?? hqRate;
+      p = { cityId, base: 0, rate, tax: 0, withholding: 0, direct: 0 };
+      parts.set(cityId, p);
+    }
+    return p;
+  };
+  part(hq);
+  if (taxable <= 0) return [...parts.values()];
+  const t = st(s);
+  const branchIds = new Set(t.branches.map((b) => b.cityId));
+  // 1. imputation directe des desks des bureaux
+  let directSum = 0;
+  for (const e of t.employees.filter((x) => x.role === 'trader' && branchIds.has(x.cityId))) {
+    const d = Math.max(0, s.desks?.records[e.id]?.pnlLastYear ?? 0);
+    if (d > 0) { part(e.cityId).direct += d; directSum += d; }
+  }
+  const scale = directSum > taxable ? taxable / directSum : 1;
+  for (const p of parts.values()) p.direct *= scale;
+  const rest = taxable - Math.min(directSum, taxable);
+  // 2. clé « masse salariale »
+  const payroll = new Map<string, number>([[hq, hqBasePayroll]]);
+  for (const e of t.employees) {
+    const site = branchIds.has(e.cityId) ? e.cityId : hq;
+    payroll.set(site, (payroll.get(site) ?? 0) + e.salary);
+  }
+  const total = [...payroll.values()].reduce((a, b) => a + b, 0);
+  for (const [site, w] of payroll) part(site).base += (rest * w) / Math.max(1, total);
+  for (const p of parts.values()) {
+    p.base += p.direct;
+    p.tax = p.base * p.rate;
+    if (p.cityId !== hq && s.world.cityRegs[p.cityId]?.capitalControls) p.withholding = 0.1 * (p.base - p.tax);
+  }
+  return [...parts.values()];
 }

@@ -87,6 +87,7 @@ export function initCareer(state: GameState) {
 export function flattenBook(state: GameState) {
   const value = nav(state) - (state.company.cash - state.company.rcfDrawn);
   state.futures = [];
+  if (state.desks) state.desks.positions = [];
   state.forwards = [];
   state.inventory = [];
   state.options = [];
@@ -190,7 +191,7 @@ const LEVEL_NEEDED: Record<string, number> = {
   BUY_OPPORTUNITY: 6, SELL_ASSET: 6, SET_ASSET: 6, MAINTAIN_ASSET: 6, HIRE_MANAGER: 6, FIRE_MANAGER: 6, HEDGE_PRODUCTION: 6,
   RCF_DRAW: 6, RCF_REPAY: 6, SET_AUTO_TREASURY: 6, SET_CSA: 6, SET_CREDIT_INSURANCE: 6, SET_LIMITS: 99, RELOCATE_HQ: 99,
   TRADE_EXOTIC: 4, CLOSE_EXOTIC: 4, FINANCE_LOT: 6, REPAY_LOAN: 6, ACCEPT_PREPAY: 6, ACCEPT_BRIBE_OFFER: 3,
-  HIRE: 99, FIRE_EMPLOYEE: 99, RAISE: 99, COUNTER_OFFER: 99, OPEN_BRANCH: 99, CLOSE_BRANCH: 99,
+  HIRE: 99, FIRE_EMPLOYEE: 99, RAISE: 99, COUNTER_OFFER: 99, OPEN_BRANCH: 99, CLOSE_BRANCH: 99, SET_MANDATE: 99,
   SET_COMPLIANCE: 99, SELF_REPORT: 99, SET_DEFENSE: 99, SETTLE_CASE: 99, APPEAL: 99,
   OFFICE_MOVE: 99, OFFICE_STYLE: 99, OFFICE_ITEM: 99, OFFICE_PROPERTY: 99, INVITE_HQ: 99,
 };

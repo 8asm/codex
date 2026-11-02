@@ -36,6 +36,8 @@ import { recordFreightFixings, settleFfa, tradeFfa } from './freight';
 import { shipCargo, stepVoyages } from './logistics';
 import { buyOpportunity, createManagerPool, fireManager, generateOpportunities, hedgeProduction, hireManager, sellAsset, startMaintenance, stepAssets } from './assets';
 import { DEFAULT_AUTOMATION, runAutomation } from './automation';
+import { lessonTick, quitLesson, startLesson } from './lessons';
+import { deskMonth, deskTrading, liquidateDesks, setMandate, settleDesks } from './desks';
 import { FREIGHT_IDS } from '../data/freight';
 import { acceptJob, careerClose, careerLog, careerOpen, deskFor, evaluate, fire, flattenBook, foundCompany, initCareer, interviewChance, isEmployee, leave, makeOffer, permissionError, salaryFor, setAllocation, title } from './career';
 import { checkTips, dailySituations, maybeTip, pushSituation, resolveSituation, stepCompromises } from './situations';
@@ -57,10 +59,10 @@ import { closeExotic, stepExotics, tradeExotic } from './exotics';
 import { acceptPrepay, financeLot, repayLoan, stepFinancing } from './financing';
 import { appeal, checkFuture, complianceMonth, defaultCompliance, exchangeSurveillance, LEVELS, selfReport, setDefense, settleCase, stepInvestigations, suspended } from './compliance';
 import { defaultStats, stepProgress } from './progress';
-import { closeBranch, counterOffer, defaultStaff, fireEmployee, hire, openBranch, raise, refreshCandidates, staffMonth } from './staff';
+import { taxSplit, closeBranch, counterOffer, defaultStaff, fireEmployee, hire, openBranch, raise, refreshCandidates, staffMonth } from './staff';
 import { defaultOffice, fitOutCost, inviteToHq, managesOffice, moveOffice, negotiationEdge, officeEffects, officeItem, officeMonth, officeProperty, relocateOffice, setStyle } from './offices';
 
-export const SAVE_VERSION = 8;
+export const SAVE_VERSION = 9;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
@@ -285,9 +287,11 @@ function closeDay(state: GameState) {
   const newMonth = monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay);
   // Automatisation (roll, couverture, logistique) aux prix du jour, avant les règlements du soir.
   runAutomation(state);
+  if (paysCompanyCosts(state)) deskTrading(state);
   // L'exercice des options précède la VM : les futures reçus au strike sont réglés dès ce soir.
   for (const msg of expireOptions(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   settleVariationMargin(state);
+  settleDesks(state);
   expireContracts(state);
   for (const msg of processDeliveries(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   recordFixings(state);
@@ -314,6 +318,7 @@ function closeDay(state: GameState) {
     officeMonth(state);
     complianceMonth(state);
     staffMonth(state);
+    deskMonth(state);
     // Déclaration réglementaire des dérivés (type EMIR / Dodd-Frank) : coût par transaction du mois écoulé.
     const fee = state.world.cityRegs[co.hqCity]!.reportingFee * co.tradesThisMonth;
     if (fee > 0) {
@@ -330,15 +335,20 @@ function closeDay(state: GameState) {
     const fee = regime?.annualFee ?? 0;
     if (fee > 0) addCash(state, -fee, 'tax');
     let tax = 0;
+    // répartition entre le siège et les bureaux à l'étranger (établissements stables)
+    const split = taxSplit(state, taxable, rate, STAFF_MONTHLY * CITY_BY_ID[co.hqCity]!.staffCostIndex);
     if (taxable > 0) {
-      tax = taxable * rate;
+      tax = split.reduce((a, p) => a + p.tax + p.withholding, 0);
       co.lossCarry = 0;
+      for (const p of split.filter((x) => x.cityId !== co.hqCity && x.base > 0)) {
+        log(state, `Impôt local ${CITY_BY_ID[p.cityId]!.name} : base ${(p.base / 1e6).toFixed(2)} M$ (dont desks ${(p.direct / 1e6).toFixed(2)} M$) à ${(p.rate * 100).toFixed(1)} %${p.withholding > 0 ? `, retenue au rapatriement ${(p.withholding / 1e6).toFixed(2)} M$` : ''}`, -(p.tax + p.withholding));
+      }
     } else {
       co.lossCarry = -taxable;
     }
     if (tax > 0) addCash(state, -tax, 'tax');
     addNews(state, {
-      headline: `Clôture de l’exercice ${prev.y} : résultat ${(profit / 1e6).toFixed(2)} M$, impôt ${(tax / 1e6).toFixed(2)} M$ (taux ${(rate * 100).toFixed(1)} %${regime ? ` — ${regime.label}` : ''})`,
+      headline: `Clôture de l’exercice ${prev.y} : résultat ${(profit / 1e6).toFixed(2)} M$, impôt ${(tax / 1e6).toFixed(2)} M$ (taux ${(taxable > 0 ? (tax / taxable) * 100 : rate * 100).toFixed(1)} %${regime ? ` — ${regime.label}` : ''}${split.length > 1 ? `, ${split.length - 1} bureau(x)` : ''})`,
       tone: 'neutral',
       major: false,
     });
@@ -355,6 +365,7 @@ function closeDay(state: GameState) {
   if (deficit > 0) {
     if (co.marginCall && co.marginCall.sinceDay < state.day) {
       liquidateAllFutures(state);
+      liquidateDesks(state);
       state.pendingAlerts.push({ kind: 'liquidation', text: 'Appel de marge non couvert : le courtier a liquidé toutes vos positions futures.' });
       addNews(state, { headline: `${co.name} : positions liquidées par son courtier`, tone: 'alert', major: true });
       deficit = settleTreasury(state);
@@ -408,6 +419,7 @@ function closeDay(state: GameState) {
   state.lastNav = navNow;
   state.lastCloseDay = state.day;
   stepProgress(state, mcBefore);
+  lessonTick(state);
 }
 
 function bankrupt(state: GameState, reason: string) {
@@ -435,6 +447,12 @@ export function advanceDay(state: GameState): void {
 }
 
 export function dispatch(state: GameState, action: Action): ActionResult {
+  const r = dispatchAction(state, action);
+  if (r.ok) lessonTick(state);
+  return r;
+}
+
+function dispatchAction(state: GameState, action: Action): ActionResult {
   if (state.status !== 'running') return { ok: false, message: 'La partie est terminée.' };
   const denied = permissionError(state, action);
   if (denied) return { ok: false, message: denied };
@@ -586,6 +604,12 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       return openBranch(state, action.cityId, action.size);
     case 'CLOSE_BRANCH':
       return closeBranch(state, action.cityId);
+    case 'START_LESSON':
+      return startLesson(state, action.id);
+    case 'QUIT_LESSON':
+      return quitLesson(state);
+    case 'SET_MANDATE':
+      return setMandate(state, action.id, action.budget);
     case 'SPOT_BUY':
       return guarded(state, () => spotBuy(state, action.commodity, action.locationId, action.qty));
     case 'SPOT_SELL':
@@ -899,6 +923,20 @@ export function migrateState(raw: GameState): GameState {
     s.staff = defaultStaff();
     s.explainBase = null;
     s.version = 8;
+  }
+  if (s.version === 8) {
+    // phase 9 : la couverture automatique mémorise ses positions par échéance (« BRENT:612 ») ; l'ancienne mémoire
+    // par matière est reportée sur l'échéance détenue la plus grosse dans le même sens
+    const old = (s.automation.hedged ?? {}) as Record<string, number>;
+    const next: Record<string, number> = {};
+    for (const [k, v] of Object.entries(old)) {
+      if (k.includes(':')) { next[k] = v; continue; }
+      const p = s.futures.filter((x) => x.commodity === k && x.lots * v > 0).sort((a, b) => Math.abs(b.lots) - Math.abs(a.lots))[0];
+      if (p) next[`${k}:${p.month}`] = v;
+    }
+    s.automation.hedged = next;
+    s.desks = { positions: [], records: {} };
+    s.version = 9;
   }
   return s;
 }

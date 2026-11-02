@@ -575,3 +575,14 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .warn-row td { background: #fb718522; }
 .tbl td button + button { margin-left: 4px; }
 .mkt-group { grid-column: 1 / -1; }
+
+/* phase 9 : leçons guidées */
+.lessons { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.lesson { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; padding: 10px; background: rgba(255,255,255,.03); }
+.lesson.on { border-color: var(--gold); }
+.lesson.done { opacity: .8; }
+.lesson-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lesson-icon { font-size: 20px; }
+.lesson ol { padding-left: 18px; margin: 6px 0; }
+.lesson-card { position: absolute; left: 96px; bottom: 64px; width: min(360px, calc(100vw - 120px)); z-index: 30; background: var(--panel); border: 1px solid var(--gold); border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.lesson-card p { margin: 6px 0; }

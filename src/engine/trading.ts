@@ -46,7 +46,7 @@ export function applyFuturesFill(state: GameState, c: CommodityId, month: number
   if (after === 0) state.futures = state.futures.filter((p) => p !== pos);
 }
 
-function addImpact(state: GameState, c: CommodityId, month: number, lots: number) {
+export function addImpact(state: GameState, c: CommodityId, month: number, lots: number) {
   const m = state.market;
   const mid = futuresPrice(m, c, month);
   const key = `${c}:${month}`;
@@ -105,7 +105,7 @@ export function previewFuture(state: GameState, c: CommodityId, month: number, l
   const qty = lots * lotQty(spec, month);
   const k = spec.valuePerUnit * fx(m, spec.currency);
   const notional = Math.abs(qty * q.mid * k);
-  const imAfter = totalIm(m, withLots(state.futures, c, month, lots, exec), state.options);
+  const imAfter = totalIm(m, [...withLots(state.futures, c, month, lots, exec), ...(state.desks?.positions ?? [])], state.options);
   const slippage = Math.abs(exec - q.mid) * Math.abs(qty) * k;
   const comm = commissionUsd(state, c, lots);
   const vol = contractVol(m, c, month);
@@ -306,7 +306,7 @@ export function previewOption(state: GameState, c: CommodityId, month: number, t
   const qty = lots * lotQty(spec, month);
   const k = spec.valuePerUnit * fx(m, spec.currency);
   const opts = mergeOption(state.options, o, lots, exec);
-  const imAfter = totalIm(m, state.futures, opts);
+  const imAfter = totalIm(m, [...state.futures, ...(state.desks?.positions ?? [])], opts);
   const premium = -exec * qty * k;
   const comm = commissionUsd(state, c, lots);
   const g = optionUnitGreeks(m, o);

@@ -171,7 +171,7 @@ export function shipCargo(state: GameState, lotId: string, to: string, qty?: num
     id: newId(state, 'v'), commodity: lot.commodity, qty: q, cost: lot.cost, from: lot.locationId, to,
     vessel: vesselAssetId ? { kind: 'fleet', assetId: vesselAssetId } : { kind: 'spot', index: quote.index },
     departDay: state.day, arriveDay: quote.arriveDay, path: quote.path, nm: quote.nm, freightUsd: quote.totalUsd - quote.financingUsd,
-    insured: !!state.automation?.marineInsurance, delayDays: 0, viaCanals: quote.chokepoints,
+    insured: !!state.automation?.marineInsurance, delayDays: 0, viaCanals: quote.chokepoints, quality: lot.quality, grade: lot.grade,
   };
   if (vesselAssetId) {
     const a = state.assets.find((x) => x.id === vesselAssetId);
@@ -187,7 +187,7 @@ export function shipCargo(state: GameState, lotId: string, to: string, qty?: num
 export function voyageValue(state: Pick<GameState, 'market' | 'day'>, v: Voyage): number {
   const spec = COMMODITIES[v.commodity];
   const s = state as GameState;
-  return v.qty * (1 - spec.logistics.transitLoss) * localForward(s, v.commodity, v.to, Math.max(state.day, v.arriveDay)) * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, v.arriveDay);
+  return v.qty * (1 - spec.logistics.transitLoss) * localForward(s, v.commodity, v.to, Math.max(state.day, v.arriveDay), v.grade) * (v.quality ?? 1) * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, v.arriveDay);
 }
 
 /**
@@ -225,7 +225,7 @@ export function stepVoyages(state: GameState): string[] {
       msgs.push(`Surestaries : ${demDays} jour(s) d’attente au port, ${(dem / 1e3).toFixed(0)} k$ facturés à l’affréteur.`);
     }
     const qty = v.qty * (1 - spec.logistics.transitLoss);
-    state.inventory.push({ id: newId(state, 'i'), commodity: v.commodity, locationId: v.to, qty, cost: v.cost, sinceDay: state.day });
+    state.inventory.push({ id: newId(state, 'i'), commodity: v.commodity, locationId: v.to, qty, cost: v.cost, sinceDay: state.day, quality: v.quality, grade: v.grade });
     state.voyages = state.voyages.filter((x) => x !== v);
     msgs.push(`Cargaison de ${spec.short} arrivée à ${findLocation(v.commodity, v.to).label} (${Math.round(qty).toLocaleString('fr-FR')} ${spec.qtyUnit}, pertes en transit ${(spec.logistics.transitLoss * 100).toFixed(2)} %).`);
   }

@@ -5,6 +5,7 @@
  * `valueBy(view, book)` valorise un livre quelconque dans une vue de marché quelconque : c'est la brique
  * commune de la NAV, de la VaR (revalorisation complète), des stress tests, des greeks et du P&L expliqué.
  */
+import { gradeDiff, gradeProductDeltas } from './grades';
 import { exoticDeltaUnits, exoticLegs, exoticValueUsd } from './exotics';
 import { officeBookValue } from './offices';
 import { loansOutstanding, prepayValueIn } from './financing';
@@ -43,19 +44,19 @@ export function futuresPnlVsEntry(state: GameState, p: FuturesPosition): number 
 }
 
 /** Prix forward local = courbe benchmark à la date de livraison + différentiel courant (courbe de basis plate). */
-export function localForwardIn(m: MarketState, c: CommodityId, locationId: string, deliveryDay: number): number {
-  return forwardAt(m, c, deliveryDay) + basisAt(m, c, locationId, deliveryDay);
+export function localForwardIn(m: MarketState, c: CommodityId, locationId: string, deliveryDay: number, grade?: string): number {
+  return forwardAt(m, c, deliveryDay) + basisAt(m, c, locationId, deliveryDay) + gradeDiff(m, grade, deliveryDay);
 }
 
-export function localForward(state: GameState, c: CommodityId, locationId: string, deliveryDay: number): number {
-  return localForwardIn(state.market, c, locationId, deliveryDay);
+export function localForward(state: GameState, c: CommodityId, locationId: string, deliveryDay: number, grade?: string): number {
+  return localForwardIn(state.market, c, locationId, deliveryDay, grade);
 }
 
 export function forwardMtmIn(m: MarketState, day: number, d: ForwardDeal): number {
   const spec = COMMODITIES[d.commodity];
-  const fwd = localForwardIn(m, d.commodity, d.locationId, d.deliveryDay);
+  const fwd = localForwardIn(m, d.commodity, d.locationId, d.deliveryDay, d.grade);
   const linear = d.side * (fwd - d.price) * d.qty * spec.valuePerUnit * fx(m, spec.currency) * discount(m, spec.currency, day, d.deliveryDay);
-  return linear + (d.tolerance ? toleranceValueIn(m, day, d.commodity, d.locationId, d.deliveryDay, d.price, d.qty, d.tolerance, d.side < 0) : 0);
+  return linear + (d.tolerance ? toleranceValueIn(m, day, d.commodity, d.locationId, d.deliveryDay, d.price, d.qty, d.tolerance, d.side < 0, d.grade) : 0);
 }
 
 /**
@@ -63,10 +64,10 @@ export function forwardMtmIn(m: MarketState, day: number, d: ForwardDeal): numbe
  * convenu dépasse le marché et moins dans le cas inverse. C'est un call + un put au strike du contrat sur
  * tol × qté (Black-76 sur le prix local, vol du modèle). Positive pour le joueur s'il est vendeur, négative s'il achète.
  */
-export function toleranceValueIn(m: MarketState, day: number, c: CommodityId, locationId: string, deliveryDay: number, K: number, qty: number, tol: number, playerIsSeller: boolean): number {
+export function toleranceValueIn(m: MarketState, day: number, c: CommodityId, locationId: string, deliveryDay: number, K: number, qty: number, tol: number, playerIsSeller: boolean, grade?: string): number {
   const spec = COMMODITIES[c];
   const T = Math.max(0, (deliveryDay - day) / 365);
-  const F = localForwardIn(m, c, locationId, deliveryDay);
+  const F = localForwardIn(m, c, locationId, deliveryDay, grade);
   const sigma = T > 0 ? Math.sqrt(integratedVariance(spec.model, T, T, m.volMult) / T) * m.ivLevel[c] : 0;
   const r = zeroRate(m, spec.currency, T);
   const sh = spec.model.shift ?? 0;
@@ -78,17 +79,17 @@ export function forwardMtm(state: GameState, d: ForwardDeal): number {
   return forwardMtmIn(state.market, state.day, d);
 }
 
-export function localSpotIn(m: MarketState, c: CommodityId, locationId: string): number {
-  return spotPrice(m, c) + basis(m, c, locationId);
+export function localSpotIn(m: MarketState, c: CommodityId, locationId: string, grade?: string): number {
+  return spotPrice(m, c) + basis(m, c, locationId) + gradeDiff(m, grade, m.day);
 }
 
-export function localSpot(state: GameState, c: CommodityId, locationId: string): number {
-  return localSpotIn(state.market, c, locationId);
+export function localSpot(state: GameState, c: CommodityId, locationId: string, grade?: string): number {
+  return localSpotIn(state.market, c, locationId, grade);
 }
 
 export function inventoryValueIn(m: MarketState, lot: InventoryLot): number {
   const spec = COMMODITIES[lot.commodity];
-  return lot.qty * localSpotIn(m, lot.commodity, lot.locationId) * (lot.quality ?? 1) * spec.valuePerUnit * fx(m, spec.currency);
+  return lot.qty * localSpotIn(m, lot.commodity, lot.locationId, lot.grade) * (lot.quality ?? 1) * spec.valuePerUnit * fx(m, spec.currency);
 }
 
 export function inventoryValue(state: GameState, lot: InventoryLot): number {
@@ -96,7 +97,7 @@ export function inventoryValue(state: GameState, lot: InventoryLot): number {
 }
 
 export function bookOf(state: GameState): Book {
-  return { futures: state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc, voyages: state.voyages ?? [], ffa: state.ffa ?? [], exotics: state.exotics ?? [], prepays: state.financing?.prepays ?? [] };
+  return { futures: state.desks?.positions.length ? [...state.futures, ...state.desks.positions] : state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc, voyages: state.voyages ?? [], ffa: state.ffa ?? [], exotics: state.exotics ?? [], prepays: state.financing?.prepays ?? [] };
 }
 
 /** Valeur de marché (hors cash) d'un livre, ventilée par commodité. */
@@ -152,6 +153,10 @@ export interface Exposure {
   transitQty: number; // cargaisons en mer
   optionQty: number; // delta des options (unités)
   otcQty: number; // delta des swaps/APO (unités)
+  /** futures des desks délégués (hors du net et du delta du joueur ; ils restent dans la VaR et la marge) */
+  deskQty: number;
+  /** exposition aux produits portée par les différentiels de qualité des bruts (tonnes de produit) */
+  gradeQty: number;
   netQty: number;
   /** Delta en USD : variation de valeur pour +1 % sur toute la courbe. */
   delta1pct: number;
@@ -172,6 +177,15 @@ export function otcDeltaUnits(v: View, x: Book['otc'][number]): number {
 
 /** Exposition nette en unités physiques : futures + forwards + stocks + deltas des options et OTC. */
 export function exposures(state: GameState): Exposure[] {
+  // risque de qualité des bruts : le différentiel d'une qualité dépend des produits (valeur d'usage)
+  const gq: Partial<Record<CommodityId, number>> = {};
+  const addGrade = (grade: string | undefined, qty: number) => {
+    if (!grade) return;
+    for (const [p, dlt] of Object.entries(gradeProductDeltas(grade))) gq[p as CommodityId] = (gq[p as CommodityId] ?? 0) + qty * (dlt ?? 0);
+  };
+  for (const f of state.forwards) addGrade(f.grade, f.side * f.qty);
+  for (const l of state.inventory) addGrade(l.grade, l.qty);
+  for (const v of state.voyages ?? []) addGrade(v.grade, v.qty);
   return COMMODITY_IDS.map((c) => {
     const spec = COMMODITIES[c];
     const m = state.market;
@@ -186,6 +200,11 @@ export function exposures(state: GameState): Exposure[] {
       fq += q;
       d += q * futuresPrice(m, c, p.month) * k * 0.01;
     }
+    let kq = 0;
+    for (const p of (state.desks?.positions ?? []).filter((x) => x.commodity === c)) {
+      kq += p.lots * lotQty(spec, p.month); // suivi à part : le net et le delta sont ceux du livre du joueur
+    }
+    if (gq[c]) d += gq[c]! * spotPrice(m, c) * k * 0.01;
     for (const f of state.forwards.filter((x) => x.commodity === c)) {
       wq += f.side * f.qty;
       d += f.side * f.qty * forwardAt(m, c, f.deliveryDay) * k * 0.01 * discount(m, spec.currency, state.day, f.deliveryDay);
@@ -218,6 +237,6 @@ export function exposures(state: GameState): Exposure[] {
       xq += q;
       d += q * futuresPrice(m, c, x.spreadId && c !== x.commodity ? x.month2! : x.month) * k * 0.01;
     }
-    return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, transitQty: tq, optionQty: oq, otcQty: xq, netQty: fq + wq + iq + tq + oq + xq, delta1pct: d };
+    return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, transitQty: tq, optionQty: oq, otcQty: xq, deskQty: kq, gradeQty: gq[c] ?? 0, netQty: fq + wq + iq + tq + oq + xq + (gq[c] ?? 0), delta1pct: d };
   });
 }

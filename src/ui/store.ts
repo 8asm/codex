@@ -10,7 +10,7 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' | 'exotics' | 'finance' | 'compliance' | 'game' | 'staff';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' | 'exotics' | 'finance' | 'compliance' | 'game' | 'staff' | 'lessons';
 export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals' | 'routes' | 'stocks';
 export type Speed = 0 | 1 | 2 | 5;
 

@@ -1,5 +1,6 @@
 import { formatDayShort } from '../engine/calendar';
-import { caseKindLabel, estimateFine, LEVELS, SPOT_MONTH_LIMIT } from '../engine/compliance';
+import { caseKindLabel, estimateFine, LEVELS, spotMonthLimit } from '../engine/compliance';
+import { activeCommodities } from '../engine/physical';
 import type { ComplianceLevel } from '../engine/types';
 import { CITY_BY_ID } from '../data/cities';
 import { COMMODITIES } from '../data/commodities';
@@ -84,7 +85,7 @@ export function CompliancePanel() {
 
       <h4>Règles de marché</h4>
       <p className="muted small">
-        <Term id="poslimit">Limites de position</Term> des bourses dans les 15 derniers jours de cotation (hors couverture de bonne foi d’une exposition physique) : {Object.entries(SPOT_MONTH_LIMIT).map(([k, v]) => `${COMMODITIES[k as keyof typeof COMMODITIES].short} ${v} lots`).join(' · ')}.
+        <Term id="poslimit">Limites de position</Term> des bourses dans les 15 derniers jours de cotation (hors couverture de bonne foi d’une exposition physique) : {activeCommodities(g).map((k) => `${COMMODITIES[k].short} ${spotMonthLimit(k)} lots`).join(' · ')}.
         {' '}<Term id="secondary">Sanctions secondaires</Term> : acheter une marchandise d’origine sanctionnée depuis un siège hors du régime occidental reste poursuivable par l’autorité américaine dès qu’un dollar est en jeu. Amendes cumulées : {usd(c.fines)}.
       </p>
     </Panel>

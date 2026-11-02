@@ -16,7 +16,7 @@ import { isHalted } from './market';
 import { tradeFuture } from './trading';
 import type { Automation, CommodityId, GameState } from './types';
 import type { MonthIndex } from './calendar';
-import { exposures } from './valuation';
+import { otcDeltaUnits } from './valuation';
 
 export const DEFAULT_AUTOMATION: Automation = {
   autoRoll: false,
@@ -40,68 +40,119 @@ export function runAutomation(state: GameState): string[] {
       const lots = p.lots;
       if (tradeFuture(state, p.commodity, p.month, -lots).ok && tradeFuture(state, p.commodity, next, lots).ok) {
         state.company.tradesThisMonth += 2;
+        // la couverture automatique roulée reste la sienne sur la nouvelle échéance
+        const h = au.hedged;
+        if (h?.[`${p.commodity}:${p.month}`]) {
+          h[`${p.commodity}:${next}`] = (h[`${p.commodity}:${next}`] ?? 0) + h[`${p.commodity}:${p.month}`]! * (lotQty(spec, next) / lotQty(spec, p.month));
+          delete h[`${p.commodity}:${p.month}`];
+        }
         msgs.push(`Roll automatique : ${lots} lots ${spec.short} ${monthLabel(p.month)} → ${monthLabel(next)}.`);
       }
     }
   }
-  if (au.autoHedge.on) {
-    const hedged = (au.hedged ??= {});
-    for (const e of exposures(state)) {
-      const physical = e.forwardQty + e.inventoryQty + e.transitQty;
-      // la part « automatique » ne peut excéder la position futures réellement ouverte (expiration, débouclage manuel)
-      let own = hedged[e.commodity] ?? 0;
-      const spec0 = COMMODITIES[e.commodity];
-      const sameSide = state.futures.filter((p) => p.commodity === e.commodity && p.lots * own > 0).reduce((a, p) => a + p.lots * lotQty(spec0, p.month), 0);
-      if (Math.abs(own) > Math.abs(sameSide)) own = sameSide;
-      hedged[e.commodity] = own;
-      if (isHalted(state.market, e.commodity)) continue;
-      const spec = COMMODITIES[e.commodity];
-      let diff: number;
-      if (Math.abs(physical) < 1e-6) {
-        // plus de physique : la couverture n'a plus d'objet, on déboucle ce que l'automate a ouvert (pas plus).
-        // Sans cela elle resterait ouverte et deviendrait une position spéculative orpheline.
-        if (Math.abs(own) < 1e-6) continue;
-        diff = -own;
-      } else {
-        const target = -au.autoHedge.ratio * physical;
-        diff = target - (e.futuresQty + e.otcQty);
-        if (Math.abs(diff) <= au.autoHedge.threshold * Math.abs(physical)) continue;
-      }
-      // un débouclage se fait sur les échéances détenues (la plus grosse d'abord) ; une couverture, sur la 2ᵉ échéance cotée
-      const months = listedMonths(spec, state.day);
-      const unwinding = Math.abs(physical) < 1e-6;
-      const held = unwinding ? state.futures.filter((p) => p.commodity === e.commodity && Math.sign(p.lots) === -Math.sign(diff) && months.includes(p.month)).sort((a, b) => Math.abs(b.lots) - Math.abs(a.lots)) : [];
-      const mi = held[0]?.month ?? hedgeMonth(state, e.commodity, months);
-      let lots = Math.round(diff / lotQty(spec, mi));
-      if (held[0]) lots = Math.sign(lots) * Math.min(Math.abs(lots), Math.abs(held[0].lots));
-      if (lots !== 0 && tradeFuture(state, e.commodity, mi, lots).ok) {
-        hedged[e.commodity] = own + lots * lotQty(spec, mi);
-        state.company.tradesThisMonth++;
-        msgs.push(`Couverture automatique ${spec.short} : ${lots > 0 ? '+' : ''}${lots} lots ${monthLabel(mi)} (cible ${unwinding ? 'débouclage' : `${Math.round(au.autoHedge.ratio * 100)} %`}).`);
-      }
-    }
-  }
+  if (au.autoHedge.on) msgs.push(...stripHedge(state));
   if (au.autoLogistics) msgs.push(...autoShip(state));
   for (const m of msgs) log(state, m);
   return msgs;
 }
 
-/**
- * Échéance de couverture : celle dont la date de prix est la plus proche de la date moyenne d'exposition du physique
- * (pondérée par les quantités ; un stock compte pour aujourd'hui), parmi les échéances qui ne cotent pas leurs
- * derniers jours. Couvrir un forward de janvier sur l'échéance d'octobre laisserait tout le risque de calendrier
- * (et, pour le gaz, la saisonnalité) dans la couverture.
- */
-function hedgeMonth(state: GameState, c: CommodityId, months: MonthIndex[]): MonthIndex {
+/** Échéances de couverture possibles : celles qui ne cotent pas leurs cinq derniers jours ouvrés. */
+function hedgeMonths(state: GameState, c: CommodityId): MonthIndex[] {
   const spec = COMMODITIES[c];
-  let w = 0, t = 0;
-  for (const f of state.forwards.filter((x) => x.commodity === c)) { w += f.qty; t += f.qty * f.deliveryDay; }
-  for (const v of state.voyages.filter((x) => x.commodity === c)) { w += v.qty; t += v.qty * v.arriveDay; }
-  for (const l of state.inventory.filter((x) => x.commodity === c)) { w += l.qty; t += l.qty * state.day; }
-  const target = w > 0 ? t / w : state.day;
+  const months = listedMonths(spec, state.day);
   const ok = months.filter((mi) => businessDaysBetween(state.day, lastTradingDay(spec, mi)) > 5);
-  const pool = ok.length ? ok : months;
-  return pool.reduce((best, mi) => (Math.abs(pricingDay(spec, mi) - target) < Math.abs(pricingDay(spec, best) - target) ? mi : best), pool[0]!);
+  return ok.length ? ok : months;
+}
+
+/** Échéance dont la date de prix est la plus proche d'une date d'exposition. */
+function bucketOf(spec: (typeof COMMODITIES)[CommodityId], pool: MonthIndex[], day: number): MonthIndex {
+  return pool.reduce((best, mi) => (Math.abs(pricingDay(spec, mi) - day) < Math.abs(pricingDay(spec, best) - day) ? mi : best), pool[0]!);
+}
+
+/** Exposition physique (unités, signée) répartie par échéance de couverture. */
+export function physicalByMonth(state: GameState, c: CommodityId): Map<MonthIndex, number> {
+  const spec = COMMODITIES[c];
+  const pool = hedgeMonths(state, c);
+  const out = new Map<MonthIndex, number>();
+  const add = (day: number, q: number) => {
+    if (!q) return;
+    const mi = bucketOf(spec, pool, day);
+    out.set(mi, (out.get(mi) ?? 0) + q);
+  };
+  for (const f of state.forwards.filter((x) => x.commodity === c)) add(f.deliveryDay, f.side * f.qty);
+  for (const v of state.voyages.filter((x) => x.commodity === c)) add(v.arriveDay, v.qty);
+  for (const l of state.inventory.filter((x) => x.commodity === c)) add(state.day, l.qty);
+  for (const p of (state.financing?.prepays ?? []).filter((x) => x.commodity === c)) for (const d of p.schedule) add(d.day, d.qty);
+  return out;
+}
+
+/**
+ * Couverture en « strip » : chaque exposition physique (forward, cargaison, stock, préfinancement) est rattachée à
+ * l'échéance dont la date de prix est la plus proche de sa date, et couverte sur cette échéance au ratio cible.
+ * Le risque de calendrier ne subsiste qu'à l'intérieur d'un mois (et dans la base locale). L'automate mémorise ce
+ * qu'il a ouvert par échéance (`hedged["BRENT:612"]`) : quand le physique d'une échéance disparaît, il déboucle sa
+ * propre couverture et ne touche jamais aux positions manuelles.
+ */
+function stripHedge(state: GameState): string[] {
+  const msgs: string[] = [];
+  const au = state.automation;
+  const hedged = (au.hedged ??= {});
+  const ratio = au.autoHedge.ratio;
+  for (const c of activeOrHeld(state)) {
+    const spec = COMMODITIES[c];
+    const phys = physicalByMonth(state, c);
+    const months = new Set<MonthIndex>(phys.keys());
+    for (const k of Object.keys(hedged)) if (k.startsWith(`${c}:`) && hedged[k]) months.add(Number(k.slice(c.length + 1)));
+    for (const mi of months) {
+      const key = `${c}:${mi}`;
+      const pos = state.futures.find((p) => p.commodity === c && p.month === mi);
+      const futQ = (pos?.lots ?? 0) * lotQty(spec, mi);
+      // la part automatique ne peut excéder la position réellement ouverte dans le même sens (débouclage manuel, roll)
+      let own = hedged[key] ?? 0;
+      if (own * futQ <= 0) own = 0;
+      else if (Math.abs(own) > Math.abs(futQ)) own = futQ;
+      hedged[key] = own;
+      if (isHalted(state.market, c)) continue;
+      const p = phys.get(mi) ?? 0;
+      const otcQ = state.otc.filter((x) => x.commodity === c && x.month === mi).reduce((a, x) => a + otcDeltaUnits(state, x), 0);
+      let diff: number;
+      if (Math.abs(p) < 1e-6) {
+        if (Math.abs(own) < 1e-6) { delete hedged[key]; continue; }
+        diff = -own; // plus de physique sur cette échéance : on rend la couverture de l'automate, et elle seule
+      } else {
+        diff = -ratio * p - futQ - otcQ;
+        if (Math.abs(diff) <= au.autoHedge.threshold * Math.abs(p)) continue;
+      }
+      const lots = Math.round(diff / lotQty(spec, mi));
+      if (lots === 0) continue;
+      const r = tradeFuture(state, c, mi, lots);
+      if (!r.ok) {
+        // une couverture impossible ne doit jamais passer inaperçue : le physique reste exposé
+        const warnKey = `hedgefail:${c}`;
+        if ((state.adviceCooldown[warnKey] ?? -1) < state.day) {
+          state.adviceCooldown[warnKey] = state.day + 5;
+          state.pendingAlerts.push({ kind: 'limit', text: `Couverture automatique ${spec.short} ${monthLabel(mi)} impossible (${lots > 0 ? '+' : ''}${lots} lots) : ${r.message} Votre physique reste exposé.` });
+        }
+      }
+      if (r.ok) {
+        hedged[key] = own + lots * lotQty(spec, mi);
+        state.company.tradesThisMonth++;
+        msgs.push(`Couverture automatique ${spec.short} ${monthLabel(mi)} : ${lots > 0 ? '+' : ''}${lots} lots (${Math.abs(p) < 1e-6 ? 'débouclage' : `cible ${Math.round(ratio * 100)} %`}).`);
+      }
+    }
+  }
+  return msgs;
+}
+
+/** Commodités à examiner : celles qui ont du physique ou une couverture automatique ouverte. */
+function activeOrHeld(state: GameState): CommodityId[] {
+  const set = new Set<CommodityId>();
+  for (const f of state.forwards) set.add(f.commodity);
+  for (const v of state.voyages) set.add(v.commodity);
+  for (const l of state.inventory) set.add(l.commodity);
+  for (const p of state.financing?.prepays ?? []) set.add(p.commodity);
+  for (const k of Object.keys(state.automation.hedged ?? {})) set.add(k.split(':')[0] as CommodityId);
+  return [...set];
 }
 
 /** Pour chaque vente livrable à destination, achemine à temps le stock disponible ailleurs (au moindre coût). */

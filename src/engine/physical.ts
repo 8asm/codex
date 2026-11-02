@@ -7,6 +7,7 @@
  * Les contreparties proposent en moyenne un diff légèrement à leur avantage ; être SUR PLACE permet
  * de le renégocier (≈ 0,4 % du prix) : c'est l'intérêt de voyager.
  */
+import { gradeDiff, pickGrade } from './grades';
 import { COMMODITIES, COMMODITY_IDS, findLocation } from '../data/commodities';
 import { COUNTERPARTIES, COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { COMPANY_BY_ID } from '../data/companies';
@@ -63,7 +64,7 @@ export function offerPrice(state: GameState, o: Offer): number {
 /** Valeur actuelle du deal pour le joueur s'il l'accepte (USD, actualisée). Positif = bonne affaire. */
 export function offerEdge(state: GameState, o: Offer): number {
   const spec = COMMODITIES[o.commodity];
-  const fair = basisAt(state.market, o.commodity, o.locationId, offerDeliveryDay(o));
+  const fair = basisAt(state.market, o.commodity, o.locationId, offerDeliveryDay(o)) + gradeDiff(state.market, o.grade, offerDeliveryDay(o));
   const perUnit = o.side * (fair - effectiveDiff(state, o));
   const linear = perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, offerDeliveryDay(o));
   return linear + offerToleranceValue(state, o);
@@ -83,7 +84,7 @@ export function offerNetEdge(state: GameState, o: Offer): number {
 /** Valeur de la clause de tolérance pour le joueur (négative s'il achète : l'option appartient au vendeur). */
 export function offerToleranceValue(state: GameState, o: Offer): number {
   if (!o.tolerance) return 0;
-  return toleranceValueIn(state.market, state.day, o.commodity, o.locationId, offerDeliveryDay(o), offerPrice(state, o), o.qty, o.tolerance, o.side < 0);
+  return toleranceValueIn(state.market, state.day, o.commodity, o.locationId, offerDeliveryDay(o), offerPrice(state, o), o.qty, o.tolerance, o.side < 0, o.grade);
 }
 
 export function notionalUsd(state: GameState, c: CommodityId, qty: number, price: number) {
@@ -171,8 +172,11 @@ export function generateOffers(state: GameState) {
     const skew = f * (0.0015 - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
     let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
-    diff = roundTo(diff, spec.tick);
     const id = newId(state, 'o');
+    // phase 9 : qualité de brut et son différentiel de valeur d'usage
+    const grade = pickGrade(state.config.seed, id, c, loc.id);
+    diff += gradeDiff(state.market, grade, physicalDeliveryDay(month));
+    diff = roundTo(diff, spec.tick);
     // phase 8 : une petite maison se voit proposer des parts de cargaison (co-chargement) plutôt qu'une cargaison
     // entière qui dépasserait ses fonds propres (une cargaison de GNL vaut ~40 M$)
     let qty = pick(state.rng, spec.physical.cargoSizes);
@@ -196,6 +200,7 @@ export function generateOffers(state: GameState) {
       expiresDay: addBusinessDays(state.day, randInt(state.rng, 1, 3) + (trust > 40 ? 2 : 0)),
       kycReadyDay: kycRisky(state, cp.id) && kyc > 0.6 ? addBusinessDays(state.day, Math.ceil((kyc - 0.5) * 6)) : undefined,
       tolerance: pick(state.rng, [0, 0, 0.05, 0.1]),
+      grade,
     });
   }
 }
@@ -261,6 +266,7 @@ export function acceptOffer(state: GameState, offerId: string, inspect = false):
     counterpartyId: o.counterpartyId,
     tradeDay: state.day,
     tolerance: o.tolerance,
+    grade: o.grade,
   };
   if (offerNeedsLc(state, o)) {
     const err = issueLc(state, deal, notional, nav(state));
@@ -313,7 +319,7 @@ export function spotSell(state: GameState, lotId: string, qty?: number): ActionR
   const loc = findLocation(lot.commodity, lot.locationId);
   const q = Math.min(lot.qty, qty ?? lot.qty);
   const pen = isPresent(state, loc.cityId) ? 0 : REMOTE_SPOT_PENALTY;
-  const price = roundTo(localSpot(state, lot.commodity, lot.locationId) * (lot.quality ?? 1) * (1 - spec.physical.spotSpreadPct - pen), spec.tick);
+  const price = roundTo(localSpot(state, lot.commodity, lot.locationId, lot.grade) * (lot.quality ?? 1) * (1 - spec.physical.spotSpreadPct - pen), spec.tick);
   const proceeds = q * price * spec.valuePerUnit * fx(state.market, spec.currency);
   addCash(state, proceeds, 'physical', lot.commodity);
   noteSale(state, lot, q, price, `Vente spot ${spec.short} ${loc.label}`);
@@ -354,7 +360,7 @@ export function processDeliveries(state: GameState): string[] {
   // Tolérance : le vendeur choisit la quantité dans ±tol (plus si le prix convenu dépasse le marché).
   for (const d of due) {
     if (!d.tolerance) continue;
-    const S = localSpot(state, d.commodity, d.locationId);
+    const S = localSpot(state, d.commodity, d.locationId, d.grade);
     d.qty = d.qty * (d.price > S ? 1 + d.tolerance : 1 - d.tolerance);
   }
   // Électricité (phase 8) : non stockable, livrée et consommée en temps réel. L'acheteur revend aussitôt au
@@ -386,7 +392,7 @@ export function processDeliveries(state: GameState): string[] {
     const price = offSpec && d.inspected ? d.price * (1 - disc) : d.price;
     const pay = d.qty * price * spec.valuePerUnit * fx(state.market, spec.currency);
     addCash(state, -pay, 'physical', d.commodity);
-    state.inventory.push({ id: newId(state, 'i'), commodity: d.commodity, locationId: d.locationId, qty: d.qty, cost: price, sinceDay: state.day, quality: offSpec ? 1 - disc : undefined });
+    state.inventory.push({ id: newId(state, 'i'), commodity: d.commodity, locationId: d.locationId, qty: d.qty, cost: price, sinceDay: state.day, quality: offSpec ? 1 - disc : undefined, grade: d.grade });
     if (offSpec && d.inspected) msgs.push(`Inspection : ${spec.short} hors spécification, réfaction de ${(disc * 100).toFixed(1)} % obtenue du vendeur.`);
     else if (offSpec) msgs.push(`${severe ? 'Contamination' : 'Qualité hors spécification'} découverte sur votre ${spec.short} à réception : la cargaison vaut ${(disc * 100).toFixed(1)} % de moins. Sans inspection, aucun recours.`);
     else msgs.push(`Livraison reçue : ${spec.short} ${findLocation(d.commodity, d.locationId).label} (${d.qty.toLocaleString('fr-FR')} ${spec.qtyUnit}) mise en stock.`);
@@ -407,13 +413,15 @@ export function processDeliveries(state: GameState): string[] {
       if (transfer > 0) addCash(state, -q * transfer * k, 'physical', d.commodity);
       // marchandise hors spécification livrée : l'acheteur obtient une réfaction
       if ((lot.quality ?? 1) < 1) addCash(state, -q * d.price * (1 - lot.quality!) * k, 'physical', d.commodity);
+      // qualité de brut différente de celle du contrat : ajustement à la valeur d'usage courante (prime ou décote)
+      if ((lot.grade ?? '') !== (d.grade ?? '')) addCash(state, q * (gradeDiff(state.market, lot.grade, state.day) - gradeDiff(state.market, d.grade, state.day)) * k, 'physical', d.commodity);
       noteSale(state, lot, q, d.price, `Livraison ${spec.short} ${target.label} (vente à ${COUNTERPARTY_BY_ID[d.counterpartyId]?.name ?? '?'})`);
       lot.qty -= q;
       remaining -= q;
     }
     state.inventory = state.inventory.filter((l) => l.qty > 1e-9);
     if (remaining > 0) {
-      const px = localSpot(state, d.commodity, d.locationId) * (1 + SHORT_COVER_PREMIUM);
+      const px = localSpot(state, d.commodity, d.locationId, d.grade) * (1 + SHORT_COVER_PREMIUM);
       addCash(state, -remaining * px * k, 'physical', d.commodity);
       msgs.push(`Rachat d'urgence de ${remaining.toLocaleString('fr-FR')} ${spec.qtyUnit} de ${spec.short} pour honorer une vente (prime ${(SHORT_COVER_PREMIUM * 100).toFixed(1)} %).`);
     }

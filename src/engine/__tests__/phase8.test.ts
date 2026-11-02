@@ -267,13 +267,14 @@ describe('couverture automatique', () => {
     s.inventory.push({ id: 'L1', commodity: 'BRENT', locationId: spec.physical.locations[0]!.id, qty: 100_000, cost: 0, sinceDay: s.day, quality: 1 } as GameState['inventory'][number]);
     runAutomation(s);
     const net = () => s.futures.filter((p) => p.commodity === 'BRENT').reduce((a, p) => a + p.lots, 0);
-    // cible : −100 lots au total, positions manuelles comprises (−105 ouverts par l'automate)
-    expect(net()).toBe(-100);
-    expect(s.automation.hedged?.BRENT).toBe(-105_000);
+    // couverture en strip : −100 lots sur l'échéance du stock ; la position manuelle (autre échéance) reste à part
+    const own = () => Object.entries(s.automation.hedged ?? {}).filter(([k]) => k.startsWith('BRENT:')).reduce((a, [, v]) => a + v, 0);
+    expect(net()).toBe(-95);
+    expect(own()).toBe(-100_000);
     s.inventory = [];
     runAutomation(s);
     // seule la part automatique est rendue : il reste les 5 lots manuels
     expect(net()).toBe(5);
-    expect(s.automation.hedged?.BRENT ?? 0).toBe(0);
+    expect(own()).toBe(0);
   });
 });

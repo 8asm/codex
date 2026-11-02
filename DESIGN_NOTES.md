@@ -707,7 +707,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Bureaux dans d'autres villes** : bureau de représentation (6 postes, VL ≥ 15 M$) ou bureau régional (20 postes, VL ≥ 60 M$). Licence et agencement à l'ouverture, loyer chaque mois.
   - Effets : **présence permanente** (conditions locales, pas de pénalité à distance), trois fois plus d'offres sur les lieux de la ville, postes pour l'équipe.
   - Succès « Bureaux sur cinq continents ».
-- **Simplifications** : pas de régulation ni de fiscalité propres au bureau (la société reste imposée au siège) ; pas de vue ville dédiée aux bureaux ; les traders recrutés ne tradent pas seuls.
+- **Simplifications** : en phase 8, ni fiscalité ni régulation propres aux bureaux, pas de vue 3D, pas de trading autonome. Tout cela arrive en phase 9.
 
 ### Optimisation
 - **VaR** :
@@ -751,3 +751,92 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - taille des cargaisons plafonnée à 1,2 × les fonds propres (une cargaison de GNL à 39 M$ tuait une maison de 25 M$) ;
   - débouclage et choix d'échéance de la couverture automatique ;
   - recalibrage de la liquidité.
+
+
+## Phase 9 — desks délégués, fiscalité des bureaux, couverture en strip, qualités de brut, leçons
+
+### Desks délégués (`engine/desks.ts`)
+- **Mandat** : une limite de VaR 99 % à 1 jour (100 k$ à 1 M$), mesurée avec le modèle de risque de la maison (revalorisation complète, corrélations comprises). Le trader prend des positions futures sur sa famille de marchés : trois marchés au plus, sur la première échéance qui ne cote pas ses cinq derniers jours. Il rééquilibre une fois par semaine et roule avant l'échéance.
+- **D'où vient l'avantage** : les futures sont des martingales sous le modèle. Seule la dérive « réelle » des narratifs macro (`market.drift`) donne une espérance de gain. Le trader estime cette dérive avec un bruit :
+  - vue v = μ + σ·Z, avec σ = 2 % + 20 % × (1 − compétence), tenue un mois ;
+  - **décision** : il ne trade que si |v| > 2σ, puis estime μ par l'espérance a posteriori v·τ²/(τ² + σ²), avec τ = 10 % ;
+  - taille : budget/√n de VaR par marché × min(1, μ̂ / 12 %), trois marchés au plus.
+  - Sans le test à 2σ, scanner une douzaine de marchés et garder les « meilleures » vues revient à trader le bruit (biais de sélection) : même les bons traders perdaient. Un trader médiocre passe rarement le test, et le passe surtout sur du bruit : il paie fourchette, impact, commissions et rolls.
+- **Banc** (9 desks par partie, 6 graines, VaR 250 k$, un an) : gain attendu mesuré chaque jour (position × dérive réelle), comparé aux coûts de transaction.
+
+  | Compétence | Gain attendu (énergie / métaux / agri) | Coûts |
+  |---|---|---|
+  | 40 | 0,04 / 0,07 / 0,10 M$ | 0,11 à 0,21 M$ |
+  | 70 | 0,09 / 0,13 / 0,16 M$ | 0,09 à 0,26 M$ |
+  | 95 | 0,15 / 0,20 / 0,32 M$ | 0,08 à 0,21 M$ |
+
+  - Le P&L réalisé est bien plus bruité : environ 1,7 M$ d'écart-type par desk et par an. Les desks d'une même partie suivent les mêmes narratifs, si bien que quelques graines ne tranchent pas.
+  - Lecture : un trader compétent rapporte à peu près son coût à 250 k$ de VaR, et vaut nettement plus que son salaire à 1 M$. Le ratio de Sharpe d'un très bon trader est d'environ 0,3 à 0,5, réaliste pour une activité de prop trading.
+
+- **Comptabilité** : vraies positions de la maison, dans un livre séparé.
+  - VM du soir et astuce du marquage identiques au livre du joueur.
+  - Incluses dans la marge initiale (SPAN global), la VaR, la valeur nette et la liquidation forcée.
+  - Hors du net et du delta du joueur : « Neutraliser Δ » et la couverture automatique ne les annulent pas.
+  - Test : le P&L du desk égale exactement le cash qu'il a fait bouger (VM + commissions).
+- **Contrôles** :
+  - stop-loss mensuel à 4 × la limite ;
+  - bonus de janvier : 15 % du P&L positif de l'année ;
+  - **trader voyou** : probabilité mensuelle 4 % × ambition × (1 − loyauté) × 3 s'il perd, réduite par les risk managers. Il triple ses positions, déclare une VaR divisée par 3 et ignore le stop.
+  - Détection mensuelle : 20 % + 20 % par risk manager + 10 % par juriste (+15 % si la VaR réelle dépasse le double du mandat). Positions fermées, mandat retiré.
+- **Narratifs macro** : 10 thèmes au lieu de 4, couvrant les 38 marchés. Fréquence ×3, jusqu'à trois en même temps : une tendance de fond existe la majeure partie du temps.
+
+### Fiscalité et régulation des bureaux (`taxSplit` dans `engine/staff.ts`)
+- **Établissements stables** : le P&L positif de l'exercice des desks rattachés à un bureau y est imputé directement (principe OCDE des fonctions humaines significatives). Le reste est réparti au prorata de la masse salariale de chaque site, le siège comptant son équipe de base.
+- Chaque part est imposée au taux de sa ville ; le siège garde son régime spécial.
+- **Contrôle des capitaux** : rapatrier le bénéfice net d'un bureau coûte une retenue de 10 %.
+- **Reporting** : les transactions des desks d'un bureau sont déclarées au régulateur local, au tarif local.
+- **Vue 3D** : la ville d'un bureau montre votre immeuble (représentation ou régional) et son bureau intérieur.
+- **Simplifications** : report des pertes global ; pas de prix de transfert sur les flux physiques ; pas de régime spécial dans les bureaux.
+
+### Couverture en strip (`engine/automation.ts`)
+- Chaque exposition physique (forward, cargaison, stock, échéancier de préfinancement) est rattachée à l'échéance cotée dont la date de prix est la plus proche de sa date, hors échéances dans leurs cinq derniers jours. Elle est couverte sur cette échéance au ratio cible, swaps OTC du même mois déduits.
+- La mémoire de l'automate est tenue par échéance (`hedged["BRENT:612"]`) et suit les rolls. Quand le physique d'une échéance disparaît, il ne déboucle que sa propre couverture.
+- Le risque de calendrier résiduel se limite à l'intérieur d'un mois, plus la base locale.
+
+### Qualités de brut (`data/grades.ts`, `engine/grades.ts`)
+- **18 qualités** sur Brent, WTI et Dubaï, offertes selon le lieu, avec densité (°API), soufre et rendements simplifiés (essence, kérosène, gazole, fioul). Une offre de brut sur trois reste à la qualité de référence.
+- **Valeur d'usage** :
+  - GPW = Σ rendement × forward du produit ÷ barils par tonne ;
+  - diff = diff₀ + 0,85 × [(GPW − GPW_réf)(T) − (GPW − GPW_réf)(prix de référence)].
+  - Un brut lourd et soufré est donc long fioul et court produits légers. Sensibilités exactes, testées par différences finies.
+- **Intégration** :
+  - offre, forward, stock, voyage, financement, vente spot et rachat d'urgence valorisés avec le différentiel ;
+  - livraison d'une autre qualité que celle du contrat : ajustement à la valeur d'usage courante ;
+  - la VaR choque les produits avec le brut ;
+  - l'exposition aux produits portée par les qualités est affichée dans le livre.
+- **Correctif au passage** : la qualité (hors spécification) d'un lot se perdait quand on l'expédiait. Elle suit désormais le voyage.
+- **Simplifications** : assays réduits à quatre produits ; λ fixe ; pas de contrainte d'unités de raffinerie.
+
+### Leçons guidées (`data/lessons.ts`, `engine/lessons.ts`, 🎓 `W`)
+- Huit leçons : crack spread, WTI négatif, électricité et spark spread, arbitrage GNL, qualités de brut, strip, desks, bureaux.
+- Chaque leçon explique un concept, puis ses étapes sont vérifiées sur l'état après chaque action et à chaque clôture. Une carte flottante indique l'étape en cours et ouvre le bon panneau.
+- Aucune récompense en argent : la leçon ne change jamais l'économie de la partie.
+- Une leçon est refusée si ses marchés ne sont pas suivis, ou si elle demande de diriger la maison.
+
+### Équilibrage de la phase 9 (`npx vite-node scripts/balance.ts 1 12 <robot>`)
+- **Banc sur 12 graines** : 6 graines ne suffisaient plus, avec une erreur type d'environ 4 à 5 points sur le discipliné. Les narratifs plus fréquents changent aussi les trajectoires de marché ; le spéculateur, par exemple, passe de +31 % à −25 % sur 6 graines.
+
+  | Robot | Rendement moyen | Écart-type | Faillites |
+  |---|---|---|---|
+  | Inactif | −2,4 % | 0,2 % | 0/12 |
+  | Discipliné | −4,5 % | 12,3 % | 0/12 |
+  | Chef de desks (discipliné + 3 traders ≥ 70 à 250 k$, sans risk manager) | −11,7 % | 23,5 % | 0/12 |
+  | Négociant naïf | −24,6 % | 17,4 % | 9/12 |
+  | Raccourcis | −21,4 % | 9,5 % | 0/12 |
+  | Spéculateur | +17,4 % | 97,9 % | 1/12 |
+
+- **Contrôle** : le code de la phase 8, sur les mêmes 12 graines, donne −3,2 % (écart-type 16,8 %) au discipliné. Pas de régression, et la couverture en strip divise la volatilité du discipliné par 1,4 à 2,5 selon les tirages.
+- **Chef de desks** : les salaires et bonus coûtent environ 3,5 points par an. Les dépassements dissimulés durent en moyenne cinq mois sans risk manager (jusqu'à 197 jours sur une graine). Des desks rentables demandent de bons traders, assez de limite de VaR et un contrôle des risques.
+- **Correctifs issus du banc** :
+  - limites mois spot des 33 marchés de la phase 8 (NaN : la table ne connaissait que les cinq marchés d'origine) ;
+  - une couverture automatique refusée (liquidité, marge, conformité) est désormais signalée, au plus une fois tous les cinq jours par matière ;
+  - le desk repart dès la levée de son stop-loss.
+- **Constat** : la plus grosse perte journalière observée (−11 M$) vient du fret méthanier. Une cargaison achetée FOB Ras Laffan et vendue DES Tokyo perd quand le fret flambe (indice à 90 % de volatilité), et ce risque se couvre en FFA méthanier. C'est voulu.
+
+### Sauvegardes
+- Version 9 : la mémoire de couverture par matière est reportée sur l'échéance détenue la plus grosse dans le même sens, et les desks démarrent vides.

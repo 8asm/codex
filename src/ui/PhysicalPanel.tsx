@@ -11,7 +11,9 @@ import { offerHasBuyerLc, offerNeedsLc } from '../engine/financing';
 import { sanctionedOrigin } from '../engine/compliance';
 import { cpRating } from '../engine/credit';
 import { ZONE_BY_ID } from '../data/world';
-import type { CommodityId, Offer } from '../engine/types';
+import type { CommodityId, GameState, Offer } from '../engine/types';
+import { GRADE_BY_ID } from '../data/grades';
+import { gradeDiff } from '../engine/grades';
 import { localSpot } from '../engine/valuation';
 import { Panel, Term } from './common';
 import { CommodityPicker } from './common';
@@ -99,6 +101,7 @@ function OfferCard({ o }: { o: Offer }) {
         <div className="offer-title">
           <b className="link" onClick={() => focusCompany(cp.id)}>{cp.name}</b> <span className={`rating ${['BB', 'B', 'CCC'].includes(rating) ? 'warn' : ''}`} title="Notation de crédit">{rating}</span>{zone?.fictional && <span className="badge">{zone.name}</span>} {o.side > 0 ? 'vend' : 'cherche à acheter'} <b>{qty(o.commodity, o.qty)}</b> de {spec.short}
           <div className="muted small">
+            {o.grade && <GradeTag grade={o.grade} g={g} day={offerDeliveryDay(o)} />}
             <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.label}</Term> · livraison {monthLabel(o.month)} ({formatDayShort(offerDeliveryDay(o))}) · {city.name}
           </div>
         </div>
@@ -179,5 +182,17 @@ function Spot() {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Fiche de qualité de brut : densité, soufre, différentiel courant de valeur d'usage. */
+export function GradeTag({ grade, g, day }: { grade: string; g: GameState; day?: number }) {
+  const gr = GRADE_BY_ID[grade];
+  if (!gr) return null;
+  const d = gradeDiff(g.market, grade, day ?? g.day);
+  return (
+    <span className="badge" title={`${gr.origin} · ${gr.api}° API · soufre ${gr.sulfur} % · rendements : essence ${Math.round(gr.yields[0] * 100)} %, kérosène ${Math.round(gr.yields[1] * 100)} %, gazole ${Math.round(gr.yields[2] * 100)} %, fioul ${Math.round(gr.yields[3] * 100)} %. Le différentiel suit la valeur des produits : un brut lourd et soufré baisse quand le fioul baisse.`}>
+      🛢️ {gr.name} {gr.api}° · {gr.sulfur} % S · {d >= 0 ? '+' : ''}{d.toFixed(2)} $/bbl
+    </span>
   );
 }

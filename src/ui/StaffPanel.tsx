@@ -4,6 +4,9 @@ import { COMPANY_BY_ID } from '../data/companies';
 import { formatDayShort } from '../engine/calendar';
 import { BRANCH, branchSeatsFree, continentOf, continentsCovered, FAMILY_LABEL, marketSalary, ROLE_EFFECT, ROLE_LABEL, staffMonthlyCost } from '../engine/staff';
 import { nav } from '../engine/valuation';
+import { DESK_BUDGETS, deskPositions, STOP_MULT, BONUS_RATE } from '../engine/desks';
+import { COMMODITIES } from '../data/commodities';
+import { monthLabel } from '../engine/calendar';
 import { Panel } from './common';
 import { usd } from './format';
 import { useStore } from './store';
@@ -13,6 +16,7 @@ export function StaffPanel() {
   useStore((s) => s.rev);
   const setPanel = useStore((s) => s.setPanel);
   const act = useStore((s) => s.act);
+  const requestCity = useStore((s) => s.requestCity);
   const t = g.staff;
   const [branchCity, setBranchCity] = useState('');
   const [size, setSize] = useState<'bureau' | 'grand'>('bureau');
@@ -93,8 +97,40 @@ export function StaffPanel() {
         </table>
       )}
 
+      {t.employees.some((e) => e.role === 'trader') && (
+        <>
+          <h4>Desks délégués</h4>
+          <p className="muted small">Un trader sous mandat prend seul des positions futures sur sa famille de marchés, dans une limite de VaR (99 %, 1 jour) mesurée par votre modèle de risque. Son avantage vient de sa lecture des tendances de fond : un bon trader en vit, un médiocre trade son bruit et paie la fourchette. Stop-loss mensuel à {STOP_MULT} × la limite ; bonus de {Math.round(BONUS_RATE * 100)} % du P&amp;L positif en janvier. Les positions consomment votre marge et entrent dans votre VaR.</p>
+          <table className="tbl">
+            <thead><tr><th>Trader</th><th>Compétence</th><th>Limite de VaR</th><th>VaR déclarée</th><th>P&amp;L mois</th><th>P&amp;L année</th><th title="Fourchette, taille et commissions cumulées">Coûts</th><th>Positions</th></tr></thead>
+            <tbody>
+              {t.employees.filter((e) => e.role === 'trader').map((e) => {
+                const r = g.desks?.records[e.id];
+                const pos = deskPositions(g, e.id);
+                return (
+                  <tr key={e.id}>
+                    <td>{e.name} <span className="muted small">{e.family ? FAMILY_LABEL[e.family] : ''}</span></td>
+                    <td>{Math.round(e.skill)}</td>
+                    <td>
+                      <select value={e.mandate?.on ? e.mandate.budget : 0} onChange={(ev) => act({ type: 'SET_MANDATE', id: e.id, budget: Number(ev.target.value) })}>
+                        {DESK_BUDGETS.map((b) => <option key={b} value={b}>{b === 0 ? 'Pas de mandat' : `${b / 1e3} k$`}</option>)}
+                      </select>
+                    </td>
+                    <td>{r?.varReported !== undefined ? usd(r.varReported) : '—'}{r?.stopped ? ' · coupé' : ''}</td>
+                    <td className={(r?.pnlMonth ?? 0) < 0 ? 'neg' : 'pos'}>{usd(r?.pnlMonth ?? 0)}</td>
+                    <td className={(r?.pnlYear ?? 0) < 0 ? 'neg' : 'pos'}>{usd(r?.pnlYear ?? 0)}</td>
+                    <td className="muted">{usd(r?.costs ?? 0)}</td>
+                    <td className="small">{pos.length ? pos.map((p) => `${p.lots > 0 ? '+' : ''}${p.lots} ${COMMODITIES[p.commodity].short} ${monthLabel(p.month)}`).join(', ') : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <h4>Bureaux dans d’autres villes</h4>
-      <p className="muted small">Un bureau vaut présence permanente : conditions locales sur les offres de la ville, plus d’offres sur place, et des postes pour l’équipe. Licence locale et agencement à l’ouverture, loyer chaque mois.</p>
+      <p className="muted small">Un bureau vaut présence permanente : conditions locales sur les offres de la ville, plus d’offres sur place, et des postes pour l’équipe. Licence locale et agencement à l’ouverture, loyer chaque mois. Fiscalité : le bénéfice des desks rattachés au bureau y est imposé au taux local, le reste est réparti au prorata de la masse salariale ; les transactions de ces desks sont déclarées au régulateur local.</p>
       <div className="row">
         <select value={branchCity} onChange={(e) => setBranchCity(e.target.value)}>
           <option value="">Choisir une ville…</option>
@@ -116,7 +152,8 @@ export function StaffPanel() {
                 <td>{BRANCH[b.size].seats - branchSeatsFree(g, b.cityId)}/{BRANCH[b.size].seats} postes</td>
                 <td>{usd(CITY_BY_ID[b.cityId]!.officeRentMonthly * BRANCH[b.size].rentMult)}/mois</td>
                 <td>depuis le {formatDayShort(b.openedDay)}</td>
-                <td><button className="ghost" onClick={() => act({ type: 'CLOSE_BRANCH', cityId: b.cityId })}>Fermer</button></td>
+                <td>{g.world.cityRegs[b.cityId]?.capitalControls ? <span className="warn small" title="Rapatrier le bénéfice du bureau coûte une retenue de 10 %">contrôle des capitaux</span> : null} <span className="muted small">impôt local {((g.world.cityRegs[b.cityId]?.taxRate ?? 0) * 100).toFixed(0)} %</span></td>
+                <td><button onClick={() => { setPanel('staff'); requestCity(b.cityId); }}>🏙️ Visiter</button> <button className="ghost" onClick={() => act({ type: 'CLOSE_BRANCH', cityId: b.cityId })}>Fermer</button></td>
               </tr>
             ))}
           </tbody>

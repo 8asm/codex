@@ -113,9 +113,18 @@ npm run build      # build de production dans dist/
 - **Nouveaux événements** : envolée du cacao, gelée du café, squeeze du nickel, interdiction d'export du riz, taxe sur la palme, réforme du carbone…
 - **Plus rapide** : la simulation est deux fois plus rapide avec sept fois plus de marchés ; le bundle est découpé.
 
+## Phase 9 — ce qui s'ajoute
+
+- **Desks délégués** (👥 Équipes) : donnez une limite de VaR à un trader, il prend seul des positions futures sur sa famille de marchés. Bonus en janvier, stop-loss mensuel, et méfiez-vous du trader qui dissimule un dépassement.
+- **Bureaux, suite** : le bénéfice des desks d'un bureau est imposé sur place, les transactions y sont déclarées, et le contrôle des capitaux coûte une retenue au rapatriement. Bouton **Visiter** pour entrer dans le bureau en 3D.
+- **Couverture en strip** : la couverture automatique couvre chaque mois de livraison sur sa propre échéance.
+- **18 qualités de brut** (Forties, Maya, Arab Heavy, WCS, Murban…) : densité, soufre, rendements, et un différentiel qui suit la valeur des produits raffinés.
+- **Leçons guidées** (🎓, `W`) : crack spread, WTI négatif, électricité, GNL, qualités de brut, strip, desks, bureaux.
+- **Plus de narratifs macro** (vague de GNL, El Niño, relance de l'acier chinois, biocarburants, ralentissement des véhicules électriques…), sur les 38 marchés.
+
 ### Raccourcis
 
-`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `W` leçons · `C` codex · `Échap` fermer
 
 ## Structure
 

@@ -436,14 +436,20 @@ const TEMPLATES: Template[] = [
   },
   // ------------------------------------------------ narratifs macro (primes de risque)
   {
-    key: 'narrative', weight: 0.0018, cooldown: 120,
-    when: (s) => s.world.narratives.length < 2,
+    key: 'narrative', weight: 0.006, cooldown: 60,
+    when: (s) => s.world.narratives.length < 3,
     build: (s) => {
       const opts = [
-        { id: 'supercycle', name: 'Super-cycle des matières premières', drift: { BRENT: 0.12, CU: 0.18, API2: 0.1, WHEAT: 0.06 }, h: 'Le FMI relève fortement ses prévisions de croissance : les économistes parlent de super-cycle', b: 'Investissement massif dans les infrastructures émergentes.' },
-        { id: 'recession', name: 'Récession mondiale', drift: { BRENT: -0.15, CU: -0.2, API2: -0.12, TTF: -0.08 }, h: 'Les indicateurs avancés plongent : le spectre d’une récession mondiale', b: 'Commandes industrielles en chute, crédit plus rare.' },
-        { id: 'transition', name: 'Accélération de la transition énergétique', drift: { CU: 0.15, API2: -0.18, TTF: 0.04 }, h: 'Plans massifs pour l’électrification : le cuivre roi, le charbon condamné', b: 'Les grandes économies avancent leurs objectifs climatiques.' },
-        { id: 'oilglut', name: 'Surabondance pétrolière', drift: { BRENT: -0.2 }, h: 'Production record hors cartel : l’offre de pétrole déborde', b: 'Les nouveaux champs offshore arrivent tous en même temps.' },
+        { id: 'supercycle', name: 'Super-cycle des matières premières', drift: { BRENT: 0.12, WTI: 0.12, DUBAI: 0.12, CU: 0.18, AL: 0.12, ZN: 0.12, NI: 0.1, FE: 0.15, METCOAL: 0.12, API2: 0.1, WHEAT: 0.06, CORN: 0.06, SOY: 0.06 }, h: 'Le FMI relève fortement ses prévisions de croissance : les économistes parlent de super-cycle', b: 'Investissement massif dans les infrastructures émergentes.' },
+        { id: 'recession', name: 'Récession mondiale', drift: { BRENT: -0.15, WTI: -0.15, DUBAI: -0.15, GASOIL: -0.15, JET: -0.18, CU: -0.2, AL: -0.15, ZN: -0.15, NI: -0.15, FE: -0.15, API2: -0.12, TTF: -0.08, COTTON: -0.1, AU: 0.08, AG: -0.05 }, h: 'Les indicateurs avancés plongent : le spectre d’une récession mondiale', b: 'Commandes industrielles en chute, crédit plus rare.' },
+        { id: 'transition', name: 'Accélération de la transition énergétique', drift: { CU: 0.15, LI: 0.2, CO: 0.12, NI: 0.08, AG: 0.08, EUA: 0.15, API2: -0.18, NEWC: -0.15, TTF: 0.04 }, h: 'Plans massifs pour l’électrification : le cuivre roi, le charbon condamné', b: 'Les grandes économies avancent leurs objectifs climatiques.' },
+        { id: 'oilglut', name: 'Surabondance pétrolière', drift: { BRENT: -0.2, WTI: -0.22, DUBAI: -0.18, FUELOIL: -0.15 }, h: 'Production record hors cartel : l’offre de pétrole déborde', b: 'Les nouveaux champs offshore arrivent tous en même temps.' },
+        { id: 'lngwave', name: 'Vague de GNL', drift: { JKM: -0.18, TTF: -0.12, HH: 0.08 }, h: 'Une dizaine de trains de liquéfaction démarrent en même temps', b: 'L’offre de GNL déborde : l’Europe et l’Asie respirent, le gaz américain s’exporte.' },
+        { id: 'chinasteel', name: 'Relance de l’acier chinois', drift: { FE: 0.18, METCOAL: 0.15, NI: 0.08, ZN: 0.06 }, h: 'Pékin relance l’immobilier et les infrastructures', b: 'Les aciéries tournent à plein : minerai et charbon à coke recherchés.' },
+        { id: 'biofuels', name: 'Mandats de biocarburants', drift: { SOYOIL: 0.15, PALM: 0.12, CORN: 0.08, SUGAR: 0.1, SOYMEAL: -0.05 }, h: 'Washington, Brasília et Jakarta relèvent les taux d’incorporation', b: 'Les huiles végétales et l’éthanol captent une part croissante des récoltes.' },
+        { id: 'elnino', name: 'El Niño s’installe', drift: { PALM: 0.12, SUGAR: 0.1, COCOA: 0.15, COFFEE: 0.1, RICE: 0.08, WHEAT: 0.05 }, h: 'Les météorologues confirment un El Niño fort pour l’année', b: 'Sécheresse attendue en Asie du Sud-Est, en Inde et en Afrique de l’Ouest.' },
+        { id: 'evslow', name: 'Ralentissement des véhicules électriques', drift: { LI: -0.22, CO: -0.15, NI: -0.1 }, h: 'Les ventes de voitures électriques déçoivent, les stocks de batteries gonflent', b: 'Les constructeurs réduisent leurs commandes de cathodes.' },
+        { id: 'debase', name: 'Inquiétudes monétaires', drift: { AU: 0.12, AG: 0.1, CU: 0.04 }, h: 'Les banques centrales achètent de l’or à un rythme record', b: 'Dettes publiques et inflation : l’or redevient une valeur refuge.' },
       ].filter((o) => !s.world.narratives.some((n) => n.id === o.id));
       if (!opts.length) return null;
       const o = pick(s.rng, opts);

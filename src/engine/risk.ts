@@ -9,6 +9,7 @@
  *  - Greeks agrégés par commodité par revalorisation avec chocs (delta, gamma, vega, theta, rho).
  *  - Échéancier des deltas (risque de calendrier).
  */
+import { PRODUCTS } from './grades';
 import { COMMODITIES, COMMODITY_IDS, CORRELATION, FX_INDEX } from '../data/commodities';
 import { exoticLegs } from './exotics';
 import { monthIndexOf, type MonthIndex } from './calendar';
@@ -94,6 +95,8 @@ export function bookCommodities(book: Book): Set<string> {
   const out = new Set<string>();
   for (const arr of [book.futures, book.forwards, book.inventory, book.options, book.otc, book.voyages ?? [], book.exotics ?? [], book.prepays ?? []] as { commodity: string }[][]) for (const x of arr) out.add(x.commodity);
   for (const x of book.exotics ?? []) for (const c of exoticLegs(x)) out.add(c);
+  // qualités de brut : le différentiel dépend des produits raffinés, qui doivent être choqués avec le brut
+  if ([...book.forwards, ...book.inventory, ...(book.voyages ?? [])].some((x) => (x as { grade?: string }).grade)) for (const p of PRODUCTS) out.add(p);
   return out;
 }
 

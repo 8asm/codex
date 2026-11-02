@@ -213,6 +213,8 @@ export interface ForwardDeal {
   lc?: 'issued' | 'received';
   /** Phase 7 : inspection indépendante commandée au chargement. */
   inspected?: boolean;
+  /** Phase 9 : qualité de brut contractuelle. */
+  grade?: string;
 }
 
 export interface InventoryLot {
@@ -224,6 +226,8 @@ export interface InventoryLot {
   sinceDay: Day;
   /** Phase 7 : facteur de valeur lié à la qualité (1 = conforme ; < 1 hors spécification). */
   quality?: number;
+  /** Phase 9 : qualité de brut. */
+  grade?: string;
 }
 
 export interface OptionPosition {
@@ -327,6 +331,8 @@ export interface Offer {
   kycReadyDay?: Day;
   /** Phase 7 : commission versée à un « consultant » pour obtenir le contrat (USD). */
   bribe?: number;
+  /** Phase 9 : qualité de brut (sinon qualité de référence du benchmark). */
+  grade?: string;
 }
 
 export interface Travel {
@@ -602,6 +608,9 @@ export interface GameState {
   stats: GameStats;
   achievements: Achievement[];
   staff: StaffState;
+  /** desks de trading délégués aux traders recrutés (phase 9) */
+  desks?: DeskState;
+  lessons?: LessonState;
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];
@@ -770,6 +779,9 @@ export interface Voyage {
   insured: boolean;
   delayDays: number;
   viaCanals: string[];
+  /** qualité (phase 7) et qualité de brut (phase 9) de la marchandise transportée */
+  quality?: number;
+  grade?: string;
 }
 
 /** Forward freight agreement compensé : swap sur la moyenne mensuelle d'un indice de fret ($/jour). */
@@ -857,9 +869,10 @@ export interface StreamPosition {
 export interface Automation {
   autoRoll: boolean;
   autoHedge: { on: boolean; ratio: number; threshold: number };
-  /** Quantité (en unités) de futures ouverte par la couverture automatique elle-même, par matière : permet de
-   *  déboucler ses propres couvertures quand le physique disparaît, sans toucher aux positions du joueur. */
-  hedged?: Partial<Record<CommodityId, number>>;
+  /** Quantité (en unités) de futures ouverte par la couverture automatique elle-même, par échéance
+   *  (clé « BRENT:612 ») : permet de déboucler ses propres couvertures quand le physique disparaît,
+   *  sans toucher aux positions du joueur. */
+  hedged?: Record<string, number>;
   autoSellProduction: boolean;
   autoLogistics: boolean;
   marineInsurance: boolean;
@@ -924,6 +937,9 @@ export type Action =
   | { type: 'FIRE_EMPLOYEE'; id: string }
   | { type: 'RAISE'; id: string; pct: number }
   | { type: 'COUNTER_OFFER'; id: string }
+  | { type: 'SET_MANDATE'; id: string; budget: number }
+  | { type: 'START_LESSON'; id: string }
+  | { type: 'QUIT_LESSON' }
   | { type: 'OPEN_BRANCH'; cityId: string; size: 'bureau' | 'grand' }
   | { type: 'CLOSE_BRANCH'; cityId: string }
   | { type: 'RETIRE' };
@@ -1120,6 +1136,8 @@ export interface ComplianceState {
 export type GoalId = 'taille' | 'rendement' | 'fortune' | 'reputation' | 'domination' | 'survie' | 'scenario';
 
 export interface GameStats {
+  /** dépassements de mandat découverts (desks délégués) */
+  roguesCaught?: number;
   exoticPnl: number[];
   marginCalls: number;
   marginCallsMet: number;
@@ -1168,6 +1186,53 @@ export interface Employee {
   hiredDay: Day;
   /** ville de rattachement (siège ou bureau) */
   cityId: string;
+  /** mandat de trading délégué (traders) */
+  mandate?: Mandate;
+}
+
+/** Mandat d'un trader : il prend seul des positions futures sur sa famille, dans une limite de VaR. */
+export interface Mandate {
+  on: boolean;
+  /** limite de VaR 99 % à 1 jour du desk (USD), mesurée avec le modèle de risque de la maison */
+  budget: number;
+}
+
+/** Position futures d'un desk délégué : même mécanique de marge que celles du joueur, livre séparé. */
+export interface DeskPosition extends FuturesPosition {
+  deskId: string;
+}
+
+export interface DeskRecord {
+  pnlMonth: number;
+  pnlYear: number;
+  pnlTotal: number;
+  trades: number;
+  /** coupé par le stop-loss jusqu'au mois suivant */
+  stopped?: boolean;
+  /** dépassement de mandat dissimulé (trader « voyou ») */
+  rogue?: boolean;
+  /** VaR déclarée par le trader au dernier rééquilibrage, et VaR réelle */
+  varReported?: number;
+  varTrue?: number;
+  lastDay?: Day;
+  /** P&L de l'exercice précédent (base de l'imputation fiscale aux bureaux) */
+  pnlLastYear?: number;
+  /** coûts de transaction cumulés (fourchette, taille, commissions) */
+  costs?: number;
+  /** transactions du mois (déclaration réglementaire dans la juridiction du bureau) */
+  tradesMonth?: number;
+}
+
+/** Leçons guidées : leçon active, étape courante, leçons terminées. */
+export interface LessonState {
+  active: string | null;
+  step: number;
+  done: string[];
+}
+
+export interface DeskState {
+  positions: DeskPosition[];
+  records: Record<string, DeskRecord>;
 }
 
 export interface Candidate extends Employee {

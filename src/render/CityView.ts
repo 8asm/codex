@@ -40,6 +40,8 @@ export interface CityViewState {
     staff: number;
     seats: number;
     employer: boolean;
+    /** bureau à l'étranger : libellé affiché à la place du niveau de siège */
+    label?: string;
   };
   rivals: CityRival[];
   tickers: CityTicker[];

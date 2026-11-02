@@ -61,6 +61,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     const h = s.history.at(-1);
     return !!h && h.pnl > 0 && listedFront(s.market, 'WTI') < 0 && exposures(s).some((e) => e.commodity === 'WTI' && Math.abs(e.netQty) > 0);
   } },
+  { id: 'desk', name: 'Chef de desk', icon: '📈', desc: 'Un trader délégué gagne 1 M$ sur son mandat.', check: (s) => Object.values(s.desks?.records ?? {}).some((r) => r.pnlTotal >= 1e6) },
+  { id: 'rogue', name: 'Pas de Leeson ici', icon: '🔍', desc: 'Découvrir un trader qui dépassait son mandat.', check: (s) => (s.stats.roguesCaught ?? 0) > 0 },
+  { id: 'student', name: 'Élève appliqué', icon: '🎓', desc: 'Terminer quatre leçons guidées.', check: (s) => (s.lessons?.done.length ?? 0) >= 4 },
   { id: 'scenario', name: 'Histoire réécrite', icon: '📖', desc: 'Réussir un scénario historique.', check: (s) => !!s.config.scenario && scenarioOutcome(s).won },
 ];
 

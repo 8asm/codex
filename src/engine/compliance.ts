@@ -40,6 +40,10 @@ export const LEVELS: Record<ComplianceLevel, { monthly: number; seats: number; f
 
 /** Limites de position « mois spot » des bourses (lots), applicables dans les 15 derniers jours de cotation. */
 export const SPOT_MONTH_LIMIT: Record<string, number> = { BRENT: 1000, TTF: 600, CU: 400, WHEAT: 600, API2: 300 };
+/** Limite mois spot d'un contrat : table historique des cinq marchés d'origine, sinon la spécification du contrat. */
+export function spotMonthLimit(c: (typeof COMMODITY_IDS)[number]): number {
+  return SPOT_MONTH_LIMIT[c] ?? COMMODITIES[c].positionLimits.spotMonth;
+}
 const SPOT_WINDOW = 15;
 const STATUTE_DAYS = 5 * 365;
 
@@ -134,7 +138,7 @@ export function spotMonthExcess(state: GameState, c: (typeof COMMODITY_IDS)[numb
   const spec = COMMODITIES[c];
   const ltd = lastTradingDay(spec, month);
   if (ltd - state.day > SPOT_WINDOW) return 0;
-  return Math.max(0, Math.round(Math.abs(lotsAfter) - SPOT_MONTH_LIMIT[c]! - bonaFideHedgeLots(state, c, month, lotsAfter)));
+  return Math.max(0, Math.round(Math.abs(lotsAfter) - spotMonthLimit(c) - bonaFideHedgeLots(state, c, month, lotsAfter)));
 }
 
 export function checkFuture(state: GameState, c: (typeof COMMODITY_IDS)[number], month: number, lots: number): PreTrade {
@@ -142,7 +146,7 @@ export function checkFuture(state: GameState, c: (typeof COMMODITY_IDS)[number],
   const ex = spotMonthExcess(state, c, month, cur + lots);
   const out: PreTrade = { cases: [] };
   if (ex > 0 && Math.abs(cur + lots) > Math.abs(cur)) {
-    const msg = `limite de position mois spot (${SPOT_MONTH_LIMIT[c]} lots) dépassée de ${ex} lots`;
+    const msg = `limite de position mois spot (${spotMonthLimit(c)} lots) dépassée de ${ex} lots`;
     if (comp(state).level === 'renforcé') out.block = `La conformité bloque l’ordre : ${msg}.`;
     else if (comp(state).level === 'standard') out.warn = `Attention : ${msg}. La bourse va réagir.`;
   }
@@ -399,8 +403,8 @@ export function exchangeSurveillance(state: GameState) {
     if ((state.world.eventCooldown[key] ?? -1) >= state.day) continue;
     state.world.eventCooldown[key] = lastTradingDay(COMMODITIES[p.commodity], p.month);
     const spec = COMMODITIES[p.commodity];
-    const share = ex / SPOT_MONTH_LIMIT[p.commodity]!;
-    recordCase(state, 'manipulation', 2 + Math.min(3, share * 3), ex * lotQty(spec, p.month) * spotPriceProxy(state, p.commodity) * spec.valuePerUnit * 0.01, `Position de ${Math.abs(p.lots)} lots sur ${spec.short} à l’approche de l’échéance (limite ${SPOT_MONTH_LIMIT[p.commodity]})`);
+    const share = ex / spotMonthLimit(p.commodity);
+    recordCase(state, 'manipulation', 2 + Math.min(3, share * 3), ex * lotQty(spec, p.month) * spotPriceProxy(state, p.commodity) * spec.valuePerUnit * 0.01, `Position de ${Math.abs(p.lots)} lots sur ${spec.short} à l’approche de l’échéance (limite ${spotMonthLimit(p.commodity)})`);
     state.pendingAlerts.push({ kind: 'limit', text: `${spec.exchange} : votre position ${spec.short} dépasse la limite mois spot de ${ex} lots. Réduisez-la, la surveillance des marchés vous a repéré.` });
   }
 }

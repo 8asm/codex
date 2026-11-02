@@ -31,6 +31,7 @@ import { FinancePanel } from './FinancePanel';
 import { CompliancePanel } from './CompliancePanel';
 import { GamePanel } from './GamePanel';
 import { StaffPanel } from './StaffPanel';
+import { LessonCard, LessonsPanel } from './LessonsPanel';
 const CityCanvas = lazy(() => import('./CityCanvas').then((m) => ({ default: m.CityCanvas })));
 import { COMPANY_BY_ID } from '../data/companies';
 import { CITY_BY_ID } from '../data/cities';
@@ -56,6 +57,7 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'finance', icon: '🏧', label: 'Financement', key: 'Y' },
   { id: 'compliance', icon: '⚖️', label: 'Conformité', key: 'Z' },
   { id: 'game', icon: '🏆', label: 'Partie', key: 'Q' },
+  { id: 'lessons', icon: '🎓', label: 'Leçons', key: 'W' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
 ];
 
@@ -223,6 +225,7 @@ export function App() {
             {panel === 'compliance' && <CompliancePanel />}
             {panel === 'game' && <GamePanel />}
             {panel === 'staff' && <StaffPanel />}
+            {panel === 'lessons' && <LessonsPanel />}
           </div>
           {!cityPhase && <LayerBar />}
           {!cityPhase && (
@@ -230,6 +233,7 @@ export function App() {
               🏙️ {CITY_BY_ID[cityTarget(game, selectedCity)]!.name}
             </button>
           )}
+          <LessonCard />
           <AdvisorBar />
           <NewsTicker />
           <Modals />

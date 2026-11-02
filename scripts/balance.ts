@@ -78,6 +78,16 @@ const BOTS: Record<string, Bot> = {
     }
     sourcing(s);
   },
+  // chef de desks : discipliné + traders compétents (≥ 70) recrutés et mandatés (VaR 250 k$), les autres ignorés
+  desks: (s) => {
+    BOTS.discipline!(s);
+    const traders = s.staff.employees.filter((e) => e.role === 'trader');
+    if (traders.length < 3) {
+      const c = s.staff.candidates.find((x) => x.role === 'trader' && x.skill >= 70);
+      if (c) dispatch(s, { type: 'HIRE', candidateId: c.id, cityId: s.company.hqCity });
+    }
+    for (const e of s.staff.employees.filter((x) => x.role === 'trader' && !x.mandate)) dispatch(s, { type: 'SET_MANDATE', id: e.id, budget: 250_000 });
+  },
   // spéculateur : long Brent et cuivre (1,5× les fonds propres chacun), sans couverture
   speculateur: (s) => {
     if (s.futures.length) return;

@@ -8,6 +8,7 @@ import { futuresPrice } from '../engine/market';
 import { managesOffice, prestige, seatsUsed, tierForNav } from '../engine/offices';
 import type { GameState } from '../engine/types';
 import { CityView, type CityViewState } from '../render/CityView';
+import { BRANCH } from '../engine/staff';
 import { prevPrice } from './derived';
 import { price as fmtPrice } from './format';
 import { clock, useStore } from './store';
@@ -23,6 +24,10 @@ export function cityViewState(g: GameState, cityId: string): CityViewState {
   if (managesOffice(g) && g.company.hqCity === cityId) {
     const o = g.office;
     hq = { name: g.company.name, color: PLAYER_COLOR, tier: o.tier, style: o.style, items: o.items.map((i) => i.id), owned: !!o.owned, staff: seatsUsed(g), seats: TIERS[o.tier]!.seats, employer: false };
+  } else if (managesOffice(g) && g.staff?.branches.some((b) => b.cityId === cityId)) {
+    // bureau à l'étranger : petit immeuble (représentation) ou étages loués (régional), sans personnalisation
+    const b = g.staff.branches.find((x) => x.cityId === cityId)!;
+    hq = { name: g.company.name, color: PLAYER_COLOR, tier: b.size === 'grand' ? 1 : 0, style: 'openspace', items: [], owned: false, staff: g.staff.employees.filter((e) => e.cityId === cityId).length, seats: BRANCH[b.size].seats, employer: false, label: BRANCH[b.size].label };
   } else if (c?.employerId && COMPANY_BY_ID[c.employerId]?.cityId === cityId) {
     employerId = c.employerId;
     const d = COMPANY_BY_ID[c.employerId]!;
@@ -91,7 +96,7 @@ export function CityCanvas() {
 
   if (!g || !cityId) return null;
   const s = cityViewState(g, cityId);
-  const mine = s.hq && !s.hq.employer;
+  const mine = s.hq && !s.hq.employer && !s.hq.label;
   return (
     <div className={`cityview ${phase === 'leaving' ? 'leaving' : ''}`}>
       <div className="cityview-canvas" ref={ref} />
@@ -99,10 +104,11 @@ export function CityCanvas() {
         <button onClick={exitCity} title="Retour au globe (Échap, ou dézoomez)">🌍 Globe</button>
         <div className="cityview-title">
           <b>{s.cityName}</b>
-          {s.hq && <span className="muted small">{s.hq.name} · {TIERS[s.hq.tier]!.name}{mine ? ` · prestige ${Math.round(prestige(g))}` : ''}</span>}
+          {s.hq && <span className="muted small">{s.hq.name} · {s.hq.label ?? TIERS[s.hq.tier]!.name}{mine ? ` · prestige ${Math.round(prestige(g))}` : ''}</span>}
         </div>
-        {s.hq && <button className={interior ? 'on' : ''} onClick={() => setInterior(!interior)}>{interior ? '🏙️ Extérieur' : '💹 Salle de marché'}</button>}
+        {s.hq && <button className={interior ? 'on' : ''} onClick={() => setInterior(!interior)}>{interior ? '🏙️ Extérieur' : s.hq.label ? '💹 Bureau' : '💹 Salle de marché'}</button>}
         {mine && <button onClick={() => setPanel('offices', true)}>🏛️ Personnaliser</button>}
+        {s.hq?.label && <button onClick={() => setPanel('staff', true)}>👥 Équipe</button>}
       </div>
       {interior && s.hq && (
         <div className="cityview-caption small">

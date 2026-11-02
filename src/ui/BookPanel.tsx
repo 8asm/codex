@@ -1,3 +1,4 @@
+import { GradeTag } from './PhysicalPanel';
 import { CITY_BY_ID } from '../data/cities';
 import { COMMODITIES, COMMODITY_IDS, findLocation } from '../data/commodities';
 import { COUNTERPARTY_BY_ID } from '../data/counterparties';
@@ -23,7 +24,7 @@ export function BookPanel() {
   const select = useStore((s) => s.selectCommodity);
   const last = g.history[g.history.length - 1];
   const navSeries = g.history.slice(-250).map((h) => h.nav);
-  const exps = exposures(g).filter((e) => e.futuresQty || e.forwardQty || e.inventoryQty || e.optionQty || e.otcQty || e.transitQty);
+  const exps = exposures(g).filter((e) => e.futuresQty || e.forwardQty || e.inventoryQty || e.optionQty || e.otcQty || e.transitQty || e.gradeQty || e.deskQty);
   const empty = !g.futures.length && !g.forwards.length && !g.inventory.length && !g.options.length && !g.otc.length && !g.voyages.length && !g.ffa.length;
 
   const roll = (c: (typeof g.futures)[number]) => {
@@ -71,7 +72,7 @@ export function BookPanel() {
                     <td>{qty(e.commodity, e.futuresQty)}</td>
                     <td>{qty(e.commodity, e.forwardQty)}</td>
                     <td>{qty(e.commodity, e.inventoryQty + e.transitQty)}{e.transitQty ? <div className="muted small">dont {qty(e.commodity, e.transitQty)} en mer</div> : null}</td>
-                    <td>{qty(e.commodity, e.optionQty + e.otcQty)}</td>
+                    <td>{qty(e.commodity, e.optionQty + e.otcQty)}{e.gradeQty ? <div className="muted small" title="Exposition aux produits portée par les différentiels de qualité de vos bruts">dont qualités {qty(e.commodity, e.gradeQty)}</div> : null}{e.deskQty ? <div className="muted small" title="Positions des desks délégués : hors du net, mais dans la VaR et la marge">desks {qty(e.commodity, e.deskQty)}</div> : null}</td>
                     <td><b>{qty(e.commodity, e.netQty)}</b>{gross > 0 && <div className="hedge-bar" title={`Ratio de couverture ${(ratio * 100).toFixed(0)} %`}><div style={{ width: `${Math.min(100, ratio * 50)}%` }} /></div>}</td>
                     <td className={tone(e.delta1pct)}>{signedUsd(e.delta1pct)}</td>
                     <td><button className="small" onClick={() => act({ type: 'HEDGE_DELTA', commodity: e.commodity })} title="Vendre/acheter des futures (front) pour annuler le delta">Neutraliser Δ</button></td>
@@ -164,7 +165,7 @@ export function BookPanel() {
             <tbody>
               {g.forwards.map((d) => (
                 <tr key={d.id}>
-                  <td>{d.side > 0 ? 'Achat' : 'Vente'} {COMMODITIES[d.commodity].short} {findLocation(d.commodity, d.locationId).label}<div className="muted small">{COUNTERPARTY_BY_ID[d.counterpartyId]?.name}{d.tolerance ? ` · tolérance ±${Math.round(d.tolerance * 100)} % (vendeur)` : ''}</div></td>
+                  <td>{d.side > 0 ? 'Achat' : 'Vente'} {COMMODITIES[d.commodity].short} {findLocation(d.commodity, d.locationId).label}{d.grade && <> <GradeTag grade={d.grade} g={g} day={d.deliveryDay} /></>}<div className="muted small">{COUNTERPARTY_BY_ID[d.counterpartyId]?.name}{d.tolerance ? ` · tolérance ±${Math.round(d.tolerance * 100)} % (vendeur)` : ''}</div></td>
                   <td>{qty(d.commodity, d.qty)}</td>
                   <td>{price(d.commodity, d.price)}</td>
                   <td>{monthLabel(d.month)} <small className="muted">{formatDayShort(d.deliveryDay)}</small></td>
@@ -199,10 +200,10 @@ export function BookPanel() {
                 const loc = findLocation(l.commodity, l.locationId);
                 return (
                   <tr key={l.id}>
-                    <td>{COMMODITIES[l.commodity].icon} {loc.label}<div className="muted small">{CITY_BY_ID[loc.cityId]!.name}</div></td>
+                    <td>{COMMODITIES[l.commodity].icon} {loc.label}{l.grade && <> <GradeTag grade={l.grade} g={g} /></>}<div className="muted small">{CITY_BY_ID[loc.cityId]!.name}</div></td>
                     <td>{qty(l.commodity, l.qty)}</td>
                     <td>{price(l.commodity, l.cost)}</td>
-                    <td>{price(l.commodity, localSpot(g, l.commodity, l.locationId))}</td>
+                    <td>{price(l.commodity, localSpot(g, l.commodity, l.locationId, l.grade))}</td>
                     <td>{usd(inventoryValue(g, l))}</td>
                     <td><button className="small" onClick={() => act({ type: 'SPOT_SELL', lotId: l.id })}>Vendre spot</button></td>
                   </tr>
