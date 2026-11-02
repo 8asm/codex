@@ -17,7 +17,7 @@ import { depthLots, execPrice, halfSpread, liquidityLabel, quote } from './liqui
 import { contractVol, futuresPrice, fx, IM_HORIZON, IM_Z, isHalted } from './market';
 import { recomputeIm, totalIm } from './margin';
 import { rcfHeadroom } from './treasury';
-import { localSpot } from './valuation';
+import { exposures, localSpot } from './valuation';
 import type { ActionResult, CommodityId, FuturesPosition, GameState, OptType, OptionPosition } from './types';
 
 /** Coefficient d'impact permanent (fraction de la demi-fourchette relative, par profondeur traitée). */
@@ -60,11 +60,16 @@ export function positionLimitCheck(state: GameState, c: CommodityId, month: numb
   const front = listedMonths(spec, state.day)[0];
   const cur = state.futures.find((p) => p.commodity === c && p.month === month)?.lots ?? 0;
   const after = cur + lots;
-  if (month === front && Math.abs(after) > spec.positionLimits.spotMonth && Math.abs(after) > Math.abs(cur)) {
+  // exemption de couverture de bonne foi (comme les bourses) : la part qui couvre un physique de sens opposé ne
+  // compte pas dans la limite. Sans elle, une grosse cargaison ne pouvait pas être couverte.
+  const e = exposures(state).find((x) => x.commodity === c);
+  const phys = e ? e.forwardQty + e.inventoryQty + e.transitQty : 0;
+  const bonaFide = (x: number) => (phys !== 0 && Math.sign(phys) !== Math.sign(x) ? Math.abs(phys) / lotQty(spec, month) : 0);
+  if (month === front && Math.abs(after) > spec.positionLimits.spotMonth + bonaFide(after) && Math.abs(after) > Math.abs(cur)) {
     return `Limite de position de la bourse sur le mois spot : ${spec.positionLimits.spotMonth} lots.`;
   }
   const net = state.futures.filter((p) => p.commodity === c).reduce((s, p) => s + p.lots, 0);
-  if (Math.abs(net + lots) > spec.positionLimits.allMonths && Math.abs(net + lots) > Math.abs(net)) {
+  if (Math.abs(net + lots) > spec.positionLimits.allMonths + bonaFide(net + lots) && Math.abs(net + lots) > Math.abs(net)) {
     return `Limite de position de la bourse toutes échéances : ${spec.positionLimits.allMonths} lots nets.`;
   }
   return null;

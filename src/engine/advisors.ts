@@ -4,7 +4,10 @@
  * évalués après coup : dans un marché efficient (futures martingales), son taux de réussite tend vers 50 %.
  * Les conseils de portage de l'analyste, eux, reposent sur des calculs exacts.
  */
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { activeCommodities } from './physical';
+import { factors } from './difficulty';
+import { loreAside } from './lore';
+import { COMMODITIES } from '../data/commodities';
 import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { addBusinessDays, formatDayShort, monthLabel, ymd } from './calendar';
 import { lastTradingDay, listedMonths, physicalDeliveryDay } from './contracts';
@@ -65,7 +68,7 @@ export function carryOpportunity(state: GameState, c: CommodityId) {
     const F = futuresPrice(state.market, c, mi);
     const storage = spec.physical.storagePerUnitMonth * months;
     const financing = S * (rate(state.market, 'USD') + 0.025) * (months / 12);
-    const frictions = S * spec.physical.spotSpreadPct * 2 + spec.tick * spec.liquidity.halfSpreadTicks * 2;
+    const frictions = S * spec.physical.spotSpreadPct * factors(state).spotSpreadMult * 2 + spec.tick * spec.liquidity.halfSpreadTicks * 2;
     const perUnit = F - S - storage - financing - frictions;
     const total = perUnit * spec.physical.cargoSizes[0]! * spec.valuePerUnit * fx(state.market, spec.currency);
     if (!best || perUnit > best.perUnit) best = { months, perUnit, pct: perUnit / S, mi, total };
@@ -75,6 +78,8 @@ export function carryOpportunity(state: GameState, c: CommodityId) {
 
 function rules(state: GameState): Draft[] {
   const out: Draft[] = [];
+  // les conseillers ne parlent que des marchés suivis dans cette partie
+  const ACTIVE = activeCommodities(state);
   const co = state.company;
   const navV = nav(state);
   const head = rcfHeadroom(state, navV);
@@ -123,7 +128,7 @@ function rules(state: GameState): Draft[] {
     });
   }
   if (chance(state.rng, 0.12)) {
-    const c = pick(state.rng, COMMODITY_IDS);
+    const c = pick(state.rng, ACTIVE);
     const dir: 1 | -1 = uniform(state.rng) < 0.5 ? 1 : -1;
     const mi = listedMonths(COMMODITIES[c], state.day)[0]!;
     out.push({
@@ -136,7 +141,7 @@ function rules(state: GameState): Draft[] {
   if (state.history.length > 20 && r.var99 < 0.005 * navV) {
     out.push({ advisor: 'trader', mood: 'smug', rule: 'trader.bored', cooldown: 20, text: `On dort ? ${fmtM(navV)} de fonds propres et une VaR de ${fmtK(r.var99)}. Avec ça, on devrait prendre de vraies positions.` });
   }
-  const pricey = COMMODITY_IDS.find((c) => state.market.ivLevel[c] > 1.35);
+  const pricey = ACTIVE.find((c) => state.market.ivLevel[c] > 1.35);
   if (pricey) {
     out.push({ advisor: 'trader', mood: 'happy', rule: 'trader.sellvol', cooldown: 15, text: `Les options ${COMMODITIES[pricey].short} sont hors de prix. Vendons des puts : on encaisse la prime, c’est de l’argent gratuit !`, action: { kind: 'panel', panel: 'options' } });
   }
@@ -145,7 +150,7 @@ function rules(state: GameState): Draft[] {
   }
 
   // ---------------------------------------------------------------- ANALYST
-  for (const c of COMMODITY_IDS) {
+  for (const c of ACTIVE) {
     const opp = carryOpportunity(state, c);
     if (opp && opp.pct > 0.006) {
       const spec = COMMODITIES[c];
@@ -153,7 +158,7 @@ function rules(state: GameState): Draft[] {
       break;
     }
   }
-  for (const c of COMMODITY_IDS) {
+  for (const c of ACTIVE) {
     const rv = realizedVol(state, c);
     const lvl = state.market.ivLevel[c];
     if (rv > 0 && lvl > 1.3) {
@@ -165,7 +170,7 @@ function rules(state: GameState): Draft[] {
       break;
     }
   }
-  for (const c of COMMODITY_IDS) {
+  for (const c of ACTIVE) {
     const shortFut = state.futures.filter((p) => p.commodity === c && p.lots < 0);
     if (!shortFut.length) continue;
     const months = listedMonths(COMMODITIES[c], state.day);
@@ -175,7 +180,7 @@ function rules(state: GameState): Draft[] {
     }
   }
   if (ymd(state.day).d <= 3 && chance(state.rng, 0.5)) {
-    const c = pick(state.rng, COMMODITY_IDS);
+    const c = pick(state.rng, ACTIVE);
     const months = listedMonths(COMMODITIES[c], state.day);
     const s = futuresPrice(state.market, c, months[Math.min(6, months.length - 1)]!) / futuresPrice(state.market, c, months[0]!) - 1;
     out.push({ advisor: 'analyst', mood: 'neutral', rule: 'analyst.curve', cooldown: 18, text: `Point mensuel : la courbe ${COMMODITIES[c].short} est en ${s > 0 ? 'contango' : 'backwardation'} de ${(Math.abs(s) * 100).toFixed(1)} % sur six échéances. ${s > 0 ? 'Le marché est bien approvisionné : le stockage est rémunéré.' : 'Le marché est tendu : détenir la marchandise rapporte.'}`, action: { kind: 'panel', panel: 'market' } });
@@ -206,7 +211,7 @@ function rules(state: GameState): Draft[] {
   }
 
   // ---------------------------------------------------------------- LEGAL
-  for (const c of COMMODITY_IDS) {
+  for (const c of ACTIVE) {
     const spec = COMMODITIES[c];
     const net = Math.abs(state.futures.filter((p) => p.commodity === c).reduce((s, p) => s + p.lots, 0));
     if (net > 0.8 * spec.positionLimits.allMonths) {
@@ -344,6 +349,8 @@ export function morningAdvice(state: GameState) {
     .filter((d) => canTrade || ((!d.action || d.action.kind === 'panel') && !d.rule.startsWith('risk.') && !d.rule.startsWith('trader.') && !d.rule.startsWith('ops.')));
   // priorité : colère > inquiétude > le reste ; on ne garde que quelques conseils par jour
   const order = { angry: 0, worried: 1, smug: 2, happy: 2, neutral: 3 } as const;
+  const gossip = loreAside(state, 'advisor');
+  if (gossip) drafts.push({ advisor: 'analyst', mood: 'neutral', rule: 'analyst.gossip', cooldown: 1, text: gossip });
   drafts.sort((a, b) => order[a.mood] - order[b.mood]);
   const seenAdvisors = new Set<AdvisorId>();
   let n = 0;

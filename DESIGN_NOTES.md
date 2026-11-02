@@ -840,3 +840,67 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Sauvegardes
 - Version 9 : la mémoire de couverture par matière est reportée sur l'échéance détenue la plus grosse dans le même sens, et les desks démarrent vides.
+
+## Phase 10 — jouabilité : mode débutant, visite guidée, partie jouée dans le navigateur, folklore
+
+### Mode débutant (`engine/difficulty.ts`)
+- **Trois niveaux** : Débutant, Normal, Expert, choisis à l'accueil. Une première partie (aucune sauvegarde) présélectionne « Sandbox : ma société » en Débutant.
+- **Règle** : la difficulté ne touche jamais au pricing (modèle, options, marges, VaR). Elle ne règle que le monde dans lequel le joueur opère :
+
+  | | Débutant | Normal | Expert |
+  |---|---|---|---|
+  | Biais moyen du diff proposé | +0,25 % pour le joueur | −0,15 % | −0,25 % |
+  | Fourchette au comptant | × 0,5 | × 1 | × 1,2 |
+  | Stockage tiers | × 0,5 | × 1 | × 1,1 |
+  | Frais fixes (équipe de base, loyer, charges) | × 0,3 | × 1 | × 1,25 |
+  | Cargaison maximale | 0,5 × fonds propres | 1,2 × | 1,2 × |
+  | Offres garanties (un achat, une vente, hors KYC) | oui | non | non |
+  | Réglages proposés | 5 marchés, monde calme, crises rares | 20 marchés | 38 marchés, monde agité |
+
+- **Accompagnement du débutant** :
+  - roll et logistique automatiques ;
+  - couverture manuelle, car elle s'apprend ;
+  - visite guidée lancée d'office ;
+  - seuls les panneaux essentiels sont affichés jusqu'à la fin de la visite, puis tout est débloqué avec une annonce.
+
+- **Banc** (12 graines, un an, `npx vite-node scripts/balance.ts 1 12 <robot> <difficulté>`). Le robot « élève du tutoriel » achète et couvre une cargaison à la fois, cherche un acheteur au même lieu, sinon revend au comptant :
+
+  | Difficulté | Élève du tutoriel | Inactif | Discipliné |
+  |---|---|---|---|
+  | Débutant | +3,2 % (écart-type 4,4 %) | +1,8 % | — |
+  | Normal | −2,9 % (écart-type 3,9 %) | −2,4 % | −4,4 % (écart-type 10,0 %) |
+
+  - En débutant, suivre la visite guidée rapporte plus que ne rien faire, avec peu de risque. Avant ces réglages, l'élève perdait 3,4 % et l'inactif gagnait.
+  - En normal, il faut faire mieux qu'un robot : négocier, voyager, choisir son moment.
+
+### Visite guidée « Premiers pas » (leçon `first`)
+- **Cinq étapes** : acheter (le bouton « Acheter + couvrir » fait les deux), couvrir, trouver un acheteur au même lieu et livré après l'achat, laisser filer le temps jusqu'aux livraisons, déboucler les futures orphelins (« Clôturer »).
+- **Aides** :
+  - à l'étape « acheteur », une offre adossable est garantie sur la table ;
+  - les offres adossables portent un badge « ✓ adosse votre achat » ou « ✓ servie par votre stock ».
+
+### Partie complète jouée dans le navigateur (pilote Playwright, souris et clavier uniquement)
+Défauts trouvés et corrigés :
+- un clic sur le mot « couvrir » dans « Acheter + couvrir » ouvrait le codex au lieu d'acheter : les termes du glossaire n'interceptent plus le clic dans un bouton ;
+- au départ, aucune cargaison à acheter (deux offres, toutes deux des achats) : offres garanties en débutant ;
+- la carte de leçon masquait le panneau : elle est passée à droite ;
+- les conseillers parlaient de marchés non suivis (l'essence dans une partie à cinq marchés) : ils se limitent aux marchés de la partie ;
+- un flash « Ruée sur les soutes » (fioul) interrompait une partie qui ne suit pas le fioul : une nouvelle majeure sur un marché non suivi reste dans le fil, sans interrompre le joueur ;
+- la première cargaison du débutant (33 M$) dépassait son capital et vidait le cash libre : cargaison plafonnée à la moitié des fonds propres en débutant ;
+- une vente servie par rachat d'urgence n'était pas comptée comme une opération : la visite restait bloquée à l'étape 4 pendant 20 mois de jeu. Elle est désormais enregistrée, avec son P&L ;
+- un acheteur « au même lieu, livré plus tard » pouvait ne jamais se présenter (rien en 60 jours) : offre adossable garantie pendant la visite ;
+- un débutant voyait une vingtaine de panneaux : affichage progressif.
+Rythme mesuré : à vitesse maximale, environ un jour de jeu par seconde, soit une année en quatre à six minutes, alertes bloquantes comprises.
+
+### Défauts moteur trouvés par les bancs et corrigés
+- **Couverture et livraisons du soir** : la couverture automatique tournait avant les livraisons. La couverture d'une vente livrée restait ouverte toute la nuit sans physique en face (jusqu'à 5 M$ de perte sur le blé). Elle est recalée après les livraisons et arrivées, au prix de règlement.
+- **Volatilité du fret** : elle ignorait le réglage « monde calme » et les régimes de crise. Elle suit maintenant le multiplicateur de volatilité, de façon cohérente dans la dynamique, le forward (la moyenne stationnaire est conservée) et la VaR.
+- **Limites de bourse** : le contrôle d'ordre n'appliquait pas l'exemption de couverture de bonne foi, appliquée seulement par la conformité. Une grosse vente de GNL ne pouvait pas être couverte (limite mois spot de 600 lots) et restait exposée.
+- **Valeur nette d'une offre** : elle déduit désormais tous les coûts certains, à savoir sortie au comptant, couverture futures aller-retour, lettre de crédit (émission et frais mensuels jusqu'à la livraison) et inspection. Le détail figure dans l'infobulle. Avant, un joueur qui ne prenait que des offres « en vert » perdait de l'argent.
+
+### Folklore
+- **Rumeurs** : une ville de plus, Lyon. Au fil des parties longues, des bruits de couloir très rares sur un négociant lyonnais du bois.
+  - D'abord un acheteur sans nom, puis une société, enfin des initiales.
+  - Sept échos au plus, espacés d'au moins deux mois, pas avant le cinquième mois de jeu.
+- **Apartés** : au plus un tous les quatre-vingt-dix jours, glissés dans une conversation, une note d'analyste ou une fin de négociation.
+- **Neutralité** : aucun effet sur les marchés, l'argent ou les probabilités. Tirages hachés, la séquence aléatoire est intacte.

@@ -11,6 +11,7 @@ import { SCENARIOS } from '../data/scenarios';
 import { MARKET_SETS } from '../data/commodities';
 import { GOALS } from '../data/achievements';
 import { useStore } from './store';
+import { DIFFICULTY_BLURB, DIFFICULTY_LABEL, DIFFICULTY_PRESET, type Difficulty } from '../engine/difficulty';
 
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
 
@@ -33,14 +34,24 @@ export function StartScreen() {
   const [track, setTrack] = useState<CareerTrack>('trading');
   const [player, setPlayer] = useState('Alex Martin');
   const [saves, setSaves] = useState<SaveMeta[]>([]);
+  const [diff, setDiff] = useState<Difficulty>('normal');
+  const pickDiff = (d: Difficulty) => {
+    setDiff(d);
+    const p = DIFFICULTY_PRESET[d];
+    setVol(p.volatility);
+    setCrisis(p.crisisFrequency);
+    setMarkets(p.markets);
+  };
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    listSaves().then(setSaves).catch(() => setSaves([]));
+    // première partie (aucune sauvegarde) : on propose d'emblée le mode débutant en sandbox
+    listSaves().then((l) => { setSaves(l); if (!l.length) { setMode('found'); pickDiff('debutant'); } }).catch(() => setSaves([]));
   }, []);
 
   const start = () =>
     mode === 'scenario' ? newGame({ scenario, seed, playerName: player || 'Vous' }) : newGame({
       goal,
+      difficulty: diff,
       commodities: MARKET_SETS.find((x) => x.id === markets)?.ids.length ? MARKET_SETS.find((x) => x.id === markets)!.ids : undefined,
       mode: mode === 'story' ? 'story' : 'sandbox', start: mode === 'join' ? 'join' : 'found', employerId: employer, track, playerName: player || 'Vous',
       companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years: mode === 'story' ? Math.max(years, 6) : years, volatility: vol, crisisFrequency: crisis, seed,
@@ -73,6 +84,17 @@ export function StartScreen() {
           <button className={mode === 'join' ? 'on' : ''} onClick={() => setMode('join')}>👔 Sandbox : trader salarié</button>
           <button className={mode === 'scenario' ? 'on' : ''} onClick={() => setMode('scenario')}>📜 Scénarios<small>crises historiques</small></button>
         </div>
+        {mode !== 'scenario' && (
+          <>
+            <div className="label">Difficulté {saves.length === 0 && <span className="badge">première partie ? choisissez Débutant</span>}</div>
+            <div className="tabs mode-pick">
+              {(Object.keys(DIFFICULTY_LABEL) as Difficulty[]).map((d) => (
+                <button key={d} className={diff === d ? 'on' : ''} onClick={() => pickDiff(d)}>{d === 'debutant' ? '🌱' : d === 'normal' ? '⚖️' : '🔥'} {DIFFICULTY_LABEL[d]}<small>{DIFFICULTY_BLURB[d]}</small></button>
+              ))}
+            </div>
+            {diff === 'debutant' && mode !== 'found' && <div className="muted small">La visite guidée démarre en « Sandbox : ma société ». Ici, seules les conditions sont adoucies.</div>}
+          </>
+        )}
         {mode === 'scenario' && (
           <div className="scenario-pick">
             {SCENARIOS.map((sc) => (

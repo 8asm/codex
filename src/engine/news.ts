@@ -86,6 +86,9 @@ for (const [c, up, h1, b1, dn, h2, b2] of MORE) {
 
 function push(state: GameState, item: Omit<NewsItem, 'id' | 'day'>): NewsItem {
   const n: NewsItem = { id: newId(state, 'n'), day: state.day, ...item };
+  // une nouvelle sur un marché que la partie ne suit pas reste dans le fil, sans interrompre le joueur
+  const list = state.config.commodities;
+  if (n.major && n.commodity && list?.length && !list.includes(n.commodity)) n.major = false;
   state.news.unshift(n);
   if (state.news.length > 120) state.news.pop();
   return n;

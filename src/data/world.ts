@@ -81,7 +81,7 @@ export const ZONE_BY_ID: Record<string, ZoneDef> = Object.fromEntries(ZONES.map(
 /** Pays de chaque ville (identifiant de zone). */
 export const CITY_ZONE: Record<string, string> = {
   geneva: 'CH', london: 'UK', rotterdam: 'NL', singapore: 'SG', houston: 'US', dubai: 'AE', shanghai: 'CN', chicago: 'US', santiago: 'CL', johannesburg: 'ZA',
-  zug: 'CH', lugano: 'CH', paris: 'FR', hamburg: 'DE', frankfurt: 'DE', oslo: 'NO', moscow: 'SARM', istanbul: 'TR', athens: 'GR', madrid: 'ES', milan: 'IT',
+  zug: 'CH', lugano: 'CH', paris: 'FR', lyon: 'FR', hamburg: 'DE', frankfurt: 'DE', oslo: 'NO', moscow: 'SARM', istanbul: 'TR', athens: 'GR', madrid: 'ES', milan: 'IT',
   vienna: 'AT', warsaw: 'PL', riyadh: 'GULF', doha: 'GULF', muscat: 'OM', baku: 'AZ', cairo: 'EG', lagos: 'NG', abidjan: 'CI', accra: 'GH', nairobi: 'KE',
   lubumbashi: 'KASS', luanda: 'AO', mumbai: 'IN', karachi: 'PK', hongkong: 'CN', tokyo: 'JP', seoul: 'KR', beijing: 'CN', dalian: 'CN', jakarta: 'INSU',
   kualalumpur: 'MY', bangkok: 'TH', hochiminh: 'VN', manila: 'PH', almaty: 'KZ', sydney: 'AU', perth: 'AU', auckland: 'NZ', newyork: 'US', calgary: 'CA',

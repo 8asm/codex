@@ -7,6 +7,7 @@
  * Les contreparties proposent en moyenne un diff légèrement à leur avantage ; être SUR PLACE permet
  * de le renégocier (≈ 0,4 % du prix) : c'est l'intérêt de voyager.
  */
+import { factors } from './difficulty';
 import { gradeDiff, pickGrade } from './grades';
 import { COMMODITIES, COMMODITY_IDS, findLocation } from '../data/commodities';
 import { COUNTERPARTIES, COUNTERPARTY_BY_ID } from '../data/counterparties';
@@ -17,12 +18,13 @@ import { sanctionedDiscount } from './events';
 import { checkOffer, recordCase, suspended } from './compliance';
 import { recordDeal } from './progress';
 import { hasBranch, qualityRiskMult, traderEdge, traderFlow } from './staff';
-import { issueLc, offerHasBuyerLc, offerNeedsLc } from './financing';
+import { issueLc, LC_ISSUE_FEE, LC_MONTHLY_FEE, offerHasBuyerLc, offerNeedsLc } from './financing';
 import { addNews } from './news';
 import { contactAt, remember } from './npcs';
 import { isRestricted, sanctionFor, zoneOf } from './world';
 import { addBusinessDays, monthIndexOf, monthLabel, type Day } from './calendar';
-import { physicalDeliveryDay } from './contracts';
+import { listedMonths, lotQty, physicalDeliveryDay } from './contracts';
+import { halfSpread } from './liquidity';
 import { addCash, log, newId } from './ledger';
 import { basisAt, discount, forwardAt, fx } from './market';
 import { roundTo } from './math';
@@ -76,9 +78,26 @@ export function offerEdge(state: GameState, o: Offer): number {
  * d'une offre ne se réalise pleinement qu'adossée à l'opération inverse (achat et vente appariés).
  */
 export function offerNetEdge(state: GameState, o: Offer): number {
+  return offerEdge(state, o) - offerCosts(state, o).total;
+}
+
+/**
+ * Coûts certains d'une offre, hors prix (phase 10) : sortie au comptant, couverture futures aller-retour
+ * (demi-fourchette et commission, deux fois), lettre de crédit exigée par le vendeur (commission d'émission et
+ * frais mensuels jusqu'à la livraison) et inspection à l'achat. La « valeur nette » affichée les déduit tous.
+ */
+export function offerCosts(state: GameState, o: Offer): { exit: number; hedge: number; lc: number; inspection: number; total: number } {
   const spec = COMMODITIES[o.commodity];
-  const exit = (spec.physical.spotSpreadPct + (isPresent(state, o.cityId) ? 0 : REMOTE_SPOT_PENALTY)) * notionalUsd(state, o.commodity, o.qty, offerPrice(state, o));
-  return offerEdge(state, o) - exit;
+  const notional = notionalUsd(state, o.commodity, o.qty, offerPrice(state, o));
+  const exit = (spec.physical.spotSpreadPct * factors(state).spotSpreadMult + (isPresent(state, o.cityId) ? 0 : REMOTE_SPOT_PENALTY)) * notional;
+  const mi = listedMonths(spec, state.day)[1] ?? listedMonths(spec, state.day)[0]!;
+  const lots = Math.abs(Math.round(o.qty / lotQty(spec, mi)));
+  const k = lotQty(spec, mi) * spec.valuePerUnit * fx(state.market, spec.currency);
+  const hedge = 2 * lots * (halfSpread(state.market, o.commodity, mi) * k + spec.liquidity.commission * fx(state.market, spec.currency));
+  const months = Math.max(0, (offerDeliveryDay(o) - state.day) / 30.4);
+  const lc = offerNeedsLc(state, o) ? notional * (LC_ISSUE_FEE + LC_MONTHLY_FEE * months) : 0;
+  const inspection = o.side > 0 ? notional * INSPECTION_COST : 0;
+  return { exit, hedge, lc, inspection, total: exit + hedge + lc + inspection };
 }
 
 /** Valeur de la clause de tolérance pour le joueur (négative s'il achète : l'option appartient au vendeur). */
@@ -126,10 +145,10 @@ function offerFlowMult(state: GameState): number {
   return Math.sqrt(activeCommodities(state).length / 5);
 }
 
-export function generateOffers(state: GameState) {
+export function generateOffers(state: GameState, opts: { count?: number; side?: 1 | -1; commodity?: CommodityId; locationId?: string; month?: number; qty?: number } = {}) {
   state.offers = state.offers.filter((o) => o.expiresDay >= state.day);
   // Les concurrents raflent les bonnes affaires : une offre avantageuse a 25 % de chances par jour de partir.
-  for (const o of [...state.offers]) {
+  for (const o of opts.count !== undefined ? [] : [...state.offers]) {
     if (offerEdge(state, o) > 0 && chance(state.rng, 0.25)) {
       const rivals = state.companies.filter((c) => c.alive && COMPANY_BY_ID[c.id]!.desks[o.commodity] !== undefined && c.id !== o.counterpartyId);
       state.offers = state.offers.filter((x) => x !== o);
@@ -140,13 +159,13 @@ export function generateOffers(state: GameState) {
     }
   }
   const kyc = state.world.cityRegs[state.company.hqCity]!.kyc;
-  const n = Math.min(MAX_OFFERS - state.offers.length, poisson(state.rng, 1.9 * offerFlowMult(state)));
+  const n = Math.min(MAX_OFFERS - state.offers.length, opts.count ?? poisson(state.rng, 1.9 * offerFlowMult(state)));
   const pool0 = activeCommodities(state);
   for (let i = 0; i < n; i++) {
     // les traders recrutés font venir davantage d'offres sur leur famille ; les bureaux, sur leur ville
-    const c = weightedPick(state, pool0, (x) => traderFlow(state, COMMODITIES[x].family));
+    const c = opts.commodity ?? weightedPick(state, pool0, (x) => traderFlow(state, COMMODITIES[x].family));
     const spec = COMMODITIES[c];
-    const loc = weightedPick(state, spec.physical.locations, (l) => (hasBranch(state, l.cityId) ? 3 : 1));
+    const loc = (opts.locationId && spec.physical.locations.find((l) => l.id === opts.locationId)) || weightedPick(state, spec.physical.locations, (l) => (hasBranch(state, l.cityId) ? 3 : 1));
     // Contreparties pertinentes : celles qui ont un desk sur cette commodité, vivantes, non frappées d'interdiction.
     const pool = COUNTERPARTIES.filter((cp) => {
       if (cp.kind === 'bank' || cp.kind === 'fund') return false;
@@ -156,6 +175,8 @@ export function generateOffers(state: GameState) {
       const sa = sanctionFor(state, cp.id, c);
       if (sa?.kind === 'full') return false;
       if (kyc > 0.9 && ['B', 'CCC'].includes(cpRating(state, cp.id))) return false;
+      // offre garantie d'un débutant : contrepartie sans contrôle KYC ni sanction
+      if (opts.side && (kycRisky(state, cp.id) || sa)) return false;
       return true;
     });
     if (!pool.length) continue;
@@ -163,13 +184,13 @@ export function generateOffers(state: GameState) {
     const cp = local.length && uniform(state.rng) < 0.6 ? pick(state.rng, local) : pick(state.rng, pool);
     const sanctioned = state.world.sanctions.some((x) => x.zone === cp.zone);
     // Barils sous sanctions ou plafond : ils ne se vendent qu'avec une forte décote, et seulement à l'achat.
-    const side: 1 | -1 = sanctioned ? 1 : uniform(state.rng) < 0.5 ? 1 : -1;
-    const month = monthIndexOf(state.day) + randInt(state.rng, 1, 4);
+    const side: 1 | -1 = opts.side ?? (sanctioned ? 1 : uniform(state.rng) < 0.5 ? 1 : -1);
+    const month = opts.month ?? monthIndexOf(state.day) + randInt(state.rng, 1, 4);
     const f = forwardAt(state.market, c, physicalDeliveryDay(month));
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %) ; un contact qui
     // vous fait confiance propose de meilleures conditions (jusqu'à 0,3 % de mieux à confiance maximale).
     const trust = contactAt(state, cp.id)?.trust ?? 0;
-    const skew = f * (0.0015 - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
+    const skew = f * (factors(state).offerSkew - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
     let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
     const id = newId(state, 'o');
@@ -179,9 +200,9 @@ export function generateOffers(state: GameState) {
     diff = roundTo(diff, spec.tick);
     // phase 8 : une petite maison se voit proposer des parts de cargaison (co-chargement) plutôt qu'une cargaison
     // entière qui dépasserait ses fonds propres (une cargaison de GNL vaut ~40 M$)
-    let qty = pick(state.rng, spec.physical.cargoSizes);
+    let qty = opts.qty ?? pick(state.rng, spec.physical.cargoSizes);
     const notional = qty * f * spec.valuePerUnit * fx(state.market, spec.currency);
-    const cap = 1.2 * Math.max(5e6, nav(state));
+    const cap = factors(state).cargoCapNav * Math.max(5e6, nav(state));
     if (notional > cap) {
       const step = Math.max(1, spec.lot.kind === 'fixed' ? spec.lot.qty : 1000);
       qty = Math.max(step, Math.round((qty * Math.max(0.15, cap / notional)) / step) * step);
@@ -298,7 +319,7 @@ export function spotBuy(state: GameState, c: CommodityId, locationId: string, qt
   if (spec.physical.storable === false) return { ok: false, message: `${spec.short} : ne se stocke pas. Utilisez les contrats à terme et les livraisons physiques.` };
   const loc = findLocation(c, locationId);
   const pen = isPresent(state, loc.cityId) ? 0 : REMOTE_SPOT_PENALTY;
-  const price = roundTo(localSpot(state, c, locationId) * (1 + spec.physical.spotSpreadPct + pen), spec.tick);
+  const price = roundTo(localSpot(state, c, locationId) * (1 + spec.physical.spotSpreadPct * factors(state).spotSpreadMult + pen), spec.tick);
   const cost = qty * price * spec.valuePerUnit * fx(state.market, spec.currency);
   const available = state.company.cash - state.company.im + rcfHeadroom(state);
   if (cost > available) return { ok: false, message: 'Liquidité insuffisante (cash + RCF disponible).' };
@@ -319,7 +340,7 @@ export function spotSell(state: GameState, lotId: string, qty?: number): ActionR
   const loc = findLocation(lot.commodity, lot.locationId);
   const q = Math.min(lot.qty, qty ?? lot.qty);
   const pen = isPresent(state, loc.cityId) ? 0 : REMOTE_SPOT_PENALTY;
-  const price = roundTo(localSpot(state, lot.commodity, lot.locationId, lot.grade) * (lot.quality ?? 1) * (1 - spec.physical.spotSpreadPct - pen), spec.tick);
+  const price = roundTo(localSpot(state, lot.commodity, lot.locationId, lot.grade) * (lot.quality ?? 1) * (1 - spec.physical.spotSpreadPct * factors(state).spotSpreadMult - pen), spec.tick);
   const proceeds = q * price * spec.valuePerUnit * fx(state.market, spec.currency);
   addCash(state, proceeds, 'physical', lot.commodity);
   noteSale(state, lot, q, price, `Vente spot ${spec.short} ${loc.label}`);
@@ -342,7 +363,7 @@ export function chargeStorage(state: GameState, days: number) {
     const spec = COMMODITIES[c];
     const total = lots.reduce((s2, l) => s2 + l.qty, 0);
     const billed = Math.max(0, total - ownedCapacity(state, loc));
-    const cost = billed * storageRate(state, c) * (days / 30) * spec.valuePerUnit * fx(state.market, spec.currency);
+    const cost = billed * storageRate(state, c) * factors(state).storageMult * (days / 30) * spec.valuePerUnit * fx(state.market, spec.currency);
     if (cost > 0) addCash(state, -cost, 'storage', c);
   }
 }
@@ -423,6 +444,8 @@ export function processDeliveries(state: GameState): string[] {
     if (remaining > 0) {
       const px = localSpot(state, d.commodity, d.locationId, d.grade) * (1 + SHORT_COVER_PREMIUM);
       addCash(state, -remaining * px * k, 'physical', d.commodity);
+      // c'est une vraie opération : vendue au prix du contrat, rachetée au comptant avec la prime d'urgence
+      recordDeal(state, `Vente ${spec.short} ${target.label} servie par un rachat d’urgence`, remaining * (d.price - px) * k);
       msgs.push(`Rachat d'urgence de ${remaining.toLocaleString('fr-FR')} ${spec.qtyUnit} de ${spec.short} pour honorer une vente (prime ${(SHORT_COVER_PREMIUM * 100).toFixed(1)} %).`);
     }
     addCash(state, d.qty * d.price * k, 'physical', d.commodity);

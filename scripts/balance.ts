@@ -88,6 +88,26 @@ const BOTS: Record<string, Bot> = {
     }
     for (const e of s.staff.employees.filter((x) => x.role === 'trader' && !x.mandate)) dispatch(s, { type: 'SET_MANDATE', id: e.id, budget: 250_000 });
   },
+  // élève du tutoriel : achète + couvre une cargaison à la fois (au plus 3), cherche un acheteur au même endroit
+  // livré après l'achat, sinon revend au comptant à l'arrivée ; couverture automatique pour le débouclage
+  tuto: (s) => {
+    if (!s.automation.autoHedge.on) dispatch(s, { type: 'SET_AUTOMATION', patch: { autoRoll: true, autoHedge: { on: true, ratio: 1, threshold: 0.1 } } });
+    const longs = s.forwards.filter((d) => d.side > 0);
+    if (longs.length < 3) {
+      const o = s.offers.filter((x) => x.side > 0 && !x.bribe && !sanctionedOrigin(s, x) && offerNetEdge(s, x) > 0).sort((a, b) => offerNetEdge(s, b) - offerNetEdge(s, a))[0];
+      if (o) dispatch(s, { type: 'ACCEPT_OFFER', offerId: o.id, inspect: true });
+    }
+    for (const d of [...s.forwards.filter((x) => x.side > 0)]) {
+      const covered = s.forwards.some((x) => x.side < 0 && x.commodity === d.commodity && x.locationId === d.locationId);
+      if (covered) continue;
+      const o = s.offers.find((x) => x.side < 0 && x.commodity === d.commodity && x.locationId === d.locationId && x.month >= d.month && offerEdge(s, x) > 0 && x.qty <= d.qty * 1.05);
+      if (o) dispatch(s, { type: 'ACCEPT_OFFER', offerId: o.id });
+    }
+    for (const l of [...s.inventory]) {
+      const committed = s.forwards.some((d) => d.side < 0 && d.commodity === l.commodity && d.locationId === l.locationId);
+      if (!committed) dispatch(s, { type: 'SPOT_SELL', lotId: l.id });
+    }
+  },
   // spéculateur : long Brent et cuivre (1,5× les fonds propres chacun), sans couverture
   speculateur: (s) => {
     if (s.futures.length) return;
@@ -104,11 +124,12 @@ const BOTS: Record<string, Bot> = {
 const years = Number(process.argv[2] ?? 1);
 const seeds = Number(process.argv[3] ?? 6);
 const only = process.argv[4];
+const diff = (process.argv[5] ?? 'normal') as 'debutant' | 'normal' | 'expert';
 for (const [name, bot] of Object.entries(BOTS).filter(([n]) => !only || n === only)) {
   const rets: number[] = [];
   let bankrupt = 0, fines = 0, inv = 0;
   for (let k = 0; k < seeds; k++) {
-    const s = createGame({ seed: `bal-${k}`, years });
+    const s = createGame({ seed: `bal-${k}`, years, difficulty: diff, ...(diff === 'debutant' ? { volatility: 0.7, crisisFrequency: 0.3, commodities: ['BRENT', 'TTF', 'CU', 'WHEAT', 'API2'] } : {}) });
     while (s.status === 'running') {
       bot(s);
       advanceDay(s);

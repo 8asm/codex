@@ -584,5 +584,5 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .lesson-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .lesson-icon { font-size: 20px; }
 .lesson ol { padding-left: 18px; margin: 6px 0; }
-.lesson-card { position: absolute; left: 96px; bottom: 64px; width: min(360px, calc(100vw - 120px)); z-index: 30; background: var(--panel); border: 1px solid var(--gold); border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.lesson-card { position: absolute; right: 16px; top: 196px; width: min(340px, calc(100vw - 32px)); z-index: 30; background: var(--panel); border: 1px solid var(--gold); border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .lesson-card p { margin: 6px 0; }

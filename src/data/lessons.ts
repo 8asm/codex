@@ -29,7 +29,27 @@ export interface Lesson {
 const fut = (s: GameState, c: CommodityId, sign: 1 | -1) => s.futures.some((p) => p.commodity === c && Math.sign(p.lots) === sign);
 const opt = (s: GameState, c: CommodityId, f: (o: GameState['options'][number]) => boolean) => s.options.some((o) => o.commodity === c && f(o));
 
+/** Exposition physique (stocks, forwards, cargaisons) d'une commodité, en unités. */
+const phys = (s: GameState, c: CommodityId) =>
+  s.forwards.filter((d) => d.commodity === c).reduce((a, d) => a + d.side * d.qty, 0) +
+  s.inventory.filter((l) => l.commodity === c).reduce((a, l) => a + l.qty, 0) +
+  s.voyages.filter((v) => v.commodity === c).reduce((a, v) => a + v.qty, 0);
+const futQty = (s: GameState, c: CommodityId) => s.futures.filter((p) => p.commodity === c).reduce((a, p) => a + p.lots, 0);
+const sold = (s: GameState) => (s.stats?.deals.length ?? 0) > 0;
+
 export const LESSONS: Lesson[] = [
+  {
+    id: 'first', title: 'Premiers pas : acheter, couvrir, revendre', icon: '🧭', managing: true,
+    concept: 'Le métier de négociant tient en une phrase : acheter une cargaison à un endroit et à un moment, la revendre ailleurs ou plus tard, et ne pas parier sur le prix entre les deux. La marge vient de l’écart de prix entre les lieux et les dates (le « différentiel »), pas de la direction du marché. Dix minutes pour faire le tour.',
+    steps: [
+      { text: 'Achetez une cargaison : panneau Physique, une offre qui « vend ». Le bouton « Acheter + couvrir » achète la cargaison et vend aussitôt les futures qui la protègent. Préférez une offre dont la valeur estimée est en vert.', panel: 'physical', check: (s) => s.forwards.length > 0 || s.inventory.length > 0 || sold(s) },
+      { text: 'Couvrez le prix, si ce n’est pas déjà fait : dans le Livre, « Neutraliser Δ » sur la ligne de la commodité. Vous vendez des futures : si le prix baisse avant la revente, leur gain compense la perte sur la cargaison.', panel: 'book', check: (s) => sold(s) || s.automation.autoHedge.on || s.forwards.some((d) => d.side > 0 && futQty(s, d.commodity) < 0) || s.inventory.some((l) => futQty(s, l.commodity) < 0) },
+      { text: 'Trouvez un acheteur : une offre qui « cherche à acheter » la même commodité, au même lieu, livrée après votre achat. Elle porte le badge « ✓ adosse votre achat ». Bouton « Vendre + couvrir » : il rachète la couverture devenue inutile. S’il n’y en a pas, avancez d’un jour (N) : de nouvelles offres arrivent chaque jour.', panel: 'physical', check: (s) => sold(s) || s.forwards.some((d) => d.side < 0) },
+      { text: 'Lancez le temps (Espace, ou les flèches en haut). Votre achat est livré en stock, puis votre vente est servie depuis ce stock. Vous pouvez aussi revendre le stock au comptant depuis le Livre.', panel: 'book', check: sold },
+      { text: 'La vente est faite : s’il vous reste des futures sans physique en face, ils n’ont plus d’objet. Dans Marchés, choisissez la commodité et cliquez « Clôturer », pour ne pas garder un pari ouvert.', panel: 'market', check: (s) => sold(s) && s.futures.every((p) => Math.abs(phys(s, p.commodity)) > 0) },
+    ],
+    outro: 'Votre résultat se lit dans le Livre (P&L par commodité) et la Trésorerie (cash par catégorie). Pour la suite : activez la couverture automatique (panneau Automatisation, touche U), voyagez pour négocier sur place, et explorez les autres leçons.',
+  },
   {
     id: 'crack', title: 'La marge du raffineur : le crack spread', icon: '🏭', requires: ['BRENT', 'GASOIL'],
     concept: 'Un raffineur achète du brut et vend des produits. Sa marge, le « crack spread », est l’écart entre les deux : gazole ($/t ÷ 7,45 bbl/t) moins Brent ($/bbl). Acheter le brut et vendre le gazole à terme fige cette marge, quel que soit le niveau du pétrole.',

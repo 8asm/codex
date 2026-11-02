@@ -79,7 +79,7 @@ export function isRestricted(state: GameState, cpId: string, c: CommodityId, del
 
 export function pushNews(state: GameState, n: Omit<NewsItem, 'id' | 'day'>) {
   const item = addNews(state, n);
-  if (n.major) state.pendingAlerts.push({ kind: 'major_news', text: n.headline });
+  if (item.major) state.pendingAlerts.push({ kind: 'major_news', text: n.headline });
   return item;
 }
 

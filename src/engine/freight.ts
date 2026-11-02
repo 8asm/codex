@@ -17,7 +17,11 @@ import type { ActionResult, FfaPosition, FreightIndex, GameState, MarketState } 
 export const FFA_IM_RATE = 0.25;
 export const FFA_COMMISSION = 0.0025;
 
-export const frMu = (i: FreightIndex) => Math.log(FREIGHT[i].mean) - FREIGHT[i].sigma ** 2 / (4 * FREIGHT[i].kappa);
+/** Volatilité effective d'un indice de fret : celle de l'indice × le multiplicateur de volatilité du monde
+ *  (« calme » / « agité », régimes de crise), comme pour les commodités. */
+export const frSigma = (i: FreightIndex, m: Pick<MarketState, 'volMult'>) => FREIGHT[i].sigma * (m.volMult ?? 1);
+/** Niveau moyen du log-taux tel que la moyenne stationnaire du taux soit `mean` (σ² / 4κ : variance stationnaire / 2). */
+export const frMu = (i: FreightIndex, m: Pick<MarketState, 'volMult'>) => Math.log(FREIGHT[i].mean) - frSigma(i, m) ** 2 / (4 * FREIGHT[i].kappa);
 
 export function initFreight(): Record<FreightIndex, number> {
   return Object.fromEntries(FREIGHT_IDS.map((i) => [i, Math.log(FREIGHT[i].mean)])) as Record<FreightIndex, number>;
@@ -27,8 +31,8 @@ export function stepFreight(m: MarketState, rng: RngState, dt: number) {
   for (const i of FREIGHT_IDS) {
     const f = FREIGHT[i];
     const e = Math.exp(-f.kappa * dt);
-    const sd = f.sigma * Math.sqrt((1 - Math.exp(-2 * f.kappa * dt)) / (2 * f.kappa));
-    m.freight[i] = m.freight[i] * e + frMu(i) * (1 - e) + sd * normal(rng);
+    const sd = frSigma(i, m) * Math.sqrt((1 - Math.exp(-2 * f.kappa * dt)) / (2 * f.kappa));
+    m.freight[i] = m.freight[i] * e + frMu(i, m) * (1 - e) + sd * normal(rng);
   }
 }
 
@@ -42,7 +46,8 @@ export function freightForward(m: MarketState, i: FreightIndex, day: Day, asOf =
   const f = FREIGHT[i];
   const tau = Math.max(0, yearFrac(asOf, day));
   const e = Math.exp(-f.kappa * tau);
-  return Math.exp(e * x + (1 - e) * frMu(i) + (f.sigma ** 2 / (4 * f.kappa)) * (1 - e * e));
+  const s = frSigma(i, m);
+  return Math.exp(e * x + (1 - e) * frMu(i, m) + (s ** 2 / (4 * f.kappa)) * (1 - e * e));
 }
 
 export function fixingDaysOf(mi: MonthIndex): Day[] {

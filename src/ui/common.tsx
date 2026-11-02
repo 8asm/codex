@@ -12,7 +12,17 @@ export function Term({ id, children }: { id: string; children?: ReactNode }) {
   const openCodex = useStore((s) => s.openCodex);
   if (!entry) return <>{children}</>;
   return (
-    <span className="term" onMouseEnter={() => seeTerm(id)} onClick={(e) => { e.stopPropagation(); openCodex(id); }}>
+    <span
+      className="term"
+      onMouseEnter={() => seeTerm(id)}
+      onClick={(e) => {
+        // dans un bouton, le clic appartient au bouton (l'infobulle reste au survol) : sinon « Acheter + couvrir »
+        // ouvrait le codex au lieu d'acheter
+        if ((e.currentTarget as HTMLElement).closest('button')) return;
+        e.stopPropagation();
+        openCodex(id);
+      }}
+    >
       {children ?? entry.term}
       <span className="term-tip">
         <b>{entry.term}</b>

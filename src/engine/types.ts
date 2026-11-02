@@ -564,6 +564,8 @@ export interface GameConfig {
   goal?: GoalId;
   /** Phase 8 : commodités autorisées dans la partie (offres, panneaux). Absent = toutes. */
   commodities?: CommodityId[];
+  /** Difficulté (frictions commerciales et frais fixes, jamais le pricing). Absent = normal. */
+  difficulty?: 'debutant' | 'normal' | 'expert';
 }
 
 export interface GameState {
@@ -611,6 +613,8 @@ export interface GameState {
   /** desks de trading délégués aux traders recrutés (phase 9) */
   desks?: DeskState;
   lessons?: LessonState;
+  /** bruits de couloir déjà entendus (aucun effet sur le jeu) */
+  lore?: { lastNews: Day; lastAside: Day; seen: string[] };
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];

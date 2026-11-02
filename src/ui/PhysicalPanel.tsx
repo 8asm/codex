@@ -6,7 +6,7 @@ import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { basis } from '../engine/market';
 import { roundTo } from '../engine/math';
-import { effectiveDiff, offerNetEdge, INSPECTION_COST, isPresent, LOCAL_EDGE_PCT, notionalUsd, offerBlock, offerDeliveryDay, offerEdge, offerPrice, offerToleranceValue, offSpecProbability, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { effectiveDiff, offerCosts, offerNetEdge, INSPECTION_COST, isPresent, LOCAL_EDGE_PCT, notionalUsd, offerBlock, offerDeliveryDay, offerEdge, offerPrice, offerToleranceValue, offSpecProbability, REMOTE_SPOT_PENALTY } from '../engine/physical';
 import { offerHasBuyerLc, offerNeedsLc } from '../engine/financing';
 import { sanctionedOrigin } from '../engine/compliance';
 import { cpRating } from '../engine/credit';
@@ -105,13 +105,15 @@ function OfferCard({ o }: { o: Offer }) {
             <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.label}</Term> · livraison {monthLabel(o.month)} ({formatDayShort(offerDeliveryDay(o))}) · {city.name}
           </div>
         </div>
+        {o.side < 0 && g.forwards.some((d) => d.side > 0 && d.commodity === o.commodity && d.locationId === o.locationId && d.deliveryDay <= offerDeliveryDay(o)) && <span className="badge here" title="Même commodité, même lieu, livrée après votre achat : votre cargaison servira cette vente.">✓ adosse votre achat</span>}
+        {o.side < 0 && g.inventory.some((l) => l.commodity === o.commodity && l.locationId === o.locationId) && <span className="badge here" title="Vous avez du stock à ce lieu pour servir cette vente.">✓ servie par votre stock</span>}
         <span className={`badge ${here ? 'here' : ''}`}>{here ? '🤝 sur place' : '📞 téléphone'}</span>
       </div>
       <div className="offer-grid">
         <div><span>Diff proposé</span><b>{diff >= 0 ? '+' : ''}{price(o.commodity, diff)}</b></div>
         <div><span>Diff de marché</span><b>{fair >= 0 ? '+' : ''}{price(o.commodity, roundTo(fair, spec.tick))}</b></div>
         <div><span>Prix fixe</span><b>{price(o.commodity, px)} {spec.priceUnit}</b></div>
-        <div title={`Valeur nette d'un débouclage isolé au comptant : ${signedUsd(offerNetEdge(g, o))}. La valeur brute ne se réalise qu'adossée à l'opération inverse.`}><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b><small className="muted"> net seul {signedUsd(offerNetEdge(g, o))}</small></div>
+        <div title={(() => { const c = offerCosts(g, o); return `Valeur nette ${signedUsd(offerNetEdge(g, o))} = valeur du prix ${signedUsd(edge)} − sortie au comptant ${usd(c.exit)} − couverture aller-retour ${usd(c.hedge)}${c.lc ? ` − lettre de crédit ${usd(c.lc)}` : ''}${c.inspection ? ` − inspection ${usd(c.inspection)}` : ''}. Restent hors calcul : stockage, financement du stock et risque de base.`; })()}><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b><small className="muted"> net seul {signedUsd(offerNetEdge(g, o))}</small></div>
       </div>
       <div className="incoterm small">
         <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.incoterm}</Term> : {INCOTERM_DUTY[loc.incoterm]} · laycan {formatDayShort(offerDeliveryDay(o) - 2)} – {formatDayShort(offerDeliveryDay(o) + 2)}

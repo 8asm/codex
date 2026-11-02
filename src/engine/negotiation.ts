@@ -8,6 +8,7 @@
  * La contrepartie a une limite cachée (réservation) qui dépend de la relation et de l'information détenue.
  * Tout est exprimé dans l'espace « plus grand = mieux pour le joueur » (les prix d'achat sont inversés).
  */
+import { loreAside } from './lore';
 import { newId } from './ledger';
 import { remember, npc } from './npcs';
 import { uniform } from './rng';
@@ -94,6 +95,7 @@ export function negotiate(state: GameState, move: NegotiationMove, skill: number
       if (greed > 0.85) remember(state, n.npcId, -3, 'Négociation serrée');
       else remember(state, n.npcId, 2, 'Accord trouvé');
       msg = `Accord à ${fmt(n, n.offer)} ${n.unit}.`;
+      { const a = loreAside(state, `nego:${n.id}`); if (a) msg += ` En raccrochant : « ${a} »`; }
       break;
     }
     case 'rompre': {

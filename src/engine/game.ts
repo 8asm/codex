@@ -8,6 +8,9 @@
  *   clôture    -> VM, échéances, livraisons, stockage, intérêts, frais, impôts, trésorerie/appels de marge
  *   nuit       -> le marché évolue jusqu'au jour ouvré suivant
  */
+import { factors } from './difficulty';
+import { offerBlock } from './physical';
+import { loreDay } from './lore';
 import { CITIES, CITY_BY_ID } from '../data/cities';
 import { ZONES } from '../data/world';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
@@ -35,7 +38,7 @@ import { stepCredit } from './credit';
 import { recordFreightFixings, settleFfa, tradeFfa } from './freight';
 import { shipCargo, stepVoyages } from './logistics';
 import { buyOpportunity, createManagerPool, fireManager, generateOpportunities, hedgeProduction, hireManager, sellAsset, startMaintenance, stepAssets } from './assets';
-import { DEFAULT_AUTOMATION, runAutomation } from './automation';
+import { DEFAULT_AUTOMATION, rehedgeAfterDeliveries, runAutomation } from './automation';
 import { lessonTick, quitLesson, startLesson } from './lessons';
 import { deskMonth, deskTrading, liquidateDesks, setMandate, settleDesks } from './desks';
 import { FREIGHT_IDS } from '../data/freight';
@@ -208,6 +211,12 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   if (config.mode === 'story' || config.start === 'join') initCareer(state);
   applyScenario(state);
   refreshCandidates(state);
+  // mode débutant : roll et logistique automatiques, visite guidée lancée d'office (la couverture reste à apprendre)
+  if (config.difficulty === 'debutant' && !state.career && !config.scenario) {
+    state.automation.autoRoll = true;
+    state.automation.autoLogistics = true;
+    state.lessons = { active: 'first', step: 0, done: [] };
+  }
   const city = CITY_BY_ID[state.company.hqCity]!;
   if (!state.career) {
     addNews(state, {
@@ -265,6 +274,18 @@ function openDay(state: GameState) {
   if (state.day !== state.startDay) stepCompanies(state);
   recomputeIm(state);
   generateOffers(state);
+  // débutant : il y a toujours au moins une cargaison à acheter et une à vendre sur la table (offres hors KYC)
+  if (factors(state).guaranteedOffers && !state.career) {
+    if (!state.offers.some((o) => o.side > 0 && !offerBlock(state, o))) generateOffers(state, { count: 1, side: 1 });
+    if (!state.offers.some((o) => o.side < 0 && !offerBlock(state, o))) generateOffers(state, { count: 1, side: -1 });
+    // visite guidée, étape « trouver un acheteur » : un acheteur au même lieu, livré après l'achat, est sur la table
+    if (state.lessons?.active === 'first' && state.lessons.step === 2) {
+      const buy = state.forwards.find((d) => d.side > 0 && !state.forwards.some((x) => x.side < 0 && x.commodity === d.commodity && x.locationId === d.locationId));
+      if (buy && !state.offers.some((o) => o.side < 0 && o.commodity === buy.commodity && o.locationId === buy.locationId && o.month >= buy.month && !offerBlock(state, o))) {
+        generateOffers(state, { count: 1, side: -1, commodity: buy.commodity, locationId: buy.locationId, month: buy.month + 1, qty: buy.qty });
+      }
+    }
+  }
   if (state.career) {
     careerOpen(state);
     maybeTip(state);
@@ -272,6 +293,7 @@ function openDay(state: GameState) {
     stepCompromises(state);
     decayRelations(state);
   }
+  loreDay(state);
   morningAdvice(state);
 }
 
@@ -304,6 +326,7 @@ function closeDay(state: GameState) {
   state.stats.voyagesDone += Math.max(0, voyagesBefore - state.voyages.length);
   for (const msg of stepAssets(state, days)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   for (const msg of stepFinancing(state, days, newMonth)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  rehedgeAfterDeliveries(state);
   chargeStorage(state, days);
   accrueInterest(state, days);
   stepCredit(state, days);
@@ -312,7 +335,7 @@ function closeDay(state: GameState) {
   const cur = ymd(state.day);
   if (monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay) && paysCompanyCosts(state)) {
     const city = CITY_BY_ID[co.hqCity]!;
-    const cost = STAFF_MONTHLY * city.staffCostIndex;
+    const cost = STAFF_MONTHLY * city.staffCostIndex * factors(state).overheadMult;
     addCash(state, -cost, 'overhead');
     log(state, `Frais généraux du mois (salaires de l’équipe)`, -cost);
     officeMonth(state);

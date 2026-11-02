@@ -79,7 +79,7 @@ function applyScenario(base: MarketState, s: Scenario, only?: Set<string>): Mark
     m.ivLevel[c] = Math.max(IV_PARAMS.min, m.ivLevel[c] + IV_PARAMS.sigma * Math.sqrt(VAR_DT) * s.iv[i]!);
   });
   m.fxLog += 0.08 * Math.sqrt(VAR_DT) * s.zc[FX_INDEX]!;
-  FREIGHT_IDS.forEach((i, j) => (m.freight[i] += FREIGHT[i].sigma * Math.sqrt(VAR_DT) * s.fr[j]!));
+  FREIGHT_IDS.forEach((i, j) => (m.freight[i] += FREIGHT[i].sigma * m.volMult * Math.sqrt(VAR_DT) * s.fr[j]!));
   return m;
 }
 

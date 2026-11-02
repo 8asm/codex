@@ -17,6 +17,7 @@
  * Jeu : le prestige (0–100) agit sur les invitations au siège, les négociations de contrats physiques,
  * les levées de fonds, l'arrivée de candidats de talent ; le style et les objets donnent des bonus ciblés.
  */
+import { factors } from './difficulty';
 import { CITY_BY_ID } from '../data/cities';
 import {
   BASE_SEATS, BUILDING_DEPRECIATION_PA, CONFERENCE_COST, FIT_OUT_MONTHS, INVITE_COST, ITEM_BY_ID, OFFICE_CAP_RATE,
@@ -341,7 +342,8 @@ export function officeMonth(state: GameState): number {
     if (state.career) state.career.reputation = Math.min(100, state.career.reputation + 3);
     addNews(state, { headline: `Conférence annuelle de ${state.company.name} : tout le négoce est venu`, tone: 'up', major: false, category: 'entreprises', cityId: state.company.hqCity });
   }
-  const total = rent + upkeep + overflow + conf;
+  // la difficulté module les frais fixes (loyer, charges), comme l'équipe de base
+  const total = (rent + upkeep + overflow) * factors(state).overheadMult + conf;
   addCash(state, -total, 'overhead');
   log(state, `Bureaux : loyer ${Math.round(rent / 1000)} k$, charges ${Math.round(upkeep / 1000)} k$${overflow ? `, coworking de débordement ${Math.round(overflow / 1000)} k$` : ''}${conf ? `, conférence ${Math.round(conf / 1000)} k$` : ''}`, -total);
   return total;

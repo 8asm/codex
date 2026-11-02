@@ -122,6 +122,14 @@ npm run build      # build de production dans dist/
 - **Leçons guidées** (🎓, `W`) : crack spread, WTI négatif, électricité, GNL, qualités de brut, strip, desks, bureaux.
 - **Plus de narratifs macro** (vague de GNL, El Niño, relance de l'acier chinois, biocarburants, ralentissement des véhicules électriques…), sur les 38 marchés.
 
+## Phase 10 — ce qui s'ajoute
+
+- **Mode débutant** (proposé d'office à la première partie) : cinq marchés, cargaisons à votre taille, contreparties conciliantes, frais réduits, monde calme, panneaux dévoilés progressivement. Normal et Expert pour la suite.
+- **Visite guidée « Premiers pas »** : acheter une cargaison, la couvrir, trouver un acheteur, livrer, déboucler. Environ dix minutes.
+- **Valeur nette honnête** sur chaque offre : tous les coûts certains sont déduits (détail au survol), et les offres qui adossent votre achat sont signalées.
+- **Corrections** issues d'une partie jouée de bout en bout dans le navigateur (voir DESIGN_NOTES, phase 10).
+- Une ville de plus : Lyon.
+
 ### Raccourcis
 
 `J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `W` leçons · `C` codex · `Échap` fermer

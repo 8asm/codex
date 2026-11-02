@@ -7,6 +7,7 @@
  * Aussi : les tuyaux des relations (informations en avance, parfois privilégiées : délit d'initié s'il est
  * exploité) et les enquêtes.
  */
+import { loreAside } from './lore';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { COMPANY_BY_ID } from '../data/companies';
 import { TRACK_TITLES } from '../data/career';
@@ -421,6 +422,8 @@ export function pushSituation(state: GameState, template: string, data?: Record<
   const b = t.build(state, data);
   if (!b) return;
   const { defaultChoice, ttl, ...rest } = b;
+  // conversations détendues : parfois, un mot en passant
+  if (b.npcId && !b.urgent) { const a = loreAside(state, `sit:${template}`); if (a) rest.text = `${rest.text} Au passage : « ${a} »`; }
   state.situations.push({ ...rest, id: newId(state, 'si'), day: state.day, template, expiresDay: addBusinessDays(state.day, ttl ?? (b.urgent ? 4 : 8)), data: { ...(rest.data ?? {}), defaultChoice } });
   if (b.urgent) state.pendingAlerts.push({ kind: 'situation', text: b.title });
 }

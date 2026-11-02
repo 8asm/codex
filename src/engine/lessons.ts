@@ -55,5 +55,6 @@ export function lessonTick(s: GameState) {
     if (!st.done.includes(l.id)) st.done.push(l.id);
     st.active = null;
     s.pendingAlerts.push({ kind: 'achievement', text: `${l.icon} Leçon terminée : ${l.title}. ${l.outro}` });
+    if (l.id === 'first' && s.config.difficulty === 'debutant') s.pendingAlerts.push({ kind: 'achievement', text: '🔓 Tous les panneaux sont débloqués : risque, trésorerie, options, fret, actifs, équipes… Les leçons 🎓 vous guident sur chacun.' });
   }
 }

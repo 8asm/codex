@@ -56,6 +56,15 @@ export function runAutomation(state: GameState): string[] {
   return msgs;
 }
 
+/**
+ * Couverture recalée après les livraisons et arrivées du soir : sans cela, la couverture d'une vente livrée resterait
+ * ouverte toute la nuit sans physique en face (exposition orpheline d'un jour à chaque livraison).
+ */
+export function rehedgeAfterDeliveries(state: GameState) {
+  if (!state.automation.autoHedge.on) return;
+  for (const m of stripHedge(state)) log(state, m);
+}
+
 /** Échéances de couverture possibles : celles qui ne cotent pas leurs cinq derniers jours ouvrés. */
 function hedgeMonths(state: GameState, c: CommodityId): MonthIndex[] {
   const spec = COMMODITIES[c];

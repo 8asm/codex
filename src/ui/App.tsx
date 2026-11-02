@@ -176,7 +176,10 @@ export function App() {
     return true;
   };
   const visible0 = (id: PanelId) => byRights(id) && (id === 'logistics' ? showLogi || !!game?.career : id === 'assets' ? showAssets || !!game?.career : id === 'automation' ? false : true);
-  const visible = (id: PanelId) => visible0(id) && visible1(id);
+  // débutant : tant que la visite guidée n'est pas finie, seuls les panneaux essentiels sont affichés
+  const guided = game?.config.difficulty === 'debutant' && !game.career && !(game.lessons?.done.includes('first'));
+  const ESSENTIAL: PanelId[] = ['market', 'physical', 'book', 'news', 'lessons', 'game', 'codex', 'travel'];
+  const visible = (id: PanelId) => visible0(id) && visible1(id) && (!guided || ESSENTIAL.includes(id));
   const visible1 = (id: PanelId) => (id === 'exotics' ? showOptions && (game!.history.length > 20 || game!.exotics.length > 0) : id === 'finance' ? showTreasury : id === 'compliance' ? game!.history.length > 10 || game!.compliance.cases.length > 0 : id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
   return (
