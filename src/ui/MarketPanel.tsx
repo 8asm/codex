@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES } from '../data/commodities';
+import { activeCommodities } from '../engine/physical';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { listedMonths } from '../engine/contracts';
 import { quote } from '../engine/liquidity';
@@ -9,7 +10,7 @@ import { computeVar } from '../engine/risk';
 import { nav } from '../engine/valuation';
 import { Portrait } from './Advisors';
 import { bookWithFuture, useLiveVar } from './derived';
-import type { CommodityId } from '../engine/types';
+import type { CommodityId, CommoditySpec } from '../engine/types';
 import { Panel, Sparkline, Term } from './common';
 import { constantMaturitySeries, curveShape, prevPrice } from './derived';
 import { pct, price, qty, signedUsd, tone, usd } from './format';
@@ -21,24 +22,40 @@ export function MarketPanel() {
   const c = useStore((s) => s.commodity);
   const select = useStore((s) => s.selectCommodity);
   const setPanel = useStore((s) => s.setPanel);
+  const [fam, setFam] = useState<CommoditySpec['family']>(COMMODITIES[c].family);
+  const list = activeCommodities(g);
+  const fams = (['energy', 'metals', 'agri'] as const).filter((f) => list.some((x) => COMMODITIES[x].family === f));
+  const GROUP_ORDER = ['brut', 'produits', 'gaz', 'électricité', 'carbone', 'charbon', 'base', 'batterie', 'précieux', 'ferreux', 'grains', 'oléagineux', 'softs'];
+  const shown = list.filter((x) => COMMODITIES[x].family === fam).sort((a, b) => GROUP_ORDER.indexOf(COMMODITIES[a].group) - GROUP_ORDER.indexOf(COMMODITIES[b].group));
+  let lastGroup = '';
 
   return (
     <Panel title="Marchés" icon="📈" onClose={() => setPanel('market')} wide>
+      {fams.length > 1 && (
+        <div className="cpicker-fam">
+          {fams.map((f) => <button key={f} className={fam === f ? 'on' : ''} onClick={() => setFam(f)}>{{ energy: '🛢️ Énergie', metals: '🔶 Métaux', agri: '🌾 Agricoles' }[f]} <small>{list.filter((x) => COMMODITIES[x].family === f).length}</small></button>)}
+        </div>
+      )}
       <div className="mkt-list">
-        {COMMODITY_IDS.map((id) => {
+        {shown.map((id) => {
+          const grp = COMMODITIES[id].group;
+          const header = grp !== lastGroup ? (lastGroup = grp) : null;
           const spec = COMMODITIES[id];
           const mi = listedMonths(spec, g.day)[0]!;
           const p = futuresPrice(g.market, id, mi);
           const prev = prevPrice(g.market, id, mi);
           const ch = prev ? p / prev - 1 : 0;
           return (
-            <button key={id} className={`mkt-row ${c === id ? 'on' : ''}`} onClick={() => select(id)} style={{ ['--c' as string]: spec.color }}>
+            <div key={id} className="mkt-wrap">
+            {header && <div className="mkt-group">{header}</div>}
+            <button className={`mkt-row ${c === id ? 'on' : ''}`} onClick={() => select(id)} style={{ ['--c' as string]: spec.color }}>
               <span className="mkt-icon">{spec.icon}</span>
               <span className="mkt-name">{spec.short}<small>{monthLabel(mi)}</small></span>
               <Sparkline data={constantMaturitySeries(g.market, id, 60)} color={spec.color} width={70} height={24} />
               <span className="mkt-px">{price(id, p)}<small>{spec.priceUnit}</small></span>
               <span className={`mkt-ch ${tone(ch)}`}>{pct(ch)}</span>
             </button>
+            </div>
           );
         })}
       </div>

@@ -16,13 +16,14 @@
  * Surveillance discrète (une fois par jour, à la clôture) : correction de Broadie-Glasserman-Kou,
  * décalage de la barrière (ou de l'extrême) d'un facteur e^{±0,5826 σ √Δt}.
  */
-import { COMMODITIES, CORRELATION, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES, CORRELATION, COMMODITY_IDS, FX_INDEX } from '../data/commodities';
 import { COUNTERPARTIES } from '../data/counterparties';
 import { addBusinessDays, nextBusinessDay, yearFrac, type Day, type MonthIndex } from './calendar';
 import { optionExpiry } from './contracts';
 import type { View } from './derivatives';
+import { SPREAD_BY_ID } from '../data/spreads';
 import { addCash, log, newId } from './ledger';
-import { FX_PARAMS, futuresPrice, fx, zeroRate } from './market';
+import { FX_PARAMS, futuresPrice, fx, priceShift, zeroRate } from './market';
 import { normCdf, roundTo } from './math';
 import { integratedVariance, lnForward, stepFactors } from './model';
 import { black76 } from './pricing';
@@ -265,6 +266,28 @@ export function crossCov(m: MarketState, c: CommodityId, mi1: MonthIndex, mi2: M
   );
 }
 
+/**
+ * Covariance des log-prix de deux futures (commodités éventuellement différentes) jusqu'à `until`, sous le modèle :
+ *   d ln F_i = (σχ_i e^{−κ_i(τ_i − s)} + ρ_i σξ_i) dB1_i + σξ_i √(1 − ρ_i²) dB2_i,
+ *   corr(B1_i, B1_j) = corr(B2_i, B2_j) = C_ij (matrice des chocs), B1 ⟂ B2.
+ * Intégrée par Simpson (64 pas) ; × niveaux de vol implicite. Pour une même commodité, égale à `crossCov`.
+ */
+export function crossCovPair(m: MarketState, c1: CommodityId, mi1: MonthIndex, c2: CommodityId, mi2: MonthIndex, until: Day): number {
+  const te = Math.max(0, yearFrac(m.day, until));
+  if (te <= 0) return 0;
+  const p1 = spec(c1).model, p2 = spec(c2).model;
+  const t1 = yearFrac(m.day, pricingDay(spec(c1), mi1)), t2 = yearFrac(m.day, pricingDay(spec(c2), mi2));
+  const k1 = m.volMult * m.ivLevel[c1], k2 = m.volMult * m.ivLevel[c2];
+  const C = c1 === c2 ? 1 : CORRELATION[corrIndex(c1)]![corrIndex(c2)]!;
+  const f = (s: number) => {
+    const a1 = p1.sigmaChi * k1 * Math.exp(-p1.kappa * Math.max(0, t1 - s)) + p1.rho * p1.sigmaXi * k1;
+    const a2 = p2.sigmaChi * k2 * Math.exp(-p2.kappa * Math.max(0, t2 - s)) + p2.rho * p2.sigmaXi * k2;
+    const b = p1.sigmaXi * k1 * p2.sigmaXi * k2 * Math.sqrt((1 - p1.rho * p1.rho) * (1 - p2.rho * p2.rho));
+    return C * (a1 * a2 + b);
+  };
+  return simpson(f, 0, te, 64);
+}
+
 /** Variance de ln F(month) entre deux dates futures (en jours), pour les périodes de cliquet. */
 function periodVar(m: MarketState, c: CommodityId, month: MonthIndex, from: Day, to: Day): number {
   const p = spec(c).model;
@@ -291,7 +314,7 @@ export function quantoCov(m: MarketState, c: CommodityId, month: MonthIndex, unt
   if (T <= 0) return 0;
   const tc = yearFrac(m.day, pricingDay(spec(c), month));
   const vm = m.volMult * m.ivLevel[c];
-  const rhoFx = CORRELATION[corrIndex(c)]![5]!;
+  const rhoFx = CORRELATION[corrIndex(c)]![FX_INDEX]!;
   const integral = ((p.sigmaChi * vm * Math.exp(-p.kappa * tc) * (Math.exp(p.kappa * T) - 1)) / p.kappa) + p.rho * p.sigmaXi * vm * T;
   const covWithFxLog = rhoFx * FX_PARAMS.sigma * integral;
   // X = devise de paiement par unité de devise de cotation : EURUSD si cotation EUR, 1/EURUSD si cotation USD
@@ -318,31 +341,44 @@ export function exoticUnitPrice(m: MarketState, x: ExoticSpec, st: ExoticState =
   const ccy = exoticCcy(x);
   const T = Math.max(0, yearFrac(m.day, x.expiry));
   const df = Math.exp(-zeroRate(m, ccy, T) * T);
-  const F = futuresPrice(m, c, x.month);
+  // log-normale décalée (WTI) : les formules s'appliquent à X = F + décalage, strikes et barrières décalés
+  const sh = priceShift(c);
+  const F = futuresPrice(m, c, x.month) + sh;
+  const K = x.kind === 'spread' || x.kind === 'lookback' || x.kind === 'cliquet' ? x.strike : x.strike + sh;
   const v = totalVar(m, c, x.month, x.expiry);
   const sigma = T > 0 ? Math.sqrt(v / T) : 0;
   const sDay = sigma * Math.sqrt(DT_DAY);
   switch (x.kind) {
     case 'barrier': {
       const bt = x.barrierType!;
-      const vanilla = black(F, x.strike, v, df, x.type);
+      const vanilla = black(F, K, v, df, x.type);
       if (st.hit) return bt.endsWith('out') ? 0 : vanilla;
-      const H = x.barrier! * Math.exp((bt.startsWith('up') ? 1 : -1) * BGK_BETA * sDay);
-      return barrierPrice(F, x.strike, H, v, df, x.type, bt);
+      const H = (x.barrier! + sh) * Math.exp((bt.startsWith('up') ? 1 : -1) * BGK_BETA * sDay);
+      return barrierPrice(F, K, H, v, df, x.type, bt);
     }
     case 'digital': {
       const pay = x.payout ?? 1;
-      if (T <= 0) return (x.type === 'C' ? F > x.strike : F < x.strike) ? pay : 0;
+      if (T <= 0) return (x.type === 'C' ? F > K : F < K) ? pay : 0;
       // réplication par call-spread serré sur la surface avec smile : −∂C/∂K (skew inclus)
-      const h = x.strike * 0.005;
-      const pr = (K: number) => black76(F, K, T, impliedVolAt(m, c, x.month, x.expiry, K, F), 0, x.type) * df;
-      const dCdK = (pr(x.strike + h) - pr(x.strike - h)) / (2 * h);
+      const h = Math.max(Math.abs(x.strike), F * 0.2) * 0.005;
+      const pr = (k: number) => black76(F, k, T, impliedVolAt(m, c, x.month, x.expiry, k - sh, F - sh), 0, x.type) * df;
+      const dCdK = (pr(K + h) - pr(K - h)) / (2 * h);
       return pay * (x.type === 'C' ? -dCdK : dCdK);
     }
     case 'lookback':
-      return lookbackPrice(F, st.extreme ?? F, v, df, x.type, sDay);
+      return lookbackPrice(F, st.extreme !== undefined ? st.extreme + sh : F, v, df, x.type, sDay);
     case 'spread': {
-      const F2 = futuresPrice(m, c, x.month2!);
+      if (x.spreadId) {
+        // spread entre commodités : a1·F1 − a2·F2 − K, Kirk avec la covariance croisée du modèle
+        const d = SPREAD_BY_ID[x.spreadId]!;
+        const s1 = priceShift(d.c1), s2 = priceShift(d.c2);
+        const X1 = futuresPrice(m, d.c1, x.month) + s1, X2 = futuresPrice(m, d.c2, x.month2!) + s2;
+        const v1 = crossCovPair(m, d.c1, x.month, d.c1, x.month, x.expiry);
+        const v2 = crossCovPair(m, d.c2, x.month2!, d.c2, x.month2!, x.expiry);
+        const c12 = crossCovPair(m, d.c1, x.month, d.c2, x.month2!, x.expiry);
+        return kirkSpread(d.a1 * X1, d.a2 * X2, x.strike + d.a1 * s1 - d.a2 * s2, v1, v2, c12, df, x.type);
+      }
+      const F2 = futuresPrice(m, c, x.month2!) + sh;
       const v1 = crossCov(m, c, x.month, x.month, x.expiry);
       const v2 = crossCov(m, c, x.month2!, x.month2!, x.expiry);
       const c12 = crossCov(m, c, x.month, x.month2!, x.expiry);
@@ -352,15 +388,15 @@ export function exoticUnitPrice(m: MarketState, x: ExoticSpec, st: ExoticState =
       const T2 = Math.max(T, yearFrac(m.day, x.expiry2!));
       const df2 = Math.exp(-zeroRate(m, ccy, T2) * T2);
       const s2 = atmVol(m, c, x.month, x.expiry2!);
-      return compoundCallOnCall(F, x.strike, x.strike2!, T, T2, s2, df, df2);
+      return compoundCallOnCall(F, K, x.strike2!, T, T2, s2, df, df2);
     }
     case 'quanto': {
       const Ft = F * Math.exp(-quantoCov(m, c, x.month, x.expiry));
-      return (x.quantoFx ?? 1) * black(Ft, x.strike, v, df, x.type);
+      return (x.quantoFx ?? 1) * black(Ft, K, v, df, x.type);
     }
     case 'cliquet': {
       const days = st.resetDays ?? [];
-      const refs = st.refs ?? [F];
+      const refs = (st.refs ?? [F - sh]).map((r) => r + sh); // rendements sur X = F + décalage
       const F0 = refs[0]!;
       const phi = x.type === 'C' ? 1 : -1;
       let acc = 0;
@@ -385,13 +421,22 @@ export function exoticValueUsd(v: Pick<View, 'market'>, p: ExoticPosition): numb
 }
 
 /** Delta (unités physiques équivalentes en future) par différences centrées, choc parallèle de la courbe. */
-export function exoticDeltaUnits(m: MarketState, p: ExoticPosition): number {
-  const F = futuresPrice(m, p.commodity, p.month);
+export function exoticDeltaUnits(m: MarketState, p: ExoticPosition, leg: CommodityId = p.commodity): number {
+  // jambe éventuelle d'un spread entre commodités : la 2ᵉ commodité a son propre mois
+  const d = p.spreadId ? SPREAD_BY_ID[p.spreadId] : undefined;
+  const mi = d && leg === d.c2 ? p.month2! : p.month;
+  const F = futuresPrice(m, leg, mi) + priceShift(leg);
   const val = (k: number) => {
-    const mm: MarketState = { ...m, commodities: { ...m.commodities, [p.commodity]: { ...m.commodities[p.commodity], xi: m.commodities[p.commodity].xi + Math.log(k) } } };
-    return exoticUnitPrice(mm, p, p) * fx(m, exoticCcy(p)) / fx(m, spec(p.commodity).currency);
+    const mm: MarketState = { ...m, commodities: { ...m.commodities, [leg]: { ...m.commodities[leg], xi: m.commodities[leg].xi + Math.log(k) } } };
+    return exoticUnitPrice(mm, p, p) * fx(m, exoticCcy(p)) / fx(m, spec(leg).currency);
   };
   return ((val(1.005) - val(0.995)) / (0.01 * F)) * p.qty;
+}
+
+/** Commodités dont dépend une exotique (deux pour un spread entre commodités). */
+export function exoticLegs(p: ExoticSpec): CommodityId[] {
+  const d = p.spreadId ? SPREAD_BY_ID[p.spreadId] : undefined;
+  return d ? [d.c1, d.c2] : [p.commodity];
 }
 
 /** Vega (variation de valeur USD pour +1 point de vol). */
@@ -428,8 +473,9 @@ export function mcExotic(m: MarketState, x: ExoticSpec, st: ExoticState = {}, pa
   const F20 = x.month2 !== undefined ? futuresPrice(m, c, x.month2) : 0;
   // décalage pour retrouver exactement les prix d'aujourd'hui (impact de marché, différentiels de cotation)
   const cm = m.commodities[c];
-  const base1 = Math.log(F0) - lnForward(p, cm.chi, cm.xi, yearFrac(m.day, del1), del1, vm);
-  const base2 = x.month2 !== undefined ? Math.log(F20) - lnForward(p, cm.chi, cm.xi, yearFrac(m.day, del2), del2, vm) : 0;
+  const sh = priceShift(c);
+  const base1 = Math.log(F0 + sh) - lnForward(p, cm.chi, cm.xi, yearFrac(m.day, del1), del1, vm);
+  const base2 = x.month2 !== undefined ? Math.log(F20 + sh) - lnForward(p, cm.chi, cm.xi, yearFrac(m.day, del2), del2, vm) : 0;
   const resetSet = new Map<Day, number>();
   (st.resetDays ?? []).forEach((d, i) => resetSet.set(d, i));
   let sum = 0, sum2 = 0;
@@ -449,8 +495,8 @@ export function mcExotic(m: MarketState, x: ExoticSpec, st: ExoticState = {}, pa
         chi = nx.chi;
         xi = nx.xi;
         prev = d;
-        F = Math.exp(base1 + lnForward(p, chi, xi, yearFrac(d, del1), del1, vm));
-        if (x.month2 !== undefined) F2 = Math.exp(base2 + lnForward(p, chi, xi, yearFrac(d, del2), del2, vm));
+        F = Math.exp(base1 + lnForward(p, chi, xi, yearFrac(d, del1), del1, vm)) - sh;
+        if (x.month2 !== undefined) F2 = Math.exp(base2 + lnForward(p, chi, xi, yearFrac(d, del2), del2, vm)) - sh;
         if (x.kind === 'barrier') hit ||= x.barrierType!.startsWith('up') ? F >= x.barrier! : F <= x.barrier!;
         mn = Math.min(mn, F);
         mx = Math.max(mx, F);
@@ -460,7 +506,7 @@ export function mcExotic(m: MarketState, x: ExoticSpec, st: ExoticState = {}, pa
         const mT1: MarketState = { ...m, day: x.expiry };
         const s2 = atmVol(mT1, c, x.month, x.expiry2!);
         const T2 = yearFrac(x.expiry, x.expiry2!);
-        cAtT1 = black76(F, x.strike, T2, s2, zeroRate(m, ccy, T2), 'C');
+        cAtT1 = black76(F + sh, x.strike + sh, T2, s2, zeroRate(m, ccy, T2), 'C');
       }
       const phi = x.type === 'C' ? 1 : -1;
       let pay = 0;
@@ -487,8 +533,8 @@ export function mcExotic(m: MarketState, x: ExoticSpec, st: ExoticState = {}, pa
           break;
         case 'cliquet': {
           let s = 0;
-          for (let j = 1; j < refs.length; j++) s += Math.max(0, phi * (refs[j]! / refs[j - 1]! - 1));
-          pay = refs[0]! * s;
+          for (let j = 1; j < refs.length; j++) s += Math.max(0, phi * ((refs[j]! + sh) / (refs[j - 1]! + sh) - 1));
+          pay = (refs[0]! + sh) * s;
           break;
         }
       }
@@ -519,7 +565,11 @@ export function exoticError(m: MarketState, x: ExoticSpec): string | null {
     const F = futuresPrice(m, c, x.month);
     if (x.barrierType.startsWith('up') ? x.barrier <= F : x.barrier >= F) return 'La barrière est déjà franchie.';
   }
-  if (x.kind === 'spread' && (x.month2 === undefined || x.month2 <= x.month)) return 'Le second mois doit être plus lointain.';
+  if (x.kind === 'spread' && x.spreadId) {
+    const d = SPREAD_BY_ID[x.spreadId];
+    if (!d || x.month2 === undefined) return 'Spread inconnu.';
+    if (x.expiry > optionExpiry(spec(d.c2), x.month2)) return 'L’échéance dépasse l’expiration de la 2ᵉ jambe.';
+  } else if (x.kind === 'spread' && (x.month2 === undefined || x.month2 <= x.month)) return 'Le second mois doit être plus lointain.';
   if (x.kind === 'compound' && (!x.expiry2 || x.expiry2 <= x.expiry || x.expiry2 > lastExp || !x.strike2 || x.strike2 <= 0)) return 'Composée : échéance et prime du call sous-jacent invalides.';
   if (x.kind === 'cliquet' && (!x.resets || x.resets < 2 || x.resets > 12)) return 'Cliquet : 2 à 12 périodes.';
   return null;
@@ -623,7 +673,7 @@ export function stepExotics(state: GameState): string[] {
     if (p.kind === 'compound') {
       // composée réglée en cash : max(valeur du call sous-jacent − prime, 0)
       const T2 = yearFrac(state.day, p.expiry2!);
-      const c = black76(futuresPrice(m, p.commodity, p.month), p.strike, T2, atmVol(m, p.commodity, p.month, p.expiry2!), zeroRate(m, exoticCcy(p), T2), 'C');
+      const c = black76(futuresPrice(m, p.commodity, p.month) + priceShift(p.commodity), p.strike + priceShift(p.commodity), T2, atmVol(m, p.commodity, p.month, p.expiry2!), zeroRate(m, exoticCcy(p), T2), 'C');
       unit = Math.max(0, c - p.strike2!);
     } else unit = exoticUnitPrice(m, p, p);
     const cash = unit * p.qty * fx(m, exoticCcy(p));
@@ -648,7 +698,7 @@ export function exoticLabel(x: ExoticSpec): string {
     case 'barrier': return `${t} ${s} ${x.strike} ${x.barrierType} ${x.barrier}`;
     case 'digital': return `digitale ${t} ${s} ${x.strike}`;
     case 'lookback': return `lookback ${t} ${s}`;
-    case 'spread': return `${t} spread ${s} K=${x.strike}`;
+    case 'spread': return x.spreadId ? `${t} ${SPREAD_BY_ID[x.spreadId]!.label} K=${x.strike}` : `${t} spread ${s} K=${x.strike}`;
     case 'compound': return `call sur call ${s} ${x.strike}`;
     case 'quanto': return `${t} ${s} ${x.strike} quanto ${quantoCcy(x.commodity)}`;
     case 'cliquet': return `cliquet ${t} ${s} ×${x.resets}`;

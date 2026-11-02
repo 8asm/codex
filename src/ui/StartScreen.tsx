@@ -8,6 +8,7 @@ import { COMPANIES } from '../data/companies';
 import { TRACK_LABEL } from '../data/career';
 import type { CareerTrack, GoalId } from '../engine/types';
 import { SCENARIOS } from '../data/scenarios';
+import { MARKET_SETS } from '../data/commodities';
 import { GOALS } from '../data/achievements';
 import { useStore } from './store';
 
@@ -27,6 +28,7 @@ export function StartScreen() {
   const [mode, setMode] = useState<'story' | 'found' | 'join' | 'scenario'>('story');
   const [scenario, setScenario] = useState(SCENARIOS[0]!.id);
   const [goal, setGoal] = useState<GoalId>('taille');
+  const [markets, setMarkets] = useState('extended');
   const [employer, setEmployer] = useState('glenmoor');
   const [track, setTrack] = useState<CareerTrack>('trading');
   const [player, setPlayer] = useState('Alex Martin');
@@ -39,6 +41,7 @@ export function StartScreen() {
   const start = () =>
     mode === 'scenario' ? newGame({ scenario, seed, playerName: player || 'Vous' }) : newGame({
       goal,
+      commodities: MARKET_SETS.find((x) => x.id === markets)?.ids.length ? MARKET_SETS.find((x) => x.id === markets)!.ids : undefined,
       mode: mode === 'story' ? 'story' : 'sandbox', start: mode === 'join' ? 'join' : 'found', employerId: employer, track, playerName: player || 'Vous',
       companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years: mode === 'story' ? Math.max(years, 6) : years, volatility: vol, crisisFrequency: crisis, seed,
     });
@@ -116,6 +119,13 @@ export function StartScreen() {
               ))}
             </div>
           </>
+        )}
+        {mode === 'found' && (
+          <label>Marchés suivis
+            <select value={markets} onChange={(e) => setMarkets(e.target.value)}>
+              {MARKET_SETS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+            </select>
+          </label>
         )}
         {mode !== 'scenario' && (
           <label>Objectif de victoire

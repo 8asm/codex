@@ -9,7 +9,8 @@
  *  - Greeks agrégés par commodité par revalorisation avec chocs (delta, gamma, vega, theta, rho).
  *  - Échéancier des deltas (risque de calendrier).
  */
-import { COMMODITIES, COMMODITY_IDS, CORRELATION } from '../data/commodities';
+import { COMMODITIES, COMMODITY_IDS, CORRELATION, FX_INDEX } from '../data/commodities';
+import { exoticLegs } from './exotics';
 import { monthIndexOf, type MonthIndex } from './calendar';
 import { lotQty } from './contracts';
 import { apoUnitPrice, optionInputs, optionUnitGreeks, type View } from './derivatives';
@@ -37,15 +38,19 @@ interface Scenario {
 
 const scenarioCache = new Map<string, Scenario[]>();
 
-function scenarios(seed: string, day: number): Scenario[] {
-  const key = `${seed}:${day}`;
+/**
+ * Scénarios de VaR : tirés une fois par partie (graine) et réutilisés chaque jour (nombres aléatoires communs) :
+ * la VaR ne « saute » pas d'un jour à l'autre par simple bruit d'échantillonnage, et le calcul est bien plus rapide.
+ */
+function scenarios(seed: string, _day: number): Scenario[] {
+  const key = seed;
   const hit = scenarioCache.get(key);
   if (hit) return hit;
   const rng = seedRng(`var:${key}`);
   const out: Scenario[] = [];
   for (let i = 0; i < VAR_SCENARIOS; i++) {
     out.push({
-      fr: [0, 1, 2, 3].map(() => normal(rng)),
+      fr: FREIGHT_IDS.map(() => normal(rng)),
       zc: mulLower(CHOL, CORRELATION.map(() => normal(rng))),
       zx: mulLower(CHOL, CORRELATION.map(() => normal(rng))),
       basis: Array.from({ length: 20 }, () => normal(rng)),
@@ -57,9 +62,11 @@ function scenarios(seed: string, day: number): Scenario[] {
   return out;
 }
 
-function applyScenario(base: MarketState, s: Scenario): MarketState {
-  const m = cloneMarket(base);
+/** `only` : commodités du livre (les autres ne bougent pas, ce qui ne change rien à la VaR et accélère le calcul). */
+function applyScenario(base: MarketState, s: Scenario, only?: Set<string>): MarketState {
+  const m = cloneMarket(base, only);
   COMMODITY_IDS.forEach((c, i) => {
+    if (only && !only.has(c)) return;
     const cm = m.commodities[c];
     const spec = COMMODITIES[c];
     const next = stepFactors(spec.model, cm.chi, cm.xi, VAR_DT, s.zc[i]!, s.zx[i]!, m.volMult);
@@ -70,7 +77,7 @@ function applyScenario(base: MarketState, s: Scenario): MarketState {
     });
     m.ivLevel[c] = Math.max(IV_PARAMS.min, m.ivLevel[c] + IV_PARAMS.sigma * Math.sqrt(VAR_DT) * s.iv[i]!);
   });
-  m.fxLog += 0.08 * Math.sqrt(VAR_DT) * s.zc[5]!;
+  m.fxLog += 0.08 * Math.sqrt(VAR_DT) * s.zc[FX_INDEX]!;
   FREIGHT_IDS.forEach((i, j) => (m.freight[i] += FREIGHT[i].sigma * Math.sqrt(VAR_DT) * s.fr[j]!));
   return m;
 }
@@ -82,6 +89,14 @@ export interface VarResult {
   pnls: number[];
 }
 
+/** Commodités présentes dans un livre (FX et fret sont toujours choqués). */
+export function bookCommodities(book: Book): Set<string> {
+  const out = new Set<string>();
+  for (const arr of [book.futures, book.forwards, book.inventory, book.options, book.otc, book.voyages ?? [], book.exotics ?? [], book.prepays ?? []] as { commodity: string }[][]) for (const x of arr) out.add(x.commodity);
+  for (const x of book.exotics ?? []) for (const c of exoticLegs(x)) out.add(c);
+  return out;
+}
+
 /** VaR / ES 99 % à 1 jour par revalorisation complète. */
 export function computeVar(state: GameState, book: Book = bookOf(state)): VarResult {
   const v0 = valueBy(state, book);
@@ -91,8 +106,9 @@ export function computeVar(state: GameState, book: Book = bookOf(state)): VarRes
   const by: Record<CommodityId, number[]> = Object.fromEntries(COMMODITY_IDS.map((c) => [c, []])) as never;
   const empty = !book.futures.length && !book.forwards.length && !book.inventory.length && !book.options.length && !book.otc.length && !(book.voyages?.length) && !(book.ffa?.length) && !(book.exotics?.length) && !(book.prepays?.length);
   if (empty) return { var99: 0, es99: 0, varBy: Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as never, pnls: [] };
+  const only = bookCommodities(book);
   for (const s of scen) {
-    const m = applyScenario(state.market, s);
+    const m = applyScenario(state.market, s, only);
     const view = { market: m, day: state.day, fixings: state.fixings, freightFixings: state.freightFixings } as unknown as GameState;
     const v = valueBy(view, book);
     let t = freightBookValue(view, book) - f0;
@@ -178,9 +194,11 @@ export function bookGreeks(state: GameState, book: Book = bookOf(state)): BookGr
   const v: View = state;
   const h = 0.005; // choc de log-prix : dérivées par rapport à ln F
   const v0 = valueBy(v, book);
+  const inBook = bookCommodities(book);
   const vol = valueBy({ ...v, market: shifted(state.market, (m) => (m.volShift = (m.volShift ?? 0) + 0.01)) }, book);
   const rho = valueBy({ ...v, market: shifted(state.market, (m) => (m.rateShift = (m.rateShift ?? 0) + 0.01)) }, book);
   return COMMODITY_IDS.map((c) => {
+    if (!inBook.has(c)) return { commodity: c, delta1pct: 0, deltaUnits: 0, gamma1pct: 0, vega: 0, theta: 0, rho: 0 };
     const up = valueBy({ ...v, market: shifted(state.market, (m) => (m.commodities[c].xi += h)) }, book)[c];
     const dn = valueBy({ ...v, market: shifted(state.market, (m) => (m.commodities[c].xi -= h)) }, book)[c];
     // V_x = dV/d lnF = F·V' ; V_xx − V_x = F²·V''
@@ -195,8 +213,9 @@ export function bookGreeks(state: GameState, book: Book = bookOf(state)): BookGr
     for (const o of book.options.filter((x) => x.commodity === c)) {
       // theta « prix inchangés » : même future, même vol, un jour de moins
       const { F, T, sigma, r } = optionInputs(state.market, o);
-      const p0 = vanillaPrice(F, o.strike, T, sigma, r, o.type, o.style);
-      const p1 = vanillaPrice(F, o.strike, Math.max(0, T - 1 / 365), sigma, r, o.type, o.style);
+      const sh = spec.model.shift ?? 0;
+      const p0 = vanillaPrice(F + sh, o.strike + sh, T, sigma, r, o.type, o.style);
+      const p1 = vanillaPrice(F + sh, o.strike + sh, Math.max(0, T - 1 / 365), sigma, r, o.type, o.style);
       theta += (p1 - p0) * o.lots * lotQty(spec, o.month) * k;
     }
     for (const x of book.otc.filter((y) => y.commodity === c && y.kind === 'apo')) {
@@ -205,7 +224,7 @@ export function bookGreeks(state: GameState, book: Book = bookOf(state)): BookGr
     return {
       commodity: c,
       delta1pct,
-      deltaUnits: delta1pct / (0.01 * front * k),
+      deltaUnits: delta1pct / (0.01 * (front + (spec.model.shift ?? 0)) * k),
       gamma1pct,
       vega: vol[c] - v0[c],
       theta,

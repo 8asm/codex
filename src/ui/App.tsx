@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { exportJson, saveGame } from '../save/saveStore';
 import { BookPanel } from './BookPanel';
 import { CodexPanel } from './CodexPanel';
@@ -30,7 +30,8 @@ import { ExoticsPanel } from './ExoticsPanel';
 import { FinancePanel } from './FinancePanel';
 import { CompliancePanel } from './CompliancePanel';
 import { GamePanel } from './GamePanel';
-import { CityCanvas } from './CityCanvas';
+import { StaffPanel } from './StaffPanel';
+const CityCanvas = lazy(() => import('./CityCanvas').then((m) => ({ default: m.CityCanvas })));
 import { COMPANY_BY_ID } from '../data/companies';
 import { CITY_BY_ID } from '../data/cities';
 import type { GameState } from '../engine/types';
@@ -50,6 +51,7 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'world', icon: '🌍', label: 'Monde', key: 'G' },
   { id: 'rivals', icon: '🏢', label: 'Rivaux', key: 'K' },
   { id: 'offices', icon: '🏛️', label: 'Bureaux', key: 'B' },
+  { id: 'staff', icon: '👥', label: 'Équipes', key: 'E' },
   { id: 'exotics', icon: '🧪', label: 'Structurés', key: 'X' },
   { id: 'finance', icon: '🏧', label: 'Financement', key: 'Y' },
   { id: 'compliance', icon: '⚖️', label: 'Conformité', key: 'Z' },
@@ -166,6 +168,7 @@ export function App() {
     if (id === 'treasury') return rg.treasury || rg.trade;
     if (id === 'risk' || id === 'book') return rg.trade;
     if (id === 'exotics') return rg.otc;
+    if (id === 'staff') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     if (id === 'finance') return rg.treasury;
     if (id === 'compliance') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     return true;
@@ -177,7 +180,7 @@ export function App() {
   return (
     <div className="app">
       <GlobeCanvas />
-      {game && inCity && <CityCanvas />}
+      {game && inCity && <Suspense fallback={null}><CityCanvas /></Suspense>}
       {!game && <StartScreen />}
       {game && (
         <>
@@ -187,7 +190,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K B X Y Z Q C U : panneaux · H : vue ville · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K B E X Y Z Q C U : panneaux · H : vue ville · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -219,6 +222,7 @@ export function App() {
             {panel === 'finance' && <FinancePanel />}
             {panel === 'compliance' && <CompliancePanel />}
             {panel === 'game' && <GamePanel />}
+            {panel === 'staff' && <StaffPanel />}
           </div>
           {!cityPhase && <LayerBar />}
           {!cityPhase && (

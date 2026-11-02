@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CODEX_BY_ID } from '../data/glossary';
+import { COMMODITIES } from '../data/commodities';
+import { activeCommodities } from '../engine/physical';
+import type { CommodityId, CommoditySpec } from '../engine/types';
 import { useStore } from './store';
 
 /** Terme technique : infobulle courte + clic vers le codex. Le survol débloque l'entrée. */
@@ -80,6 +83,37 @@ export function Stat({ label, value, sub, className = '' }: { label: ReactNode; 
       <div className="stat-label">{label}</div>
       <div className="stat-value">{value}</div>
       {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+const FAMILY_TABS: { id: CommoditySpec['family']; label: string; icon: string }[] = [
+  { id: 'energy', label: 'Énergie', icon: '🛢️' },
+  { id: 'metals', label: 'Métaux', icon: '🔶' },
+  { id: 'agri', label: 'Agricoles', icon: '🌾' },
+];
+
+/**
+ * Sélecteur de commodités (phase 8) : onglets par famille, puce par marché. Limité aux commodités actives de la partie
+ * (ou à `only`). Remplace les rangées de puces devenues trop longues avec 38 marchés.
+ */
+export function CommodityPicker({ value, onChange, only }: { value: CommodityId; onChange: (c: CommodityId) => void; only?: CommodityId[] }) {
+  const g = useStore((s) => s.game);
+  const list = only ?? (g ? activeCommodities(g) : []);
+  const [fam, setFam] = useState<CommoditySpec['family']>(COMMODITIES[value]?.family ?? 'energy');
+  const families = FAMILY_TABS.filter((f) => list.some((c) => COMMODITIES[c].family === f.id));
+  const cur = families.some((f) => f.id === fam) ? fam : families[0]?.id ?? 'energy';
+  const shown = list.filter((c) => COMMODITIES[c].family === cur);
+  return (
+    <div className="cpicker">
+      {families.length > 1 && (
+        <div className="cpicker-fam">
+          {families.map((f) => <button key={f.id} className={cur === f.id ? 'on' : ''} onClick={() => setFam(f.id)}>{f.icon} {f.label}</button>)}
+        </div>
+      )}
+      <div className="chips">
+        {shown.map((id) => <button key={id} className={value === id ? 'on' : ''} onClick={() => onChange(id)} title={COMMODITIES[id].name}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>)}
+      </div>
     </div>
   );
 }

@@ -53,13 +53,14 @@ export function imByCommodity(m: MarketState, positions: FuturesPosition[], opti
       else S += e;
       return { F, q };
     });
+    const sh = spec.model.shift ?? 0;
     const opt = opts.map((o) => {
       const F = futuresPrice(m, c, o.month);
       const T = Math.max(0, yearFrac(m.day, o.expiry));
       const r = zeroRate(m, spec.currency, T);
       const sigma = impliedVolAt(m, c, o.month, o.expiry, o.strike, F);
       const q = o.lots * lotQty(spec, o.month);
-      return { o, F, T, sigma, q, r, v0: vanillaPrice(F, o.strike, T, sigma, r, o.type, o.style) };
+      return { o, F, T, sigma, q, r, v0: vanillaPrice(F + sh, o.strike + sh, T, sigma, r, o.type, o.style) };
     });
     let worst = 0;
     for (const [pm, vm, w] of SCAN_MOVES) {
@@ -67,7 +68,7 @@ export function imByCommodity(m: MarketState, positions: FuturesPosition[], opti
       for (const f of fut) pnl += f.q * f.F * pm * rateIm * k;
       for (const x of opt) {
         const F2 = x.F * (1 + pm * rateIm);
-        const v2 = vanillaPrice(F2, x.o.strike, x.T, x.sigma * (1 + vm * VOL_SCAN), x.r, x.o.type, x.o.style);
+        const v2 = vanillaPrice(F2 + sh, x.o.strike + sh, x.T, x.sigma * (1 + vm * VOL_SCAN), x.r, x.o.type, x.o.style);
         pnl += (v2 - x.v0) * x.q * k;
       }
       worst = Math.max(worst, -pnl * w);

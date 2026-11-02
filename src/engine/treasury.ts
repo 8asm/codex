@@ -5,6 +5,7 @@
  * symétrique sur le physique couvert reste latent jusqu'à la livraison. Un hedge parfait peut donc
  * vider la trésorerie : c'est le risque de liquidité de financement.
  */
+import { rcfSpreadCut } from './staff';
 import { rate } from './market';
 import { addCash, log } from './ledger';
 import type { GameState } from './types';
@@ -45,7 +46,7 @@ export function accrueInterest(state: GameState, days: number) {
   const r = rate(state.market, 'USD') + (state.world?.cityRegs[co.hqCity]?.capitalControls ? CAPITAL_CONTROLS_SPREAD : 0);
   if (co.cash > 0) addCash(state, co.cash * (r - CASH_HAIRCUT) * (days / 360), 'interest');
   else addCash(state, co.cash * (r + RCF_SPREAD) * (days / 360), 'interest');
-  if (co.rcfDrawn > 0) addCash(state, -co.rcfDrawn * (r + RCF_SPREAD + state.risk.rcfPenalty) * (days / 360), 'interest');
+  if (co.rcfDrawn > 0) addCash(state, -co.rcfDrawn * (r + RCF_SPREAD - rcfSpreadCut(state) + state.risk.rcfPenalty) * (days / 360), 'interest');
 }
 
 export function drawRcf(state: GameState, amount: number): number {

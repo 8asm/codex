@@ -101,9 +101,21 @@ npm run build      # build de production dans dist/
 - **Récapitulatif de fin de partie** : verdict, meilleurs et pires deals, P&L par commodité, erreurs de risque, chronologie.
 - **Équilibrage** : `npx vite-node scripts/balance.ts [années] [graines]` fait jouer des stratégies-robots (inactif, négociant couvert, négociant discipliné, raccourcis, spéculateur).
 
+## Phase 8 — ce qui s'ajoute
+
+- **38 marchés** (énergie, métaux, agricoles et softs) au lieu de 5, et **61 villes**, **67 sociétés**, 26 nouveaux ports. À l'accueil, choisissez les marchés suivis : Essentiels, Étendus ou Tous.
+- **Le WTI peut passer sous zéro** (log-normale décalée) quand les cuves de Cushing débordent.
+- **Électricité non stockable**, **GNL et méthaniers**, carbone européen, cobalt et lithium, or, café, cacao…
+- **Options sur spreads entre commodités** : crack, spark, WTI-Brent, Brent-Dubaï, arbitrage GNL, blé-maïs.
+- **Nouvelles usines** : raffinerie valorisée sur les vrais produits, trituration de soja, centrale à gaz avec option de dispatch, fonderie d'aluminium, mines et plantations.
+- **Équipes** (👥, `E`) : recrutez traders, analystes, opérateurs, risk managers, juristes et affréteurs ; gérez leur loyauté et répondez aux débauchages.
+- **Bureaux dans d'autres villes** : présence permanente sur place. Visez le succès « cinq continents ».
+- **Nouveaux événements** : envolée du cacao, gelée du café, squeeze du nickel, interdiction d'export du riz, taxe sur la palme, réforme du carbone…
+- **Plus rapide** : la simulation est deux fois plus rapide avec sept fois plus de marchés ; le bundle est découpé.
+
 ### Raccourcis
 
-`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
 
 ## Structure
 

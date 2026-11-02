@@ -78,7 +78,7 @@ const HURRICANES = ['Adèle', 'Bastien', 'Célia', 'Dorian', 'Elsa', 'Fabio', 'G
 const TEMPLATES: Template[] = [
   // ------------------------------------------------ chocs de fondamentaux (procéduraux)
   {
-    key: 'shock', weight: 0.03, cooldown: 2,
+    key: 'shock', weight: 0.06, cooldown: 1,
     build: (s) => {
       const t = pick(s.rng, SHOCKS);
       const size = t.dir * t.size * (0.6 + 0.8 * uniform(s.rng));
@@ -103,23 +103,26 @@ const TEMPLATES: Template[] = [
   // ------------------------------------------------ remakes historiques
   {
     key: 'glut', weight: 0.0006, cooldown: 400,
-    when: (s) => s.market.commodities.BRENT.chi < 0,
+    when: (s) => s.market.commodities.WTI.chi < 0,
     build: () => ({
-      news: { headline: 'Plus de place pour stocker : le front du Brent s’effondre', body: 'Cuves pleines à terre et en mer, demande à l’arrêt : les détenteurs du contrat proche paient pour s’en débarrasser. Le contango explose.', commodity: 'BRENT', tone: 'down', major: true, category: 'marché' },
-      impacts: [{ k: 'chi', c: 'BRENT', v: -0.55 }, { k: 'iv', c: 'BRENT', v: 0.7 }, { k: 'regime' }],
+      // remake du « pétrole à prix négatif » : les cuves enclavées de Cushing débordent, le WTI (log-normal décalé)
+      // peut passer sous zéro ; le Brent, maritime, s'effondre sans devenir négatif
+      news: { headline: 'Cushing déborde : le WTI passe sous zéro', body: 'Plus une cuve libre en Oklahoma : les détenteurs du contrat proche paient pour qu’on les débarrasse de leurs barils. Le Brent, livrable par bateau, s’effondre aussi.', commodity: 'WTI', tone: 'down', major: true, category: 'marché' },
+      impacts: [{ k: 'chi', c: 'WTI', v: -2.1 }, { k: 'iv', c: 'WTI', v: 1.2 }, { k: 'chi', c: 'BRENT', v: -0.45 }, { k: 'iv', c: 'BRENT', v: 0.6 }, { k: 'regime' }],
+      followUps: [{ inDays: 4, impacts: [{ k: 'chi', c: 'WTI', v: 1.4 }], news: { headline: 'Le WTI repasse en territoire positif après l’expiration du contrat', commodity: 'WTI', tone: 'up', major: false, category: 'marché' } }],
     }),
   },
   {
     key: 'squeeze', weight: 0.0007, cooldown: 400,
     build: (s) => {
-      const shorts = aliveAi(s).filter((c) => (c.exposure.CU ?? 0) < 0).sort((a, b) => (a.exposure.CU ?? 0) - (b.exposure.CU ?? 0));
-      const victim = shorts[0] ?? aliveAi(s, (id) => id === 'yangtze')[0];
+      const shorts = aliveAi(s).filter((c) => (c.exposure.NI ?? 0) < 0).sort((a, b) => (a.exposure.NI ?? 0) - (b.exposure.NI ?? 0));
+      const victim = shorts[0] ?? aliveAi(s, (id) => id === 'traxis' || id === 'yangtze')[0];
       if (!victim) return null;
       const name = COMPANY_BY_ID[victim.id]!.name;
       return {
-        news: { headline: `Squeeze historique sur le cuivre : ${name} piégé, la bourse suspend la cotation`, body: `Une position vendeuse géante de ${name} déclenche une envolée verticale. Le LMM suspend le marché plusieurs jours : impossible de couvrir ou de déboucler.`, commodity: 'CU', tone: 'up', major: true, category: 'marché', companyId: victim.id },
-        impacts: [{ k: 'chi', c: 'CU', v: 0.32 }, { k: 'iv', c: 'CU', v: 0.7 }, { k: 'halt', c: 'CU', days: randInt(s.rng, 3, 5) }, { k: 'companyHit', id: victim.id, navPct: -0.45, rep: -20 }, { k: 'regime' }],
-        followUps: [{ inDays: 6, impacts: [], news: { headline: 'Le LMM rouvre le cuivre après la suspension', body: 'Les ordres accumulés se déversent : écarts violents à l’ouverture.', commodity: 'CU', tone: 'neutral', major: false, category: 'marché' } }],
+        news: { headline: `Squeeze historique sur le nickel : ${name} piégé, la bourse suspend la cotation`, body: `Une position vendeuse géante de ${name} fait doubler le prix en deux séances. Le LMM suspend le marché et annule des transactions : impossible de couvrir ou de déboucler.`, commodity: 'NI', tone: 'up', major: true, category: 'marché', companyId: victim.id },
+        impacts: [{ k: 'chi', c: 'NI', v: 0.6 }, { k: 'iv', c: 'NI', v: 1.0 }, { k: 'halt', c: 'NI', days: randInt(s.rng, 4, 6) }, { k: 'chi', c: 'CU', v: 0.04 }, { k: 'companyHit', id: victim.id, navPct: -0.45, rep: -20 }, { k: 'regime' }],
+        followUps: [{ inDays: 7, impacts: [{ k: 'chi', c: 'NI', v: -0.35 }], news: { headline: 'Le LMM rouvre le nickel et annule une partie des transactions', body: 'Les ordres accumulés se déversent : le prix retombe, la confiance dans la bourse est ébranlée.', commodity: 'NI', tone: 'down', major: false, category: 'marché' } }],
       };
     },
   },
@@ -327,6 +330,80 @@ const TEMPLATES: Template[] = [
     build: (s) => ({
       news: { headline: 'Explosion dans une grande raffinerie de Houston', body: 'L’unité de distillation est détruite : moins de brut traité localement, le différentiel du Golfe s’effondre.', commodity: 'BRENT', tone: 'alert', major: false, category: 'marché', cityId: 'houston' },
       impacts: [{ k: 'effect', effect: { label: 'Raffinerie en feu', icon: '💥', lat: 29.7, lon: -95.0, untilDay: addBusinessDays(s.day, 15), layer: 'marché', basisShift: { BRENT_USGC: -1.5 } } }, { k: 'chi', c: 'BRENT', v: 0.008 }],
+    }),
+  },
+  // ------------------------------------------------ phase 8 : remakes et chocs des nouveaux marchés
+  {
+    key: 'cocoa', weight: 0.0008, cooldown: 400,
+    build: () => ({
+      news: { headline: 'Envolée historique du cacao : maladie et pluies diluviennes en Afrique de l’Ouest', body: 'Les récoltes de Côte d’Ivoire et du Ghana s’effondrent. Les chocolatiers se ruent sur les futures, les marges explosent.', commodity: 'COCOA', tone: 'up', major: true, category: 'météo', zone: 'CI' },
+      impacts: [{ k: 'chi', c: 'COCOA', v: 0.45 }, { k: 'xi', c: 'COCOA', v: 0.15 }, { k: 'iv', c: 'COCOA', v: 0.8 }],
+    }),
+  },
+  {
+    key: 'frost', weight: 0.004, cooldown: 300, months: [6, 7, 8],
+    build: (s) => {
+      const hard = chance(s.rng, 0.4);
+      return { news: { headline: hard ? 'Gelée noire sur les caféiers du Minas Gerais' : 'Gelées localisées au Brésil', body: hard ? 'Des plantations entières brûlées par le froid : deux récoltes compromises.' : 'Dégâts limités, le marché se couvre.', commodity: 'COFFEE', tone: 'up', major: hard, category: 'météo', zone: 'BR' }, impacts: [{ k: 'chi', c: 'COFFEE', v: hard ? 0.35 : 0.08 }, { k: 'xi', c: 'COFFEE', v: hard ? 0.08 : 0 }, { k: 'iv', c: 'COFFEE', v: hard ? 0.5 : 0.15 }] };
+    },
+  },
+  {
+    key: 'citrus', weight: 0.004, cooldown: 200, months: [8, 9, 10],
+    build: () => ({ news: { headline: 'Ouragan sur les vergers de Floride', body: 'Les fruits sont au sol, la maladie du dragon jaune fait le reste : le jus d’orange s’envole.', commodity: 'OJ', tone: 'up', major: false, category: 'météo', zone: 'US' }, impacts: [{ k: 'chi', c: 'OJ', v: 0.25 }, { k: 'iv', c: 'OJ', v: 0.4 }] }),
+  },
+  {
+    key: 'powerspike', weight: 0.004, cooldown: 90, months: [11, 12, 1, 2],
+    build: () => ({ news: { headline: 'Réacteurs à l’arrêt et vent absent : l’électricité européenne s’envole', body: 'Les centrales à gaz et au charbon tournent à plein, les spark et dark spreads explosent.', commodity: 'POWER', tone: 'up', major: false, category: 'marché', zone: 'FR' }, impacts: [{ k: 'chi', c: 'POWER', v: 0.45 }, { k: 'chi', c: 'TTF', v: 0.08 }, { k: 'chi', c: 'API2', v: 0.05 }, { k: 'iv', c: 'POWER', v: 0.5 }] }),
+  },
+  {
+    key: 'asiacold', weight: 0.004, cooldown: 90, months: [12, 1, 2],
+    build: () => ({ news: { headline: 'Hiver glacial en Asie du Nord : le GNL s’arrache', body: 'Japon et Corée surenchérissent : les méthaniers se détournent de l’Europe.', commodity: 'JKM', tone: 'up', major: false, category: 'météo', zone: 'JP' }, impacts: [{ k: 'chi', c: 'JKM', v: 0.35 }, { k: 'chi', c: 'TTF', v: 0.06 }, { k: 'chi', c: 'NEWC', v: 0.06 }] }),
+  },
+  {
+    key: 'carbonreform', weight: 0.0015, cooldown: 250,
+    build: (s) => {
+      const tighter = chance(s.rng, 0.6);
+      return { news: { headline: tighter ? 'Bruxelles resserre le plafond d’émissions' : 'Bruxelles libère des quotas de réserve', body: tighter ? 'Moins de quotas en circulation : le carbone grimpe, le charbon devient plus coûteux à brûler.' : 'Plus de quotas disponibles : le prix du carbone recule.', commodity: 'EUA', tone: tighter ? 'up' : 'down', major: false, category: 'réglementation', zone: 'DE' }, impacts: [{ k: 'xi', c: 'EUA', v: tighter ? 0.15 : -0.12 }, { k: 'iv', c: 'EUA', v: 0.2 }] };
+    },
+  },
+  {
+    key: 'lithiumglut', weight: 0.001, cooldown: 300,
+    build: (s) => {
+      const glut = chance(s.rng, 0.6);
+      return { news: { headline: glut ? 'Surproduction de lithium : les prix s’effondrent' : 'Ruée sur le lithium : les constructeurs automobiles s’affolent', body: glut ? 'Nouvelles mines en Australie et en Afrique, ventes de voitures électriques en deçà des attentes.' : 'Les contrats de long terme ne suffisent plus.', commodity: 'LI', tone: glut ? 'down' : 'up', major: false, category: 'marché' }, impacts: [{ k: 'xi', c: 'LI', v: glut ? -0.25 : 0.25 }, { k: 'chi', c: 'LI', v: glut ? -0.15 : 0.15 }, { k: 'iv', c: 'LI', v: 0.3 }] };
+    },
+  },
+  {
+    key: 'haven', weight: 0.003, cooldown: 60, geo: true,
+    build: () => ({ news: { headline: 'Fuite vers les valeurs refuges : l’or bat son record', body: 'Tensions entre blocs, banques centrales acheteuses : l’or monte, l’argent suit.', commodity: 'AU', tone: 'up', major: false, category: 'géopolitique' }, impacts: [{ k: 'xi', c: 'AU', v: 0.05 }, { k: 'xi', c: 'AG', v: 0.06 }, { k: 'iv', c: 'AU', v: 0.2 }] }),
+  },
+  {
+    key: 'steel', weight: 0.002, cooldown: 80,
+    build: (s) => {
+      const up = chance(s.rng, 0.55);
+      return { news: { headline: up ? 'Plan de relance chinois dans les infrastructures' : 'Pékin plafonne la production d’acier', body: up ? 'Ponts, voies ferrées, logements : minerai de fer et charbon à coke bondissent.' : 'Moins d’acier, moins de minerai : les ports chinois débordent.', commodity: 'FE', tone: up ? 'up' : 'down', major: false, category: 'macro', zone: 'CN' }, impacts: [{ k: 'chi', c: 'FE', v: up ? 0.12 : -0.12 }, { k: 'chi', c: 'METCOAL', v: up ? 0.1 : -0.08 }] };
+    },
+  },
+  {
+    key: 'ricean', weight: 0.0008, cooldown: 400,
+    build: () => ({
+      news: { headline: 'Le premier exportateur de riz interdit les exportations', body: 'Pour contenir l’inflation alimentaire intérieure, le gouvernement ferme ses ports au riz : les importateurs d’Afrique et d’Asie paniquent.', commodity: 'RICE', tone: 'up', major: true, category: 'géopolitique', zone: 'IN' },
+      impacts: [{ k: 'chi', c: 'RICE', v: 0.35 }, { k: 'iv', c: 'RICE', v: 0.4 }],
+    }),
+  },
+  {
+    key: 'palmlevy', weight: 0.0012, cooldown: 300,
+    build: () => ({
+      news: { headline: 'L’Insulinde relève brutalement sa taxe à l’export d’huile de palme', body: 'Les raffineurs indiens se reportent sur le soja : toutes les huiles végétales montent.', commodity: 'PALM', tone: 'up', major: false, category: 'réglementation', zone: 'INSU' },
+      impacts: [{ k: 'chi', c: 'PALM', v: 0.14 }, { k: 'chi', c: 'SOYOIL', v: 0.06 }, { k: 'basis', loc: 'PALM_JKT', v: -60 }],
+      followUps: [{ inDays: 80, impacts: [{ k: 'basis', loc: 'PALM_JKT', v: 60 }] }],
+    }),
+  },
+  {
+    key: 'oreban', weight: 0.0008, cooldown: 500,
+    build: (s) => ({
+      news: { headline: 'L’Insulinde interdit l’exportation de minerai de nickel brut', body: 'Pour forcer la construction de fonderies sur place, le gouvernement ferme ses mines aux acheteurs étrangers.', commodity: 'NI', tone: 'up', major: true, category: 'géopolitique', zone: 'INSU' },
+      impacts: [{ k: 'chi', c: 'NI', v: 0.15 }, { k: 'restriction', kind: 'exportBan', zone: 'INSU', c: 'NI', days: randInt(s.rng, 180, 400) }],
     }),
   },
   // ------------------------------------------------ régulation, politique intérieure

@@ -13,7 +13,7 @@ import { monthIndexOf, monthLabel, yearFrac, type Day, type MonthIndex } from '.
 import { fixingDays, listedMonths, lotQty, optionExpiry, optionMonths } from './contracts';
 import { addCash, log, newId } from './ledger';
 import { depthLots, halfSpread, monthOffset } from './liquidity';
-import { discount, forwardAt, futuresPrice, fx, spotPrice, zeroRate } from './market';
+import { discount, forwardAt, futuresPrice, fx, priceShift, spotPrice, zeroRate } from './market';
 import { fixingCovariance } from './model';
 import { asianMoments, asianPrice, vanillaGreeks, vanillaPrice, type Greeks } from './pricing';
 import { roundTo } from './math';
@@ -47,12 +47,14 @@ export function optionInputs(m: MarketState, o: OptionLike) {
 /** Prix unitaire (devise de cotation par unité physique). */
 export function optionUnitPrice(m: MarketState, o: OptionLike): number {
   const { F, T, sigma, r } = optionInputs(m, o);
-  return vanillaPrice(F, o.strike, T, sigma, r, o.type, o.style);
+  const s = priceShift(o.commodity);
+  return vanillaPrice(F + s, o.strike + s, T, sigma, r, o.type, o.style);
 }
 
 export function optionUnitGreeks(m: MarketState, o: OptionLike): Greeks & { sigma: number; F: number; T: number } {
   const { F, T, sigma, r } = optionInputs(m, o);
-  return { ...vanillaGreeks(F, o.strike, T, sigma, r, o.type, o.style), sigma, F, T };
+  const s = priceShift(o.commodity);
+  return { ...vanillaGreeks(F + s, o.strike + s, T, sigma, r, o.type, o.style), sigma, F, T };
 }
 
 export function optionValueUsd(m: MarketState, p: OptionPosition): number {
@@ -142,11 +144,15 @@ export function apoUnitPrice(v: View, c: CommodityId, mi: MonthIndex, K: number,
   const spec = COMMODITIES[c];
   const a = avgInputs(v, c, mi);
   const ts = a.times.map((t) => Math.max(0, t - (opts.timeShiftDays ?? 0) / 365));
-  const fw = a.fwds.map((f) => f * (opts.fwdScale ?? 1));
+  // log-normale décalée : la moyenne des X = S + décalage est appariée en moments, strike et fixings passés décalés
+  const sh = spec.model.shift ?? 0;
+  const fw = a.fwds.map((f) => (f + sh) * (opts.fwdScale ?? 1));
+  K = K + sh;
+  const pastSum = a.pastSum + sh * a.nPast;
   const p = spec.model;
   const cov = ts.map((ti) => ts.map((tj) => fixingCovariance(p, ti, tj, m.volMult)));
   const raw = asianMoments(fw, cov, a.n);
-  const Kadj = K - a.pastSum / a.n;
+  const Kadj = K - pastSum / a.n;
   const v0 = Math.max(1e-12, Math.log(raw.M2 / (raw.M1 * raw.M1)));
   const tLast = Math.max(1 / 365, ts[ts.length - 1] ?? 0);
   const sigEff = Math.sqrt(v0 / tLast);
@@ -156,7 +162,7 @@ export function apoUnitPrice(v: View, c: CommodityId, mi: MonthIndex, K: number,
   const covAdj = cov.map((row) => row.map((x2) => x2 * s2));
   const { M1, M2 } = asianMoments(fw, covAdj, a.n);
   const df = discount(m, spec.currency, v.day, a.payDay);
-  return asianPrice(M1, M2, K, a.pastSum, a.n, df, type);
+  return asianPrice(M1, M2, K, pastSum, a.n, df, type);
 }
 
 export function otcUnitValue(v: View, p: OtcPosition): number {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES } from '../data/commodities';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { optionMonths, strikeGrid, optionExpiry } from '../engine/contracts';
 import { avgInputs, expectedAverage, optionQuote, otcMonths, otcQuote } from '../engine/derivatives';
@@ -8,7 +8,7 @@ import { computeVar } from '../engine/risk';
 import { previewOption } from '../engine/trading';
 import type { CommodityId, OptType } from '../engine/types';
 import { impliedVolAt } from '../engine/volsurface';
-import { Panel, Term } from './common';
+import { CommodityPicker, Panel, Term } from './common';
 import { bookWithOption, bookWithOtc, useLiveVar } from './derived';
 import { price, qty, signedUsd, usd } from './format';
 import { useStore } from './store';
@@ -20,11 +20,7 @@ export function OptionsPanel() {
   const [tab, setTab] = useState<'listed' | 'otc'>('listed');
   return (
     <Panel title="Options & OTC" icon="🎯" onClose={() => setPanel('options')} wide>
-      <div className="chips">
-        {COMMODITY_IDS.map((id) => (
-          <button key={id} className={c === id ? 'on' : ''} onClick={() => select(id)}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>
-        ))}
-      </div>
+      <CommodityPicker value={c} onChange={(id) => select(id)} />
       <div className="tabs">
         <button className={tab === 'listed' ? 'on' : ''} onClick={() => setTab('listed')}>Options listées (bourse)</button>
         <button className={tab === 'otc' ? 'on' : ''} onClick={() => setTab('otc')}>Swaps & APO (banques)</button>

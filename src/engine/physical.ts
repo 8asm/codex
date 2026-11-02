@@ -15,6 +15,7 @@ import { cpRating } from './credit';
 import { sanctionedDiscount } from './events';
 import { checkOffer, recordCase, suspended } from './compliance';
 import { recordDeal } from './progress';
+import { hasBranch, qualityRiskMult, traderEdge, traderFlow } from './staff';
 import { issueLc, offerHasBuyerLc, offerNeedsLc } from './financing';
 import { addNews } from './news';
 import { contactAt, remember } from './npcs';
@@ -33,12 +34,13 @@ import { ownedCapacity, storageRate } from './assets';
 export const LOCAL_EDGE_PCT = 0.004;
 export const REMOTE_SPOT_PENALTY = 0.004;
 export const SHORT_COVER_PREMIUM = 0.015;
-export const MAX_OFFERS = 8;
+export const MAX_OFFERS = 12;
 /** Plafond d'encours physique (notionnel) : 6× les fonds propres (lignes fournisseurs / trade finance). */
 export const PHYSICAL_LEVERAGE = 6;
 
 export function isPresent(state: GameState, cityId: string): boolean {
-  return state.player.travel === null && state.player.cityId === cityId;
+  // phase 8 : un bureau sur place vaut présence permanente
+  return (state.player.travel === null && state.player.cityId === cityId) || hasBranch(state, cityId);
 }
 
 export function offerDeliveryDay(o: Offer): Day {
@@ -100,6 +102,29 @@ export function kycRisky(state: GameState, cpId: string): boolean {
   return ['BB', 'B', 'CCC'].includes(r) || st < 50;
 }
 
+/** Tirage pondéré (un seul uniforme, comme `pick`). */
+function weightedPick<T>(state: GameState, arr: readonly T[], w: (x: T) => number): T {
+  const ws = arr.map(w);
+  const tot = ws.reduce((a, b) => a + b, 0);
+  let u = uniform(state.rng) * tot;
+  for (let i = 0; i < arr.length; i++) {
+    u -= ws[i]!;
+    if (u <= 0) return arr[i]!;
+  }
+  return arr[arr.length - 1]!;
+}
+
+/** Commodités actives dans la partie (option de partie ; toutes par défaut). */
+export function activeCommodities(state: GameState): CommodityId[] {
+  const list = state.config.commodities;
+  return list && list.length ? COMMODITY_IDS.filter((c) => list.includes(c)) : COMMODITY_IDS;
+}
+
+/** Davantage d'offres quand on suit davantage de marchés (racine : le flux d'appels ne croît pas linéairement). */
+function offerFlowMult(state: GameState): number {
+  return Math.sqrt(activeCommodities(state).length / 5);
+}
+
 export function generateOffers(state: GameState) {
   state.offers = state.offers.filter((o) => o.expiresDay >= state.day);
   // Les concurrents raflent les bonnes affaires : une offre avantageuse a 25 % de chances par jour de partir.
@@ -114,11 +139,13 @@ export function generateOffers(state: GameState) {
     }
   }
   const kyc = state.world.cityRegs[state.company.hqCity]!.kyc;
-  const n = Math.min(MAX_OFFERS - state.offers.length, poisson(state.rng, 1.9));
+  const n = Math.min(MAX_OFFERS - state.offers.length, poisson(state.rng, 1.9 * offerFlowMult(state)));
+  const pool0 = activeCommodities(state);
   for (let i = 0; i < n; i++) {
-    const c = pick(state.rng, COMMODITY_IDS);
+    // les traders recrutés font venir davantage d'offres sur leur famille ; les bureaux, sur leur ville
+    const c = weightedPick(state, pool0, (x) => traderFlow(state, COMMODITIES[x].family));
     const spec = COMMODITIES[c];
-    const loc = pick(state.rng, spec.physical.locations);
+    const loc = weightedPick(state, spec.physical.locations, (l) => (hasBranch(state, l.cityId) ? 3 : 1));
     // Contreparties pertinentes : celles qui ont un desk sur cette commodité, vivantes, non frappées d'interdiction.
     const pool = COUNTERPARTIES.filter((cp) => {
       if (cp.kind === 'bank' || cp.kind === 'fund') return false;
@@ -141,18 +168,27 @@ export function generateOffers(state: GameState) {
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %) ; un contact qui
     // vous fait confiance propose de meilleures conditions (jusqu'à 0,3 % de mieux à confiance maximale).
     const trust = contactAt(state, cp.id)?.trust ?? 0;
-    const skew = f * (0.0015 - (trust / 100) * 0.003 + 0.0045 * normal(state.rng));
+    const skew = f * (0.0015 - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
     let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
     diff = roundTo(diff, spec.tick);
     const id = newId(state, 'o');
+    // phase 8 : une petite maison se voit proposer des parts de cargaison (co-chargement) plutôt qu'une cargaison
+    // entière qui dépasserait ses fonds propres (une cargaison de GNL vaut ~40 M$)
+    let qty = pick(state.rng, spec.physical.cargoSizes);
+    const notional = qty * f * spec.valuePerUnit * fx(state.market, spec.currency);
+    const cap = 1.2 * Math.max(5e6, nav(state));
+    if (notional > cap) {
+      const step = Math.max(1, spec.lot.kind === 'fixed' ? spec.lot.qty : 1000);
+      qty = Math.max(step, Math.round((qty * Math.max(0.15, cap / notional)) / step) * step);
+    }
     state.offers.push({
       id,
       cityId: loc.cityId,
       commodity: c,
       locationId: loc.id,
       side,
-      qty: pick(state.rng, spec.physical.cargoSizes),
+      qty,
       month,
       diff,
       counterpartyId: cp.id,
@@ -196,7 +232,7 @@ export const INSPECTION_COST = 0.0003;
 export function offSpecProbability(state: GameState, cpId: string): number {
   const r = cpRating(state, cpId);
   const st = state.world.zones[zoneOf(cpId)]?.stability ?? 80;
-  return 0.04 + (['B', 'CCC'].includes(r) ? 0.06 : r === 'BB' ? 0.03 : 0) + (st < 50 ? 0.04 : 0);
+  return (0.04 + (['B', 'CCC'].includes(r) ? 0.06 : r === 'BB' ? 0.03 : 0) + (st < 50 ? 0.04 : 0)) * qualityRiskMult(state);
 }
 
 export function acceptOffer(state: GameState, offerId: string, inspect = false): ActionResult {
@@ -253,6 +289,7 @@ export function acceptOffer(state: GameState, offerId: string, inspect = false):
 /** Achat spot d'une cargaison prompte, mise en stock immédiatement, payée comptant. */
 export function spotBuy(state: GameState, c: CommodityId, locationId: string, qty: number): ActionResult {
   const spec = COMMODITIES[c];
+  if (spec.physical.storable === false) return { ok: false, message: `${spec.short} : ne se stocke pas. Utilisez les contrats à terme et les livraisons physiques.` };
   const loc = findLocation(c, locationId);
   const pen = isPresent(state, loc.cityId) ? 0 : REMOTE_SPOT_PENALTY;
   const price = roundTo(localSpot(state, c, locationId) * (1 + spec.physical.spotSpreadPct + pen), spec.tick);
@@ -311,7 +348,7 @@ export function chargeStorage(state: GameState, days: number) {
  */
 export function processDeliveries(state: GameState): string[] {
   const msgs: string[] = [];
-  const due = state.forwards.filter((d) => d.deliveryDay <= state.day);
+  let due = state.forwards.filter((d) => d.deliveryDay <= state.day);
   if (!due.length) return msgs;
   state.forwards = state.forwards.filter((d) => d.deliveryDay > state.day);
   // Tolérance : le vendeur choisit la quantité dans ±tol (plus si le prix convenu dépasse le marché).
@@ -320,6 +357,18 @@ export function processDeliveries(state: GameState): string[] {
     const S = localSpot(state, d.commodity, d.locationId);
     d.qty = d.qty * (d.price > S ? 1 + d.tolerance : 1 - d.tolerance);
   }
+  // Électricité (phase 8) : non stockable, livrée et consommée en temps réel. L'acheteur revend aussitôt au
+  // prix spot local, le vendeur rachète au spot ce qu'il livre : règlement de la différence, sans stock.
+  for (const d of due.filter((x) => COMMODITIES[x.commodity].physical.storable === false)) {
+    const spec = COMMODITIES[d.commodity];
+    const k = spec.valuePerUnit * fx(state.market, spec.currency);
+    const S = localSpot(state, d.commodity, d.locationId);
+    const net = d.side * (S - d.price) * d.qty * k;
+    addCash(state, net, 'physical', d.commodity);
+    recordDeal(state, `Livraison d’électricité ${findLocation(d.commodity, d.locationId).label}`, net);
+    msgs.push(`Électricité livrée (${d.qty.toLocaleString('fr-FR')} MWh) : réglée contre le prix spot, ${net >= 0 ? '+' : ''}${Math.round(net / 1000)} k$.`);
+  }
+  due = due.filter((x) => COMMODITIES[x.commodity].physical.storable !== false);
   for (const d of due.filter((x) => x.side > 0)) {
     const spec = COMMODITIES[d.commodity];
     // Qualité (phase 7) : tirage haché sur le contrat (n'affecte pas l'aléa du marché).

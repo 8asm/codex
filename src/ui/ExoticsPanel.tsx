@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES } from '../data/commodities';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { optionExpiry, optionMonths } from '../engine/contracts';
 import { cliquetDays, exoticLabel, exoticQuote, exoticUnitPrice, exoticValueUsd, mcExotic, quantoCcy } from '../engine/exotics';
 import { futuresPrice, fx } from '../engine/market';
 import type { BarrierType, ExoticKind, ExoticSpec, OptType } from '../engine/types';
-import { Panel, Term } from './common';
+import { CommodityPicker, Panel, Term } from './common';
 import { price, signedUsd, usd } from './format';
 import { useStore } from './store';
+import { SPREADS, SPREAD_BY_ID } from '../data/spreads';
 
 const KINDS: { id: ExoticKind; label: string; term: string; blurb: string }[] = [
   { id: 'barrier', label: 'Barrière', term: 'barrier', blurb: 'Une vanille qui s’active ou meurt si le prix touche un niveau. Moins chère, mais attention au saut au-dessus de la barrière.' },
@@ -38,6 +39,7 @@ export function ExoticsPanel() {
   const [bt, setBt] = useState<BarrierType>('up-out');
   const [payout, setPayout] = useState(5);
   const [resets, setResets] = useState(3);
+  const [spreadId, setSpreadId] = useState('');
   const [qty, setQty] = useState(spec.physical.cargoSizes[0]!);
   const [mc, setMc] = useState<null | { price: number; se: number; key: string }>(null);
   const expiry = optionExpiry(spec, mi);
@@ -57,7 +59,19 @@ export function ExoticsPanel() {
       }
       case 'digital': return { ...base, kind, strike: round((F * kPct) / 100), payout };
       case 'lookback': return { ...base, kind, strike: 1 };
-      case 'spread': return mi2 === undefined ? null : { ...base, kind, month2: mi2, strike: round((F - F2) * kPct / 100) };
+      case 'spread': {
+        if (spreadId) {
+          // spread entre commodités : échéances alignées (1ᵉʳ mois coté de la jambe 2 ≥ celui de la jambe 1)
+          const d = SPREAD_BY_ID[spreadId]!;
+          const m1 = optionMonths(COMMODITIES[d.c1], g.day)[1] ?? optionMonths(COMMODITIES[d.c1], g.day)[0]!;
+          const m2 = optionMonths(COMMODITIES[d.c2], g.day).find((x) => x >= m1);
+          if (m2 === undefined) return null;
+          const cur = d.a1 * futuresPrice(g.market, d.c1, m1) - d.a2 * futuresPrice(g.market, d.c2, m2);
+          const exp = Math.min(optionExpiry(COMMODITIES[d.c1], m1), optionExpiry(COMMODITIES[d.c2], m2));
+          return { kind, commodity: d.c1, month: m1, month2: m2, spreadId, type, expiry: exp, strike: Math.round((cur * kPct) / 100 * 100) / 100 };
+        }
+        return mi2 === undefined ? null : { ...base, kind, month2: mi2, strike: round((F - F2) * kPct / 100) };
+      }
       case 'compound': {
         if (mi2 === undefined) return null;
         const exp2 = optionExpiry(spec, mi2);
@@ -66,7 +80,7 @@ export function ExoticsPanel() {
       case 'quanto': return { ...base, kind, strike: round((F * kPct) / 100) };
       case 'cliquet': return { ...base, kind, strike: 1, resets };
     }
-  }, [kind, c, mi, type, kPct, hPct, bt, payout, resets, F, F2, mi2, expiry]);
+  }, [kind, c, mi, type, kPct, hPct, bt, payout, resets, F, F2, mi2, expiry, spreadId, g.day, g.market]);
 
   const st = x?.kind === 'cliquet' ? { resetDays: cliquetDays(g.day, expiry, resets), refs: [F] } : x?.kind === 'lookback' ? { extreme: F } : {};
   const q = x ? exoticQuote(g.market, x, st) : null;
@@ -77,9 +91,7 @@ export function ExoticsPanel() {
   return (
     <Panel title="Produits structurés" icon="🧪" onClose={() => setPanel('exotics')} wide>
       <p className="muted small">Options sur mesure de gré à gré, cotées par les banques. Formules fermées vérifiées par Monte Carlo ; fourchettes larges et débouclage coûteux : c’est le prix du sur-mesure.</p>
-      <div className="chips">
-        {COMMODITY_IDS.map((id) => <button key={id} className={c === id ? 'on' : ''} onClick={() => select(id)}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>)}
-      </div>
+      <CommodityPicker value={c} onChange={(id) => select(id)} />
       <div className="chips">
         {KINDS.map((y) => <button key={y.id} className={kind === y.id ? 'on' : ''} onClick={() => setKind(y.id)}>{y.label}</button>)}
       </div>
@@ -95,7 +107,15 @@ export function ExoticsPanel() {
           </div>
         )}
         {kind !== 'lookback' && kind !== 'cliquet' && (
+          <>
+          {kind === 'spread' && (
+            <select value={spreadId} onChange={(e) => setSpreadId(e.target.value)}>
+              <option value="">Spread calendaire ({COMMODITIES[c].short})</option>
+              {SPREADS.map((sp) => <option key={sp.id} value={sp.id}>{sp.label} ({sp.unit})</option>)}
+            </select>
+          )}
           <label>{kind === 'spread' ? 'Strike du spread' : 'Strike'} <b>{kPct} %</b><input type="range" min={kind === 'spread' ? -200 : 70} max={kind === 'spread' ? 300 : 130} step={kind === 'spread' ? 10 : 1} value={kPct} onChange={(e) => setK(Number(e.target.value))} /></label>
+          </>
         )}
         {kind === 'barrier' && (
           <>
@@ -113,7 +133,8 @@ export function ExoticsPanel() {
         <div className="ticket">
           <div className="muted small">
             {exoticLabel(x)} · future {monthLabel(x.month)} à {price(c, x.kind === 'compound' ? F2 : F)} · échéance {formatDayShort(x.expiry)}
-            {x.kind === 'spread' && <> · spread actuel {price(c, F - F2)}</>}
+            {x.kind === 'spread' && !x.spreadId && <> · spread actuel {price(c, F - F2)}</>}
+            {x.spreadId && <> · {SPREAD_BY_ID[x.spreadId]!.blurb} Strike {x.strike} {SPREAD_BY_ID[x.spreadId]!.unit}</>}
             {x.kind === 'compound' && <> · call sous-jacent strike {x.strike} échéance {formatDayShort(x.expiry2!)}, prime à payer {x.strike2}</>}
             {x.kind === 'quanto' && <> · payé en {quantoCcy(c)} au taux fixe actuel</>}
           </div>
@@ -125,7 +146,7 @@ export function ExoticsPanel() {
             <div><span><Term id="vega">Vega</Term> (1 pt)</span><b>{usd(q.vegaUsd * qty)}</b></div>
             <div>
               <span>Contrôle Monte Carlo</span>
-              {x.kind === 'quanto' ? <b className="muted">formule fermée seule</b> : mc && mc.key === key ? <b>{mc.price.toFixed(3)} ± {(2 * mc.se).toFixed(3)}</b> : <button onClick={() => { const r = mcExotic(g.market, x, st, 3000, key); setMc({ ...r, key }); }}>Lancer (3 000 chemins)</button>}
+              {x.kind === 'quanto' || x.spreadId ? <b className="muted">formule fermée seule</b> : mc && mc.key === key ? <b>{mc.price.toFixed(3)} ± {(2 * mc.se).toFixed(3)}</b> : <button onClick={() => { const r = mcExotic(g.market, x, st, 3000, key); setMc({ ...r, key }); }}>Lancer (3 000 chemins)</button>}
             </div>
           </div>
           <div className="row">

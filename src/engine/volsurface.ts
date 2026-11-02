@@ -39,6 +39,7 @@ export function smileFactor(m: MarketState, c: CommodityId, x: number): number {
 export function impliedVolAt(m: MarketState, c: CommodityId, mi: MonthIndex, expiry: Day, K: number, F = futuresPrice(m, c, mi)): number {
   const atm = atmVol(m, c, mi, expiry);
   const tauE = Math.max(1 / 365, yearFrac(m.day, expiry));
-  const x = Math.log(K / F) / (atm * Math.sqrt(tauE));
+  const s = COMMODITIES[c].model.shift ?? 0; // log-normale décalée : moneyness sur F + décalage
+  const x = Math.log((K + s) / (F + s)) / (atm * Math.sqrt(tauE));
   return Math.max(0.01, atm * smileFactor(m, c, x) + (m.volShift ?? 0));
 }

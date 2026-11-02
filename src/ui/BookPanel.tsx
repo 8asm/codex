@@ -45,7 +45,7 @@ export function BookPanel() {
         </div>
         <div className="pnl-by">
           <div className="muted small">P&L du jour par commodité</div>
-          {COMMODITY_IDS.map((c) => (
+          {COMMODITY_IDS.filter((c) => Math.abs(last?.pnlBy[c] ?? 0) > 1).map((c) => (
             <div key={c} className="pnl-row">
               <span>{COMMODITIES[c].icon} {COMMODITIES[c].short}</span>
               <b className={tone(last?.pnlBy[c] ?? 0)}>{signedUsd(last?.pnlBy[c] ?? 0)}</b>

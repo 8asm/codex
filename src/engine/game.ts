@@ -8,7 +8,8 @@
  *   clôture    -> VM, échéances, livraisons, stockage, intérêts, frais, impôts, trésorerie/appels de marge
  *   nuit       -> le marché évolue jusqu'au jour ouvré suivant
  */
-import { CITY_BY_ID } from '../data/cities';
+import { CITIES, CITY_BY_ID } from '../data/cities';
+import { ZONES } from '../data/world';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { adjustFollowing, dayFromYMD, monthIndexOf, nextBusinessDay, weekday, ymd, addBusinessDays, formatDay } from './calendar';
 import { addCash, log } from './ledger';
@@ -16,7 +17,7 @@ import { baseVolMult, createMarket, DEFAULT_CURVE, exchangeImRate, stepMarket } 
 import { recomputeIm } from './margin';
 import { addNews, dailyNews } from './news';
 import { acceptOffer, chargeStorage, generateOffers, processDeliveries, spotBuy, spotSell } from './physical';
-import { seedRng } from './rng';
+import { hashUniform, seedRng } from './rng';
 import { exerciseOption, expireContracts, expireOptions, liquidateAllFutures, settleVariationMargin, tradeFuture, tradeOption, tradeSpread } from './trading';
 import { recordFixings, settleOtc, tradeOtc } from './derivatives';
 import { computeExplain, snapshotForExplain } from './explain';
@@ -56,9 +57,10 @@ import { closeExotic, stepExotics, tradeExotic } from './exotics';
 import { acceptPrepay, financeLot, repayLoan, stepFinancing } from './financing';
 import { appeal, checkFuture, complianceMonth, defaultCompliance, exchangeSurveillance, LEVELS, selfReport, setDefense, settleCase, stepInvestigations, suspended } from './compliance';
 import { defaultStats, stepProgress } from './progress';
+import { closeBranch, counterOffer, defaultStaff, fireEmployee, hire, openBranch, raise, refreshCandidates, staffMonth } from './staff';
 import { defaultOffice, fitOutCost, inviteToHq, managesOffice, moveOffice, negotiationEdge, officeEffects, officeItem, officeMonth, officeProperty, relocateOffice, setStyle } from './offices';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
@@ -175,6 +177,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     compliance: defaultCompliance(),
     stats: defaultStats(config.capital),
     achievements: [],
+    staff: defaultStaff(),
     career: null,
     npcs: [],
     situations: [],
@@ -202,6 +205,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   seedNpcs(state);
   if (config.mode === 'story' || config.start === 'join') initCareer(state);
   applyScenario(state);
+  refreshCandidates(state);
   const city = CITY_BY_ID[state.company.hqCity]!;
   if (!state.career) {
     addNews(state, {
@@ -309,6 +313,7 @@ function closeDay(state: GameState) {
     log(state, `Frais généraux du mois (salaires de l’équipe)`, -cost);
     officeMonth(state);
     complianceMonth(state);
+    staffMonth(state);
     // Déclaration réglementaire des dérivés (type EMIR / Dodd-Frank) : coût par transaction du mois écoulé.
     const fee = state.world.cityRegs[co.hqCity]!.reportingFee * co.tradesThisMonth;
     if (fee > 0) {
@@ -569,6 +574,18 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       return settleCase(state, action.id);
     case 'APPEAL':
       return appeal(state, action.id);
+    case 'HIRE':
+      return hire(state, action.candidateId, action.cityId);
+    case 'FIRE_EMPLOYEE':
+      return fireEmployee(state, action.id);
+    case 'RAISE':
+      return raise(state, action.id, action.pct);
+    case 'COUNTER_OFFER':
+      return counterOffer(state, action.id);
+    case 'OPEN_BRANCH':
+      return openBranch(state, action.cityId, action.size);
+    case 'CLOSE_BRANCH':
+      return closeBranch(state, action.cityId);
     case 'SPOT_BUY':
       return guarded(state, () => spotBuy(state, action.commodity, action.locationId, action.qty));
     case 'SPOT_SELL':
@@ -827,7 +844,7 @@ export function migrateState(raw: GameState): GameState {
     s.version = 3;
   }
   if (s.version === 3) {
-    s.market.freight = Object.fromEntries(FREIGHT_IDS.map((i) => [i, Math.log({ CAPE: 22000, PMX: 14000, SMX: 13000, AFRA: 32000 }[i])])) as GameState['market']['freight'];
+    s.market.freight = Object.fromEntries(FREIGHT_IDS.map((i) => [i, Math.log({ CAPE: 22000, PMX: 14000, SMX: 13000, AFRA: 32000, LNGC: 80000 }[i])])) as GameState['market']['freight'];
     Object.assign(s, {
       voyages: [], ffa: [], assets: [], managers: [], opportunities: [], streams: [],
       freightFixings: Object.fromEntries(FREIGHT_IDS.map((i) => [i, []])),
@@ -855,6 +872,33 @@ export function migrateState(raw: GameState): GameState {
     s.company.cumCashByCategory.financing = 0;
     s.market.curve = { USD: { ...DEFAULT_CURVE.USD }, EUR: { ...DEFAULT_CURVE.EUR } };
     s.version = 7;
+  }
+  if (s.version === 7) {
+    // phase 8 : nouvelles commodités, villes, zones, sociétés, fret méthanier, équipes
+    const fresh = createMarket(s.market.day, s.config.volatility);
+    for (const c of COMMODITY_IDS) {
+      if (!s.market.commodities[c]) {
+        s.market.commodities[c] = fresh.commodities[c];
+        s.market.ivLevel[c] = fresh.ivLevel[c];
+      }
+      s.fixings[c] ??= [];
+      s.company.cumCashByCommodity[c] ??= 0;
+      s.lastValueBy[c] ??= 0;
+      s.risk.varBy[c] ??= 0;
+    }
+    for (const h of s.market.history) for (const c of COMMODITY_IDS) h.f[c] ??= [s.market.commodities[c].chi, s.market.commodities[c].xi];
+    s.market.freight.LNGC ??= Math.log(80_000);
+    s.freightFixings.LNGC ??= [];
+    for (const c of CITIES) s.world.cityRegs[c.id] ??= { taxRate: c.corporateTax, kyc: c.kycStrictness, capitalControls: c.capitalControls, reportingFee: c.reportingFee };
+    for (const z of ZONES) {
+      s.world.zones[z.id] ??= { stability: z.baseStability };
+      if (!z.fictional) s.world.calendar.elections[z.id] ??= s.day + 200 + Math.round(hashUniform(s.config.seed, z.id) * 700);
+    }
+    const known = new Set(s.companies.map((x) => x.id));
+    for (const co of createCompanies()) if (!known.has(co.id)) s.companies.push(co);
+    s.staff = defaultStaff();
+    s.explainBase = null;
+    s.version = 8;
   }
   return s;
 }

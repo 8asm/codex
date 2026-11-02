@@ -2,7 +2,7 @@
  * État de marché : facteurs Schwartz-Smith par commodité, différentiels physiques (basis), EURUSD,
  * régime de volatilité. Fournit les prix de courbe utilisés partout (futures, forwards, spot).
  */
-import { COMMODITIES, COMMODITY_IDS, CORRELATION, RATES } from '../data/commodities';
+import { COMMODITIES, COMMODITY_IDS, CORRELATION, FX_INDEX, RATES } from '../data/commodities';
 import type { Day, MonthIndex } from './calendar';
 import { yearFrac } from './calendar';
 import { listedMonths, pricingDay } from './contracts';
@@ -37,7 +37,8 @@ export function createMarket(startDay: Day, volatility = 1): MarketState {
     for (const l of COMMODITIES[id].physical.locations) basisDev[l.id] = 0;
     commodities[id] = {
       chi: p.chi0,
-      xi: Math.log(p.s0) - p.chi0,
+      // log-normale décalée : X = F + décalage est log-normal, d'où ln(s0 + décalage)
+      xi: Math.log(p.s0 + (p.shift ?? 0)) - p.chi0,
       basisDev,
       imRate: 0,
     };
@@ -75,16 +76,21 @@ function snapshot(m: MarketState) {
   if (m.history.length > 320) m.history.shift();
 }
 
-/** Prix forward de la commodité pour une date de livraison (unité de cotation). */
+/** Décalage du modèle log-normal (0 sauf brut enclavé) : prix = X − décalage, X log-normal. */
+export function priceShift(c: CommodityId): number {
+  return COMMODITIES[c].model.shift ?? 0;
+}
+
 export function forwardAt(m: MarketState, c: CommodityId, deliveryDay: Day, asOf: Day = m.day, chi?: number, xi?: number, volMult?: number): number {
   const p = COMMODITIES[c].model;
   const cm = m.commodities[c];
-  return Math.exp(lnForward(p, chi ?? cm.chi, xi ?? cm.xi, yearFrac(asOf, deliveryDay), deliveryDay, volMult ?? m.volMult));
+  return Math.exp(lnForward(p, chi ?? cm.chi, xi ?? cm.xi, yearFrac(asOf, deliveryDay), deliveryDay, volMult ?? m.volMult)) - (p.shift ?? 0);
 }
 
-/** Prix d'une échéance cotée : courbe du modèle × impact de marché résiduel sur ce contrat. */
+/** Prix d'une échéance cotée : courbe du modèle × impact de marché résiduel sur ce contrat (appliqué à X = F + décalage). */
 export function futuresPrice(m: MarketState, c: CommodityId, mi: MonthIndex): number {
-  return forwardAt(m, c, pricingDay(COMMODITIES[c], mi)) * Math.exp(m.impact[`${c}:${mi}`] ?? 0);
+  const s = priceShift(c);
+  return (forwardAt(m, c, pricingDay(COMMODITIES[c], mi)) + s) * Math.exp(m.impact[`${c}:${mi}`] ?? 0) - s;
 }
 
 /** Prix de la première échéance cotée. */
@@ -223,7 +229,7 @@ export function stepMarket(m: MarketState, rng: RngState, toDay: Day, volatility
   });
   // EURUSD : OU sur le log.
   const fxSd = FX_PARAMS.sigma * Math.sqrt((1 - Math.exp(-2 * FX_PARAMS.kappa * dt)) / (2 * FX_PARAMS.kappa));
-  m.fxLog = FX_PARAMS.mean + (m.fxLog - FX_PARAMS.mean) * Math.exp(-FX_PARAMS.kappa * dt) + fxSd * zCorr[5]!;
+  m.fxLog = FX_PARAMS.mean + (m.fxLog - FX_PARAMS.mean) * Math.exp(-FX_PARAMS.kappa * dt) + fxSd * zCorr[FX_INDEX]!;
 
   // Vol implicite : retour à la moyenne + bruit ; les mouvements violents de prix font monter la peur.
   const ivSd = IV_PARAMS.sigma * Math.sqrt((1 - Math.exp(-2 * IV_PARAMS.kappa * dt)) / (2 * IV_PARAMS.kappa));
@@ -247,11 +253,12 @@ export function stepMarket(m: MarketState, rng: RngState, toDay: Day, volatility
 
 /** Courbe forward à une date passée (recalculée depuis l'historique des facteurs), pour comparaison. */
 /** Copie légère du marché (sans historique) pour les scénarios de risque. */
-export function cloneMarket(m: MarketState): MarketState {
+export function cloneMarket(m: MarketState, only?: Set<string>): MarketState {
+  // `only` : seules ces commodités seront modifiées par l'appelant ; les autres sont partagées (lecture seule)
   const commodities = {} as Record<CommodityId, CommodityMarket>;
   for (const id of COMMODITY_IDS) {
     const cm = m.commodities[id];
-    commodities[id] = { chi: cm.chi, xi: cm.xi, imRate: cm.imRate, basisDev: { ...cm.basisDev } };
+    commodities[id] = only && !only.has(id) ? cm : { chi: cm.chi, xi: cm.xi, imRate: cm.imRate, basisDev: { ...cm.basisDev } };
   }
   return {
     day: m.day, volRegime: m.volRegime, volMult: m.volMult, fxLog: m.fxLog, commodities,

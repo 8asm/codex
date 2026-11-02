@@ -39,6 +39,19 @@ export function lastTradingDay(spec: CommoditySpec, mi: MonthIndex): Day {
       return prevBusinessDay(dayFromYMD(Math.floor(mi / 12), (mi % 12) + 1, 15));
     case 'LAST_FRIDAY':
       return adjustPreceding(lastWeekdayOfMonth(mi, 5));
+    case 'WTI': {
+      // NYMEX : 3 jours ouvrés avant le 25 du mois précédant la livraison (le jour ouvré précédent si le 25 est chômé)
+      const prev = mi - 1;
+      let d = dayFromYMD(Math.floor(prev / 12), (prev % 12) + 1, 25);
+      if (!isBusinessDay(d)) d = prevBusinessDay(d);
+      return addBusinessDays(d, -3);
+    }
+    case 'GASOIL':
+      // ICE Gasoil : 2 jours ouvrés avant le 14 du mois de livraison
+      return addBusinessDays(dayFromYMD(Math.floor(mi / 12), (mi % 12) + 1, 14), -2);
+    case 'ICE_SOFTS':
+      // softs ICE US : dernier jour ouvré du mois précédant le mois de livraison
+      return lastBusinessDayOfMonth(mi - 1);
   }
 }
 

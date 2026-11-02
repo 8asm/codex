@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CITY_BY_ID } from '../data/cities';
-import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
+import { COMMODITIES } from '../data/commodities';
+import { activeCommodities } from '../engine/physical';
 import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { basis } from '../engine/market';
@@ -13,6 +14,7 @@ import { ZONE_BY_ID } from '../data/world';
 import type { CommodityId, Offer } from '../engine/types';
 import { localSpot } from '../engine/valuation';
 import { Panel, Term } from './common';
+import { CommodityPicker } from './common';
 import { hedgeLots, hedgeMonthFor } from './derived';
 import { price, qty, signedUsd, tone, usd } from './format';
 import { useStore } from './store';
@@ -146,11 +148,7 @@ function Spot() {
   const sz = sizes.includes(size) ? size : sizes[0]!;
   return (
     <div className="spot">
-      <div className="chips">
-        {COMMODITY_IDS.map((id) => (
-          <button key={id} className={c === id ? 'on' : ''} onClick={() => setC(id)}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>
-        ))}
-      </div>
+      <CommodityPicker value={c} onChange={setC} only={activeCommodities(g).filter((x) => COMMODITIES[x].physical.storable !== false)} />
       <p className="muted small">
         Acheter une cargaison prompte et la stocker : intéressant en <Term id="contango">contango</Term> si l’écart de courbe paie le stockage
         ({price(c, spec.physical.storagePerUnitMonth)} {spec.priceUnit}/mois) et le financement (<Term id="cashcarry">cash-and-carry</Term>).

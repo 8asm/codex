@@ -563,3 +563,15 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .recap-cols h4 { margin: 8px 0 2px; }
 @media (max-width: 800px) { .recap-cols, .ach-grid { grid-template-columns: 1fr; } }
 .scenario-pick button.on .muted { color: #4a3800; }
+
+/* ---------------------------------------------------------------- phase 8 : sélecteur de marchés, équipes */
+.cpicker { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.cpicker-fam { display: flex; gap: 4px; margin-bottom: 4px; }
+.cpicker-fam button { font-size: .8rem; padding: 3px 10px; }
+.cpicker-fam button.on { background: var(--gold); color: #1b1300; }
+.cpicker-fam small { opacity: .7; }
+.mkt-group { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 6px 0 2px 4px; }
+.mkt-wrap { display: contents; }
+.warn-row td { background: #fb718522; }
+.tbl td button + button { margin-left: 4px; }
+.mkt-group { grid-column: 1 / -1; }

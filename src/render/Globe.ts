@@ -41,6 +41,8 @@ export interface GlobeView {
   assets?: AssetView[];
   showRoutes?: boolean;
   sanctionedZones?: string[];
+  /** villes où la société a un bureau (phase 8) */
+  branches?: string[];
 }
 
 export interface GlobeOptions {
@@ -216,8 +218,20 @@ export class Globe {
 
     // villes
     const hubsByCity: Record<string, CommodityId[]> = {};
+    // phase 8 : un décor par type d'installation (cuves, sphère gaz, entrepôt métaux, silo, terril), 3 au plus par ville
+    const propOf = (c: CommodityId): CommodityId => {
+      const g = COMMODITIES[c].group;
+      if (g === 'brut' || g === 'produits') return 'BRENT';
+      if (g === 'gaz' || g === 'électricité' || g === 'carbone') return 'TTF';
+      if (g === 'charbon' || g === 'ferreux') return 'API2';
+      return COMMODITIES[c].family === 'agri' ? 'WHEAT' : 'CU';
+    };
     for (const c of COMMODITY_IDS)
-      for (const l of COMMODITIES[c].physical.locations) (hubsByCity[l.cityId] ??= []).includes(c) || hubsByCity[l.cityId]!.push(c);
+      for (const l of COMMODITIES[c].physical.locations) {
+        const arr = (hubsByCity[l.cityId] ??= []);
+        const k = propOf(c);
+        if (!arr.includes(k) && arr.length < 3) arr.push(k);
+      }
     opts.cities.forEach((city, i) => {
       const pos = latLonToVec3(city.lat, city.lon, 1);
       const group = new THREE.Group();
@@ -509,6 +523,14 @@ export class Globe {
         continue;
       }
       const p = n.pos.clone().multiplyScalar(1.02).project(this.camera);
+      // niveau de détail : de loin, seules les grandes places (et les villes qui vous concernent) sont nommées
+      const v = this.view;
+      const mine = v && (n.city.id === v.hqCity || n.city.id === v.playerCity || n.city.id === v.selectedCity || !!v.activeCities[n.city.id] || !!v.branches?.includes(n.city.id));
+      const major = n.city.airportHub + n.city.bankingHub >= 1.55;
+      if (!mine && ((dist > 2.4 && !major) || (dist > 3.3 && n.city.airportHub + n.city.bankingHub < 1.8))) {
+        n.label.style.display = 'none';
+        continue;
+      }
       n.label.style.display = '';
       n.label.style.transform = `translate(-50%, -100%) translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h - 6}px)`;
       n.label.style.opacity = String(Math.min(1, (facing - 0.25) * 4));

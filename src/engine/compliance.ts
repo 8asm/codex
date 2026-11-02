@@ -30,6 +30,7 @@ import { addNews } from './news';
 import { hashUniform } from './rng';
 import type { ActionResult, CaseFile, CaseKind, ComplianceLevel, ComplianceState, DefenseStrategy, GameState, Investigation, Offer } from './types';
 import { exposures, nav } from './valuation';
+import { legalDetectBonus, legalFineMult } from './staff';
 
 export const LEVELS: Record<ComplianceLevel, { monthly: number; seats: number; fineMult: number; detect: number; label: string }> = {
   minimal: { monthly: 0, seats: 0, fineMult: 1.3, detect: 0.15, label: 'Minimal (le juriste à temps partiel)' },
@@ -74,7 +75,7 @@ export function caseKindLabel(k: CaseKind) {
 export function recordCase(state: GameState, kind: CaseKind, severity: number, gain: number, label: string): CaseFile {
   const c = comp(state);
   const id = newId(state, 'cf');
-  const flagged = hashUniform(state.config.seed, id, 'flag') < LEVELS[c.level].detect;
+  const flagged = hashUniform(state.config.seed, id, 'flag') < Math.min(0.98, LEVELS[c.level].detect + legalDetectBonus(state));
   const f: CaseFile = { id, day: state.day, kind, severity: Math.max(1, Math.min(5, severity)), gain: Math.max(0, gain), label, flagged, status: 'latent' };
   c.cases.push(f);
   if (flagged && c.level !== 'minimal') state.pendingAlerts.push({ kind: 'advice', text: `Conformité : ${label}. Ce dossier pourrait intéresser ${AUTHORITY[kind](state)}.` });
@@ -176,7 +177,7 @@ export function estimateFine(state: GameState, inv: Pick<Investigation, 'caseIds
   const c = comp(state);
   const cases = c.cases.filter((x) => inv.caseIds.includes(x.id));
   const base = cases.reduce((s, x) => s + 2 * x.gain + x.severity * 500_000, 0);
-  return base * LEVELS[c.level].fineMult * (inv.selfReported ? 0.5 : 1) * (inv.strategy === 'coopérer' ? 0.75 : 1);
+  return base * LEVELS[c.level].fineMult * legalFineMult(state) * (inv.selfReported ? 0.5 : 1) * (inv.strategy === 'coopérer' ? 0.75 : 1);
 }
 
 function evidence(state: GameState, inv: Investigation): number {

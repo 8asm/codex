@@ -22,11 +22,22 @@ import type { Day } from './calendar';
 import { ymd, daysInMonth, monthIndexOf } from './calendar';
 import type { ModelParams } from './types';
 
+/** Fraction de mois (0..12) d'un jour, mise en cache (appelée des centaines de milliers de fois par la VaR). */
+const monthFracCache = new Map<number, number>();
+function monthFrac(day: Day): number {
+  let v = monthFracCache.get(day);
+  if (v === undefined) {
+    const { m, d } = ymd(day);
+    v = m - 1 + (d - 1) / daysInMonth(monthIndexOf(day));
+    if (monthFracCache.size > 20_000) monthFracCache.clear();
+    monthFracCache.set(day, v);
+  }
+  return v;
+}
+
 export function seasonal(p: ModelParams, day: Day): number {
   if (p.seasonalAmp === 0) return 0;
-  const { m, d } = ymd(day);
-  const monthFrac = m - 1 + (d - 1) / daysInMonth(monthIndexOf(day));
-  return p.seasonalAmp * Math.cos((2 * Math.PI * (monthFrac - p.seasonalPeak)) / 12);
+  return p.seasonalAmp * Math.cos((2 * Math.PI * (monthFrac(day) - p.seasonalPeak)) / 12);
 }
 
 function muStar(p: ModelParams, volMult: number): number {

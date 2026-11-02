@@ -1,18 +1,25 @@
 import type { Day, MonthIndex } from './calendar';
 import type { RngState } from './rng';
 
-export type CommodityId = 'BRENT' | 'TTF' | 'CU' | 'WHEAT' | 'API2';
+export type CommodityId =
+  | 'BRENT' | 'TTF' | 'CU' | 'WHEAT' | 'API2'
+  // phase 8 : énergie
+  | 'WTI' | 'DUBAI' | 'GASOIL' | 'GASOLINE' | 'JET' | 'FUELOIL' | 'HH' | 'JKM' | 'POWER' | 'NEWC' | 'METCOAL' | 'EUA'
+  // métaux
+  | 'AL' | 'ZN' | 'NI' | 'PB' | 'SN' | 'CO' | 'LI' | 'AU' | 'AG' | 'FE'
+  // agricoles et softs
+  | 'CORN' | 'SOY' | 'SOYMEAL' | 'SOYOIL' | 'SUGAR' | 'COFFEE' | 'COCOA' | 'COTTON' | 'PALM' | 'RICE' | 'OJ';
 export type Currency = 'USD' | 'EUR';
 export type Incoterm = 'FOB' | 'CFR' | 'CIF' | 'DAP' | 'DES' | 'FCA' | 'HUB';
 
 /** Règle de dernier jour de cotation (Last Trading Day) calquée sur les vraies bourses. */
-export type LtdRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'LAST_FRIDAY';
+export type LtdRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'LAST_FRIDAY' | 'WTI' | 'GASOIL' | 'ICE_SOFTS';
 export type OptType = 'C' | 'P';
 export type OptStyle = 'A' | 'E';
 /** Règle d'expiration des options sur futures. */
 export type OptionExpiryRule = 'BRENT' | 'TTF' | 'LME' | 'CBOT' | 'WITH_FUTURE';
 export type AdvisorId = 'risk' | 'trader' | 'legal' | 'ops' | 'analyst';
-export type FreightIndex = 'CAPE' | 'PMX' | 'SMX' | 'AFRA';
+export type FreightIndex = 'CAPE' | 'PMX' | 'SMX' | 'AFRA' | 'LNGC';
 export type CareerTrack = 'trading' | 'risk' | 'operations' | 'structured' | 'research';
 export type Skill = 'marché' | 'risque' | 'négociation' | 'opérations' | 'finance' | 'relationnel';
 export type NpcRole = 'manager' | 'collègue' | 'risk' | 'conformité' | 'client' | 'banquier' | 'chasseur' | 'journaliste' | 'officiel' | 'investisseur' | 'mentor';
@@ -28,6 +35,11 @@ export interface ModelParams {
   longDrift: number; // pente annuelle de l'extrémité longue de la courbe (portage de long terme)
   seasonalAmp: number; // amplitude saisonnière (log)
   seasonalPeak: number; // mois (0..12, fractionnaire) du pic saisonnier
+  /**
+   * Phase 8 : décalage du modèle log-normal (log-normale décalée). Le prix vaut exp(·) − shift et peut donc
+   * devenir négatif jusqu'à −shift (brut enclavé type WTI quand les cuves sont pleines).
+   */
+  shift?: number;
 }
 
 export interface PhysicalLocation {
@@ -46,6 +58,8 @@ export interface CommoditySpec {
   name: string;
   short: string;
   family: 'energy' | 'metals' | 'agri';
+  /** Phase 8 : sous-secteur (affichage, corrélations) : brut, produits, gaz, électricité, charbon, carbone, base, précieux… */
+  group: string;
   exchange: string;
   currency: Currency;
   priceUnit: string;
@@ -78,6 +92,8 @@ export interface CommoditySpec {
     storagePerUnitMonth: number;
     spotSpreadPct: number;
     locations: PhysicalLocation[];
+    /** Phase 8 : false pour l'électricité (aucun stockage : livrée et consommée en temps réel). */
+    storable?: boolean;
   };
   /** Logistique : tonnes par unité, manutention portuaire ($/t), pertes en transit, navire selon la taille. */
   logistics: { tonnesPerUnit: number; handlingPerT: number; transitLoss: number; vessel: (qty: number) => FreightIndex };
@@ -540,6 +556,8 @@ export interface GameConfig {
   /** Phase 7 : scénario historique (identifiant), objectif de victoire choisi. */
   scenario?: string;
   goal?: GoalId;
+  /** Phase 8 : commodités autorisées dans la partie (offres, panneaux). Absent = toutes. */
+  commodities?: CommodityId[];
 }
 
 export interface GameState {
@@ -583,6 +601,7 @@ export interface GameState {
   compliance: ComplianceState;
   stats: GameStats;
   achievements: Achievement[];
+  staff: StaffState;
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];
@@ -763,7 +782,9 @@ export interface FfaPosition {
   mark: number; // MTM (USD) à la dernière marge de variation
 }
 
-export type AssetType = 'oilfield' | 'mine_cu' | 'mine_coal' | 'refinery' | 'tank' | 'warehouse' | 'silo' | 'gas_storage' | 'terminal' | 'vessel';
+export type AssetType = 'oilfield' | 'mine_cu' | 'mine_coal' | 'refinery' | 'tank' | 'warehouse' | 'silo' | 'gas_storage' | 'terminal' | 'vessel'
+  // phase 8
+  | 'mine' | 'plantation' | 'crush' | 'powerplant' | 'smelter';
 export type AssetPolicy = 'prudent' | 'équilibré' | 'agressif';
 
 export interface AssetState {
@@ -836,6 +857,9 @@ export interface StreamPosition {
 export interface Automation {
   autoRoll: boolean;
   autoHedge: { on: boolean; ratio: number; threshold: number };
+  /** Quantité (en unités) de futures ouverte par la couverture automatique elle-même, par matière : permet de
+   *  déboucler ses propres couvertures quand le physique disparaît, sans toucher aux positions du joueur. */
+  hedged?: Partial<Record<CommodityId, number>>;
   autoSellProduction: boolean;
   autoLogistics: boolean;
   marineInsurance: boolean;
@@ -896,6 +920,12 @@ export type Action =
   | { type: 'SETTLE_CASE'; id: string }
   | { type: 'APPEAL'; id: string }
   | { type: 'ACCEPT_BRIBE_OFFER'; offerId: string }
+  | { type: 'HIRE'; candidateId: string; cityId?: string }
+  | { type: 'FIRE_EMPLOYEE'; id: string }
+  | { type: 'RAISE'; id: string; pct: number }
+  | { type: 'COUNTER_OFFER'; id: string }
+  | { type: 'OPEN_BRANCH'; cityId: string; size: 'bureau' | 'grand' }
+  | { type: 'CLOSE_BRANCH'; cityId: string }
   | { type: 'RETIRE' };
 
 export type NegotiationMove = 'ancrer' | 'concéder' | 'bluffer' | 'argumenter' | 'accepter' | 'rompre';
@@ -952,6 +982,8 @@ export interface ExoticSpec {
   payout?: number;
   /** Spread calendaire : second mois (payoff sur F(month) − F(month2)). */
   month2?: MonthIndex;
+  /** Phase 8 : spread entre commodités (identifiant de `data/spreads.ts`) ; `month2` est alors l'échéance de la 2ᵉ jambe. */
+  spreadId?: string;
   /** Composée : prime à payer à l'échéance pour obtenir le call sous-jacent, et échéance de celui-ci. */
   strike2?: number;
   expiry2?: Day;
@@ -1116,4 +1148,49 @@ export interface GameStats {
 export interface Achievement {
   id: string;
   day: Day;
+}
+
+// ---------------------------------------------------------------- phase 8 : équipes et bureaux
+export type StaffRole = 'trader' | 'analyst' | 'operations' | 'risk' | 'legal' | 'chartering';
+
+export interface Employee {
+  id: string;
+  name: string;
+  role: StaffRole;
+  /** famille couverte (traders, analystes) */
+  family?: CommoditySpec['family'];
+  skill: number; // 0..100
+  ambition: number; // 0..1
+  loyalty: number; // 0..100
+  salary: number; // mensuel (USD)
+  /** contacts clients apportés (traders) */
+  network: number;
+  hiredDay: Day;
+  /** ville de rattachement (siège ou bureau) */
+  cityId: string;
+}
+
+export interface Candidate extends Employee {
+  expiresDay: Day;
+}
+
+export interface Branch {
+  cityId: string;
+  size: 'bureau' | 'grand';
+  openedDay: Day;
+  fitOut: number;
+}
+
+export interface PoachOffer {
+  employeeId: string;
+  companyId: string;
+  salary: number;
+  expiresDay: Day;
+}
+
+export interface StaffState {
+  employees: Employee[];
+  candidates: Candidate[];
+  branches: Branch[];
+  poach: PoachOffer[];
 }

@@ -152,7 +152,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - interdiction d'export de minerai brut ;
   - embargo charbon d'un importateur contre un exportateur ;
   - El Niño / La Niña, ouragans dans le Golfe, explosion de raffinerie, coup d'État dans un pays minier.
-- **Simplification — prix négatifs** : le modèle lognormal ne peut pas produire de prix négatif. Le remake « pétrole à prix négatif » est un effondrement du front avec un contango extrême. Un modèle arithmétique (ou à décalage) sera nécessaire si un brut enclavé type WTI est ajouté (*phase 8*).
+- **Simplification — prix négatifs** : le modèle lognormal ne peut pas produire de prix négatif. Le remake « pétrole à prix négatif » est un effondrement du front avec un contango extrême. **Phase 8** : le WTI utilise une log-normale décalée, qui peut devenir négative (voir plus bas).
 - **Simplification — suspension** : pendant une suspension, les prix publiés sont figés et tous les chocs (marché et news) s'accumulent, puis tombent à la réouverture. Il n'y a pas d'annulation rétroactive des transactions de la journée (contrairement à l'épisode réel du nickel). Seuls les futures et options de la commodité sont bloqués ; le physique continue.
 - **Délits d'initiés** : informations obtenues en avance par les relations, traitées en phase 5 (voir plus bas). La conformité complète (procédures, sanctions de la société, contrôles automatiques) : *phase 7* (voir plus bas).
 
@@ -168,7 +168,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - exigence KYC (contrepartie à risque = notée BB ou moins, ou pays de stabilité < 50) : délai d'1 à 3 jours ouvrés avant de pouvoir traiter, ou exclusion pure dans une juridiction très stricte ;
   - coût de déclaration des dérivés par transaction, facturé chaque mois ;
   - contrôle des capitaux : financement +0,5 %, et risque de gel de 20 % de la trésorerie pendant 10 jours.
-- **Simplification** : licences et bureaux multiples arriveront avec l'ouverture de bureaux (*phase 8*). Le siège unique peut être transféré.
+- **Simplification** : bureaux dans d'autres villes : *phase 8* (licence locale payée à l'ouverture, sans régulation propre au bureau). Le siège peut être transféré.
 
 ### Sociétés concurrentes (`engine/companies.ts`)
 - 28 sociétés simulées (maisons de négoce, bras trading des majors, maisons agricoles, mineur, 3 banques, 2 fonds) et 10 contreparties à notation fixe (producteurs, utilities, coopératives), dont 4 issues des zones fictives.
@@ -178,7 +178,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Faillite** : liquidation forcée de ses expositions (choc de prix proportionnel à la taille), résiliation et compensation des contrats du joueur.
 - **Concurrence sur le physique** : une offre avantageuse a 25 % de chances par jour d'être raflée par un concurrent.
 - Classement (joueur inclus) et **rival nominatif** (maison de la même ville au profil le plus proche, avec son trader vedette).
-- **Simplification** : les concurrents n'ont pas de livre détaillé (expositions agrégées par commodité) et n'interagissent pas avec le carnet des futures, sauf choc de liquidation. Débauchage du joueur par les chasseurs de têtes : phase 5. Recrutement par le joueur de ses propres équipes : *phase 8*.
+- **Simplification** : les concurrents n'ont pas de livre détaillé (expositions agrégées par commodité) et n'interagissent pas avec le carnet des futures, sauf choc de liquidation. Débauchage du joueur par les chasseurs de têtes : phase 5. Recrutement par le joueur de ses propres équipes : *phase 8* (voir plus bas).
 
 ### Risque de contrepartie (`engine/credit.ts`)
 - Probabilités de défaut annuelles par notation (AAA 0,01 % … B 4 %, CCC 15 %), doublées en régime de stress. Les contreparties non simulées sont dégradées par l'instabilité de leur pays.
@@ -200,7 +200,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - Quatre indices de taux d'affrètement (TCE, $/jour) : Capesize, Panamax, Supramax, Aframax. Modèle de Schwartz à un facteur sur le log, simulé sous la mesure de pricing, avec formule fermée du forward. μ est choisi pour que l'espérance stationnaire vaille la moyenne de l'indice. Martingale vérifiée par Monte Carlo. Vol de 55 à 75 % par an, retour à la moyenne rapide.
 - **FFA** : swaps compensés sur la moyenne mensuelle de l'indice quotidien. Marge de variation chaque soir (avec marge « trade-date »), marge initiale de 25 % du notionnel, commission de 0,25 %. Règlement total = jours × (moyenne − prix) (testé).
 - Événements de fret : mer Rouge fermée (détour par le Cap), sécheresse à Panama, boom ou surcapacité du vrac, flotte fantôme et pétroliers. Le canal bloqué de la phase 3 ferme désormais réellement Suez.
-- **Simplifications** : pas de saisonnalité du fret ; indices indépendants entre eux et des commodités (le lien passe par les soutes indexées sur le Brent et par les différentiels) ; pas de méthaniers (le GNL arrive avec JKM en *phase 8*).
+- **Simplifications** : pas de saisonnalité du fret ; indices indépendants entre eux et des commodités (le lien passe par les soutes indexées sur le Brent et par les différentiels) ; méthaniers (indice LNGC) et GNL JKM : *phase 8*.
 
 ### Logistique (`engine/logistics.ts`, `data/routes.ts`)
 - Graphe maritime de 38 nœuds réels (ports, détroits, canaux, caps), plus court chemin par Dijkstra. Les passages fermés par un événement (Suez, Bab-el-Mandeb, Panama…) imposent le détour (testé : Fujairah–Rotterdam passe par le Cap si Suez est fermé). Pré-acheminement par barge de Chicago au Golfe.
@@ -232,7 +232,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Exploitation quotidienne** :
   - production = capacité × utilisation × part × déclin, avec coûts variables et fixes ;
   - production vendue au spot (automatisation) ou mise en stock, donc à couvrir ;
-  - raffinerie : marge de raffinage (crack) stochastique en % du Brent, en attendant les marchés de produits (*phase 8*) ;
+  - raffinerie : marge de raffinage (crack). *Phase 8* : calculée sur les vrais marchés de produits (gazole, essence, kérosène, fioul) ;
   - stockage : capacité pour le joueur, le reste loué au marché ;
   - stockage de gaz géré : injection d'avril à septembre, soutirage de novembre à mars ;
   - terminal : redevances ;
@@ -247,7 +247,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Managers** (PNJ générés) : compétence, salaire, spécialité. La politique prudente, équilibrée ou agressive fixe l'utilisation, le seuil de maintenance et la couverture mensuelle de la production par swaps (80 / 50 / 0 % sur 3 mois). Le facteur d'accident vaut 1,5 − compétence/100. Les erreurs (maintenance reportée, sur-régime) ont une probabilité proportionnelle à l'incompétence.
 - **Simplifications** :
   - un navire affrété à temps n'est pas inscrit au bilan (IFRS 16 non appliqué) ;
-  - pas de fonderie, d'usine de trituration ni de centrale : il manque les marchés de concentrés, de soja et d'électricité (*phase 8*) ;
+  - *phase 8* : usines de trituration, centrale à cycle combiné et fonderie d'aluminium ; toujours pas de fonderie de concentrés (pas de marché des concentrés) ;
   - coentreprises sans gouvernance (pas de vote des partenaires) ;
   - les concurrents ne possèdent pas d'actifs modélisés.
 
@@ -431,7 +431,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - pas de marché immobilier : l'immeuble est valorisé à sa valeur nette comptable, et le loyer de marché n'est pas indexé ;
   - pas de durée de bail ni d'indemnité de sortie anticipée ; la perte des agencements en tient lieu ;
   - l'art garde une valeur constante ;
-  - l'équipe de base reste de 3 personnes : le recrutement de traders et l'ouverture de bureaux dans d'autres villes viendront en *phase 8*, comme prévu ;
+  - l'équipe de base reste de 3 personnes. Le recrutement et les bureaux dans d'autres villes sont traités en *phase 8* ;
   - pas d'interaction directe avec les passants de la vue ville : ils sont décoratifs, et les PNJ avec lesquels on interagit sont ceux du panneau Bureaux ou Carrière.
 
 ### Sauvegardes
@@ -485,7 +485,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Simplifications** :
   - pas de smile pour les exotiques autres que la digitale (vol ATM du modèle × niveau implicite) ;
   - la composée et la quanto ne sont pas validées par le MC (Geske suppose une vol constante ; la dynamique jointe commodité/change n'est pas simulée sous la mesure de paiement), seulement par des cas limites ;
-  - pas d'option sur crack spread tant que les produits raffinés n'existent pas (*phase 8*) ;
+  - *phase 8* : options sur spreads entre commodités (crack, spark, WTI-Brent, Brent-Dubaï, JKM-Henry Hub, blé-maïs) ;
   - pas de barrière à fenêtre ni de rebate.
 
 ### Financement (`engine/financing.ts`)
@@ -516,7 +516,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Inspection indépendante** (0,03 % du notionnel, cochée sur l'offre) : réfaction obtenue du vendeur, ou cargaison contaminée refusée au chargement (contrat annulé, rien à payer).
 - **Sans inspection** : le lot entre en stock avec un facteur de qualité < 1 (valeur, vente spot), et un acheteur à qui on le livre obtient la même réfaction.
 - **Simplifications** :
-  - pas de spreads de qualité par grade (soufre, API…) : *phase 8* avec les grades de brut ;
+  - grades de brut : *phase 8* avec le WTI (léger, enclavé) et le Dubaï (moyen, soufré) ; le spread Brent-Dubaï est la prime de qualité. Pas de grades plus fins (Forties, Urals…) ;
   - pas de litige ni d'arbitrage.
 
 ### Conformité et enquêtes (`engine/compliance.ts`)
@@ -624,3 +624,130 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Constats** :
   - une vente physique non sourcée paie le rachat d'urgence : le métier consiste à adosser ;
   - le financement de stock supprime les faillites par manque de liquidité des livres couverts : le robot discipliné n'en fait aucune, contre 2 sur 8 pour le naïf.
+
+## Phase 8 — extension des données, optimisation, finitions
+
+### Commodités (`data/commodities.ts`)
+- **38 marchés**, contre 5 auparavant :
+
+  | Famille | Sous-secteur | Marchés |
+  |---|---|---|
+  | Énergie | Bruts | Brent, WTI, Dubaï |
+  | Énergie | Produits raffinés | Gazole, essence Eurobob, kérosène, fioul 3,5 % |
+  | Énergie | Gaz | TTF, Henry Hub, GNL JKM |
+  | Énergie | Électricité | Électricité allemande en base |
+  | Énergie | Carbone | Quotas EUA |
+  | Énergie | Charbons | API2, Newcastle, charbon à coke |
+  | Métaux | Base | Cuivre, aluminium, zinc, nickel, plomb, étain |
+  | Métaux | Batteries | Cobalt, lithium |
+  | Métaux | Précieux | Or, argent |
+  | Métaux | Ferreux | Minerai de fer |
+  | Agricoles | Grains | Blé, maïs, riz |
+  | Agricoles | Oléagineux | Soja, farine, huile de soja, huile de palme |
+  | Agricoles | Softs | Sucre, café, cacao, coton, jus d'orange |
+
+  Chaque marché a son modèle à deux facteurs, sa saisonnalité, ses règles d'échéance, ses options et son smile, sa liquidité, ses limites de position, sa logistique, son règlement (cash ou livraison) et ses lieux physiques avec leur différentiel. Les paramètres sont des ordres de grandeur, pas des calibrations.
+- **Nouvelles règles de dernier jour de cotation** : WTI (3 jours ouvrés avant le 25 du mois précédent), gazole ICE (2 jours ouvrés avant le 14), softs ICE US (dernier jour ouvré du mois précédent).
+  - **Simplification** : les autres contrats réutilisent une règle voisine (Henry Hub et JKM sur la règle TTF, électricité, palme, or, fer et lithium sur « dernier vendredi » ou équivalent).
+- **Corrélations à facteurs** : choc_i = Σ L_ik f_k + idiosyncratique.
+  - Neuf facteurs : macro mondiale, pétrole, gaz et électricité européens, charbon, métaux, précieux, agricoles, oléagineux, batteries.
+  - La matrice L Lᵀ + D est définie positive par construction ; un test le vérifie, ainsi que la symétrie et des ordres de grandeur (Brent-WTI > 0,8, Brent-cacao < 0,1).
+  - L'EURUSD est le dernier indice et charge sur le facteur macro.
+  - **Simplification** : les corrélations historiques des cinq marchés d'origine sont remplacées par celles du modèle à facteurs (même ordre de grandeur). Un facteur long utilise la même structure de corrélation que le facteur court (tirages indépendants).
+- **WTI à prix négatif : log-normale décalée.** X = F + 20 $ est log-normal, donc F peut descendre jusqu'à −20 $.
+  - Futures, forwards et impact de marché portent sur X.
+  - Les options se valorisent par Black-76 sur (F + décalage, K + décalage), formule exacte pour une log-normale décalée ; c'est le cas des vanilles, APO, tolérances, SPAN, P&L expliqué, theta, exotiques et du Monte Carlo.
+  - Le smile utilise la moneyness ln((K + s)/(F + s)).
+  - Le remake « Cushing déborde » fait passer le front sous zéro (−2,1 sur χ, puis rebond à l'expiration). Le Brent, livrable par bateau, reste positif.
+- **Électricité non stockable** : pas d'achat au comptant ni de stock. Une livraison physique se règle contre le prix spot local : l'acheteur revend aussitôt, le vendeur rachète ce qu'il livre.
+  - **Simplification** : pas de profil horaire (base seulement), pas de pointe, pas de prix négatifs horaires.
+- **GNL** : nouvel indice de fret « méthanier » (80 k$/jour en moyenne, très volatil), JKM livré DES Tokyo/Chine ou FOB Sabine/Ras Laffan, évaporation en route (0,4 %), arbitrage visible dans le spread JKM-Henry Hub.
+- **Option de partie** : marchés suivis Essentiels (5), Étendus (20, par défaut en sandbox) ou Tous (38). Seules les commodités actives génèrent des offres et apparaissent dans les panneaux ; tout le marché reste simulé. Le flux d'offres croît comme la racine du nombre de marchés.
+
+### Monde (`data/cities.ts`, `data/world.ts`, `data/routes.ts`, `data/companies.ts`)
+- **Villes** : 61 au lieu de 10, avec fiscalité, régulateur, KYC, stabilité, contrôle des capitaux, place bancaire, port, hub aérien, régime de sanctions et loyers. Moscou appartient à la Fédération de Sarmatie, Jakarta à l'Archipel d'Insulinde, Riyad et Doha aux Royaumes du Golfe, Lubumbashi au Kassaï.
+- **Pays** : 37 nouveaux, avec leurs codes ISO pour le globe et leurs élections.
+- **Mer et terre** : 26 nouveaux ports et leurs liaisons maritimes ; trajets intérieurs (barges du Mississippi pour le maïs et le soja, oléoduc Cushing–Golfe, rail du cobalt Katanga–Durban).
+- **Sociétés** : 67 au total.
+  - Nouvelles maisons : sogo shosha, géant des huiles, négociants des softs, de métaux et de métaux précieux, raffineur indien, énergéticien allemand, mineurs de fer.
+  - Nouvelles contreparties : liquéfacteurs, triturateur argentin, sucrerie, office du cacao, producteurs de cobalt, de lithium, de palme, de nickel, de riz, de brut d'Oman…
+  - Les desks existants s'étendent par affinité (desk pétrole → WTI, Dubaï, produits ; gaz → électricité, carbone, GNL ; cuivre → métaux de base ; blé → grains).
+
+### Actifs (`engine/assets.ts`)
+- **Raffinerie** : marge = Σ rendement × produit / (bbl/t) − Brent, aux vrais prix, avec des rendements de 40 % gazole, 30 % essence, 10 % kérosène, 15 % fioul et 5 % de pertes. La marge est réglée au spot ; le DCF utilise les forwards.
+- **Trituration** : 0,022 short ton de farine + 11 lb d'huile − 1 boisseau de soja.
+- **Centrale à cycle combiné** (55 %, 0,37 t CO₂/MWh) : elle ne produit que si le clean spark est positif.
+  - **Simplification** : la flexibilité horaire est approchée par E[max(X, 0)], avec X ~ N(clean spark ; (35 % du prix de l'électricité)²).
+- **Fonderie d'aluminium** : aluminium − 14 MWh × électricité − 1,93 t d'alumine à 380 $/t (prix fixe).
+- **Mines et plantations génériques** : fer, lithium, or, cobalt, palme, café, cacao, sucre. **Méthanier** possédable.
+- **Simplification** : la marge des usines de transformation est encaissée au spot et n'entre pas dans les deltas de couverture automatique. Le joueur la couvre lui-même (futures ou options sur crack et spark).
+
+### Exotiques : spreads entre commodités (`data/spreads.ts`)
+- **Neuf spreads** : cracks gazole, essence, kérosène et fioul (en $/bbl, conversion bbl/t), WTI-Brent, Brent-Dubaï (qualité), spark allemand (électricité − 2 × gaz), JKM − 1,15 × Henry Hub, blé − maïs.
+- **Valorisation** : payoff a₁F₁ − a₂F₂ − K, approximation de Kirk avec la **covariance croisée exacte du modèle** entre deux commodités, intégrée par Simpson : C_ij[(σχ_i e^{−κ_i(τ_i−s)} + ρ_iσξ_i)(…_j) + σξ_iσξ_j √((1−ρ_i²)(1−ρ_j²))]. Pour une même commodité, elle égale la formule fermée (test).
+- **Intégration au risque** : les deux jambes figurent dans les expositions et sont choquées en VaR.
+- **Simplifications** : pas de spread entre devises (dark spread, JKM-TTF) ; pas de Monte Carlo joint pour ces options (formule fermée seule, affichée comme telle) ; la valeur est attribuée à la première jambe dans le P&L par commodité.
+
+### Équipes et bureaux (`engine/staff.ts`, panneau 👥 Équipes, touche `E`)
+- **Candidats** : renouvelés chaque mois (5 au plus), avec métier, famille de marchés, compétence, ambition et salaire. Leur qualité dépend du prestige du siège et de la place bancaire. Prime d'arrivée de 2 mois de salaire.
+- **Effets plafonnés par métier** :
+
+  | Métier | Effet |
+  |---|---|
+  | Trader | Flux d'offres de sa famille +12 % (+60 % au plus), conditions meilleures (jusqu'à 0,25 %), clients qui suivent (confiance) |
+  | Analyste | Note de recherche révélant la tendance de fond réelle d'un marché |
+  | Opérations | Risque qualité −15 % |
+  | Risque | Marge de la RCF −0,1 % |
+  | Juriste | Détection +15 %, amendes −10 % |
+  | Affréteur | Fret −4 % |
+
+- **Loyauté** : elle évolue avec le salaire (rapporté au marché de la ville) et les résultats de l'année.
+- **Débauchage** : probabilité mensuelle (60 − loyauté)/200 × (0,5 + ambition), offre concurrente à +25 %, contre-offre possible pendant 8 jours. Sinon le collaborateur part, et ses clients perdent confiance.
+- **Postes** : les collaborateurs occupent des postes au siège (voir phase 6) ou dans un bureau.
+- **Bureaux dans d'autres villes** : bureau de représentation (6 postes, VL ≥ 15 M$) ou bureau régional (20 postes, VL ≥ 60 M$). Licence et agencement à l'ouverture, loyer chaque mois.
+  - Effets : **présence permanente** (conditions locales, pas de pénalité à distance), trois fois plus d'offres sur les lieux de la ville, postes pour l'équipe.
+  - Succès « Bureaux sur cinq continents ».
+- **Simplifications** : pas de régulation ni de fiscalité propres au bureau (la société reste imposée au siège) ; pas de vue ville dédiée aux bureaux ; les traders recrutés ne tradent pas seuls.
+
+### Optimisation
+- **VaR** :
+  - seules les commodités du livre (et toutes les jambes des spreads) sont choquées et revalorisées ;
+  - les copies de marché partagent les commodités non choquées ;
+  - les scénarios sont tirés **une fois par partie** et réutilisés chaque jour (nombres aléatoires communs) : la VaR ne saute plus par bruit d'échantillonnage, et le calcul est bien plus rapide.
+- **Saisonnalité** : la fraction de mois est mise en cache ; c'était le premier poste du profil.
+- **Résultat** : une journée de simulation avec un livre chargé passe de 42 ms à 19 ms, avec 38 marchés au lieu de 5.
+- **Bundle** : découpé en morceaux (Three.js, React, données géographiques, moteur), et la vue ville se charge à la demande.
+
+### Interface
+- **Sélecteur de marchés** par famille (Énergie, Métaux, Agricoles). Le panneau Marchés est groupé par sous-secteur ; le livre et l'échéancier de risque n'affichent que les commodités utilisées.
+- **Globe** : niveau de détail des étiquettes (de loin, seules les grandes places et vos villes sont nommées) ; trois décors au plus par ville (cuves, sphère à gaz, entrepôt, silo, terril).
+- **Accueil** : choix des marchés suivis. **Structurés** : choix du spread entre commodités.
+
+### Sauvegardes
+- Version 8. Migration automatique depuis les versions 1 à 7 : les nouveaux marchés démarrent à leurs paramètres, l'historique des facteurs est complété, les nouvelles villes, zones, sociétés et le fret méthanier sont ajoutés, et les équipes sont vides.
+
+### Couverture automatique (`engine/automation.ts`)
+- **Débouclage** : l'automate mémorise les futures qu'il a ouverts lui-même, par matière (`automation.hedged`). Quand le physique disparaît (livraison, vente), il les déboucle, et seulement eux : les positions manuelles du joueur ne sont pas touchées. Avant, les couvertures restaient ouvertes et devenaient spéculatives.
+- **Échéance** : la couverture va sur l'échéance cotée dont la date de prix est la plus proche de la date moyenne d'exposition du physique (pondérée par les quantités ; un stock compte pour aujourd'hui), hors échéances dans leurs cinq derniers jours. Une seule échéance par matière : un risque de calendrier résiduel demeure. Avant, tout allait sur la 2ᵉ échéance, et le gaz (saisonnalité forte, facteur court très volatil) n'était presque pas couvert.
+
+### Liquidité des nouveaux marchés
+- **Calibrage** : profondeur d'écran et demi-fourchette des 33 nouveaux marchés recalés pour que la plus grosse cargaison se couvre en environ une profondeur d'écran, avec une demi-fourchette de 3 à 10 pb (21 pb pour le lithium).
+  - Le premier calibrage (fioul à 3 ticks de 0,25 $/t, soit 16 pb ; cargaisons de 2 à 5 fois la profondeur) coûtait 50 à 150 pb par couverture, payés de nouveau à chaque roll mensuel.
+- **Hiérarchie conservée** : cobalt, lithium, riz, jus d'orange, huile de palme et charbon métallurgique restent chers à couvrir, et le Brent, l'or et le WTI sont les plus profonds.
+
+### Équilibrage avec 38 marchés (`npx vite-node scripts/balance.ts 1 6`)
+
+| Robot | Rendement moyen | Écart-type | Faillites | Phase 7 (5 marchés) |
+|---|---|---|---|---|
+| Inactif | −2,3 % | 0,3 % | 0/6 | −2,4 % |
+| Discipliné | +0,6 % | 11,0 % | 0/6 | +1,4 % |
+| Négociant naïf | −29,1 % | 12,3 % | 2/6 | −9,4 % |
+| Couverture manuelle | −61,3 % | 37,1 % | 6/6 | −18,3 % |
+| Raccourcis | −27,6 % | 17,1 % | 0/6 | −21,9 % |
+| Spéculateur | +31,2 % | 74,4 % | 1/6 | +15,7 % |
+
+- **Lecture** : la hiérarchie de la phase 7 tient. Avec plus de marchés, les stratégies sans discipline souffrent davantage : plus d'offres, donc plus d'expositions mal couvertes et plus de cash immobilisé.
+- **Correctifs issus du banc** :
+  - taille des cargaisons plafonnée à 1,2 × les fonds propres (une cargaison de GNL à 39 M$ tuait une maison de 25 M$) ;
+  - débouclage et choix d'échéance de la couverture automatique ;
+  - recalibrage de la liquidité.

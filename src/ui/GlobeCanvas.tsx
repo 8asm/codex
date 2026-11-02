@@ -80,6 +80,7 @@ export function GlobeCanvas() {
       travel: g.player.travel ? { from: g.player.travel.from, to: g.player.travel.to } : null,
       selectedCity,
       activeCities: active,
+      branches: g.staff?.branches.map((b) => b.cityId) ?? [],
       ...worldLayers(g, layers),
     });
   }, [g, rev, selectedCity, layers]);

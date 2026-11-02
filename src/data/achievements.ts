@@ -8,7 +8,9 @@ import { leaderboard, rivalOf } from '../engine/companies';
 import { prestige } from '../engine/offices';
 import { scenarioOutcome } from '../engine/scenarios';
 import type { GameState, GoalId } from '../engine/types';
-import { nav } from '../engine/valuation';
+import { exposures, nav } from '../engine/valuation';
+import { continentsCovered } from '../engine/staff';
+import { listedFront } from '../engine/market';
 
 export interface AchievementDef {
   id: string;
@@ -53,6 +55,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   } },
   { id: 'ceo', name: 'De stagiaire à CEO', icon: '👑', desc: 'Prendre la direction de votre employeur.', check: (s) => s.career?.status === 'ceo' },
   { id: 'founder', name: 'Entrepreneur', icon: '🚀', desc: 'Fonder votre propre maison.', check: (s) => s.career?.status === 'founder' },
+  { id: 'continents', name: 'Bureaux sur cinq continents', icon: '🌐', desc: 'Siège et bureaux répartis sur cinq continents.', check: (s) => managing(s) && continentsCovered(s) >= 5 },
+  { id: 'team', name: 'Une vraie maison', icon: '👥', desc: 'Employer dix collaborateurs.', check: (s) => (s.staff?.employees.length ?? 0) >= 10 },
+  { id: 'negative', name: 'Sous zéro', icon: '🕳️', desc: 'Traverser un prix négatif du WTI avec une position ouverte et gagner de l’argent ce jour-là.', check: (s) => {
+    const h = s.history.at(-1);
+    return !!h && h.pnl > 0 && listedFront(s.market, 'WTI') < 0 && exposures(s).some((e) => e.commodity === 'WTI' && Math.abs(e.netQty) > 0);
+  } },
   { id: 'scenario', name: 'Histoire réécrite', icon: '📖', desc: 'Réussir un scénario historique.', check: (s) => !!s.config.scenario && scenarioOutcome(s).won },
 ];
 

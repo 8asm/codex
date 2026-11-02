@@ -5,16 +5,17 @@
  *    avec des futures, dès que l'écart dépasse un seuil ;
  *  - logistique : affréter automatiquement les navires pour honorer les ventes livrables à destination ;
  *  - vente automatique de la production des actifs ; assurance marine des cargaisons.
- * Les règles sont simples et volontairement imparfaites (couverture sur le front : risque de base et de calendrier).
+ * Les règles sont simples et volontairement imparfaites (une seule échéance par matière : risque de base et de calendrier résiduel).
  */
 import { COMMODITIES } from '../data/commodities';
 import { addBusinessDays, businessDaysBetween, monthLabel } from './calendar';
-import { lastTradingDay, listedMonths, lotQty } from './contracts';
+import { lastTradingDay, listedMonths, lotQty, pricingDay } from './contracts';
 import { log } from './ledger';
 import { shipCargo, shipQuote } from './logistics';
 import { isHalted } from './market';
 import { tradeFuture } from './trading';
-import type { Automation, GameState } from './types';
+import type { Automation, CommodityId, GameState } from './types';
+import type { MonthIndex } from './calendar';
 import { exposures } from './valuation';
 
 export const DEFAULT_AUTOMATION: Automation = {
@@ -44,25 +45,63 @@ export function runAutomation(state: GameState): string[] {
     }
   }
   if (au.autoHedge.on) {
+    const hedged = (au.hedged ??= {});
     for (const e of exposures(state)) {
       const physical = e.forwardQty + e.inventoryQty + e.transitQty;
-      if (Math.abs(physical) < 1e-6 || isHalted(state.market, e.commodity)) continue;
+      // la part « automatique » ne peut excéder la position futures réellement ouverte (expiration, débouclage manuel)
+      let own = hedged[e.commodity] ?? 0;
+      const spec0 = COMMODITIES[e.commodity];
+      const sameSide = state.futures.filter((p) => p.commodity === e.commodity && p.lots * own > 0).reduce((a, p) => a + p.lots * lotQty(spec0, p.month), 0);
+      if (Math.abs(own) > Math.abs(sameSide)) own = sameSide;
+      hedged[e.commodity] = own;
+      if (isHalted(state.market, e.commodity)) continue;
       const spec = COMMODITIES[e.commodity];
-      const target = -au.autoHedge.ratio * physical;
-      const current = e.futuresQty + e.otcQty;
-      const diff = target - current;
-      if (Math.abs(diff) <= au.autoHedge.threshold * Math.abs(physical)) continue;
-      const mi = listedMonths(spec, state.day)[1] ?? listedMonths(spec, state.day)[0]!;
-      const lots = Math.round(diff / lotQty(spec, mi));
+      let diff: number;
+      if (Math.abs(physical) < 1e-6) {
+        // plus de physique : la couverture n'a plus d'objet, on déboucle ce que l'automate a ouvert (pas plus).
+        // Sans cela elle resterait ouverte et deviendrait une position spéculative orpheline.
+        if (Math.abs(own) < 1e-6) continue;
+        diff = -own;
+      } else {
+        const target = -au.autoHedge.ratio * physical;
+        diff = target - (e.futuresQty + e.otcQty);
+        if (Math.abs(diff) <= au.autoHedge.threshold * Math.abs(physical)) continue;
+      }
+      // un débouclage se fait sur les échéances détenues (la plus grosse d'abord) ; une couverture, sur la 2ᵉ échéance cotée
+      const months = listedMonths(spec, state.day);
+      const unwinding = Math.abs(physical) < 1e-6;
+      const held = unwinding ? state.futures.filter((p) => p.commodity === e.commodity && Math.sign(p.lots) === -Math.sign(diff) && months.includes(p.month)).sort((a, b) => Math.abs(b.lots) - Math.abs(a.lots)) : [];
+      const mi = held[0]?.month ?? hedgeMonth(state, e.commodity, months);
+      let lots = Math.round(diff / lotQty(spec, mi));
+      if (held[0]) lots = Math.sign(lots) * Math.min(Math.abs(lots), Math.abs(held[0].lots));
       if (lots !== 0 && tradeFuture(state, e.commodity, mi, lots).ok) {
+        hedged[e.commodity] = own + lots * lotQty(spec, mi);
         state.company.tradesThisMonth++;
-        msgs.push(`Couverture automatique ${spec.short} : ${lots > 0 ? '+' : ''}${lots} lots ${monthLabel(mi)} (cible ${Math.round(au.autoHedge.ratio * 100)} %).`);
+        msgs.push(`Couverture automatique ${spec.short} : ${lots > 0 ? '+' : ''}${lots} lots ${monthLabel(mi)} (cible ${unwinding ? 'débouclage' : `${Math.round(au.autoHedge.ratio * 100)} %`}).`);
       }
     }
   }
   if (au.autoLogistics) msgs.push(...autoShip(state));
   for (const m of msgs) log(state, m);
   return msgs;
+}
+
+/**
+ * Échéance de couverture : celle dont la date de prix est la plus proche de la date moyenne d'exposition du physique
+ * (pondérée par les quantités ; un stock compte pour aujourd'hui), parmi les échéances qui ne cotent pas leurs
+ * derniers jours. Couvrir un forward de janvier sur l'échéance d'octobre laisserait tout le risque de calendrier
+ * (et, pour le gaz, la saisonnalité) dans la couverture.
+ */
+function hedgeMonth(state: GameState, c: CommodityId, months: MonthIndex[]): MonthIndex {
+  const spec = COMMODITIES[c];
+  let w = 0, t = 0;
+  for (const f of state.forwards.filter((x) => x.commodity === c)) { w += f.qty; t += f.qty * f.deliveryDay; }
+  for (const v of state.voyages.filter((x) => x.commodity === c)) { w += v.qty; t += v.qty * v.arriveDay; }
+  for (const l of state.inventory.filter((x) => x.commodity === c)) { w += l.qty; t += l.qty * state.day; }
+  const target = w > 0 ? t / w : state.day;
+  const ok = months.filter((mi) => businessDaysBetween(state.day, lastTradingDay(spec, mi)) > 5);
+  const pool = ok.length ? ok : months;
+  return pool.reduce((best, mi) => (Math.abs(pricingDay(spec, mi) - target) < Math.abs(pricingDay(spec, best) - target) ? mi : best), pool[0]!);
 }
 
 /** Pour chaque vente livrable à destination, achemine à temps le stock disponible ailleurs (au moindre coût). */

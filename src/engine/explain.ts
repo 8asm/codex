@@ -78,7 +78,8 @@ export function computeExplain(state: GameState, totalPnl: number): PnlExplain |
     const s0 = impliedVolAt(m0, o.commodity, o.month, o.expiry, o.strike, F0);
     const s1 = T1 > 0 ? impliedVolAt(m1, o.commodity, o.month, o.expiry, o.strike, F1) : s0;
     const r0 = zeroRate(m0, spec.currency, T0), r1 = zeroRate(m1, spec.currency, T1);
-    const P = (F: number, s: number, T: number, r: number) => vanillaPrice(F, o.strike, T, s, r, o.type, o.style);
+    const sh = spec.model.shift ?? 0;
+    const P = (F: number, s: number, T: number, r: number) => vanillaPrice(F + sh, o.strike + sh, T, s, r, o.type, o.style);
     const a = P(F0, s0, T0, r0), bP = P(F1, s0, T0, r0), c = P(F1, s1, T0, r0), dP = P(F1, s1, T1, r1);
     e.price += (bP - a) * q * x0;
     e.vol += (c - bP) * q * x0;

@@ -129,10 +129,10 @@ describe('exotiques : contrôle Monte Carlo sur la dynamique exacte du modèle',
     closeTo(exoticUnitPrice(m, x, st), mcExotic(m, x, st, 6000, 'q1'), 0.03);
   });
 
-  it('quanto : corrélation nulle (TTF/EURUSD) = vanille convertie ; corrélation positive (cuivre payé en EUR) relève le forward', () => {
+  it('quanto : corrélation faible (TTF/EURUSD) = ajustement faible ; corrélation positive (cuivre payé en EUR) relève le forward', () => {
     const tm = months(s, 'TTF')[2]!;
     const texp = optionExpiry(COMMODITIES.TTF, tm);
-    expect(quantoCov(m, 'TTF', tm, texp)).toBeCloseTo(0, 12);
+    expect(Math.abs(quantoCov(m, 'TTF', tm, texp))).toBeLessThan(0.01);
     const cm = months(s, 'CU')[2]!;
     const cexp = optionExpiry(COMMODITIES.CU, cm);
     expect(quantoCov(m, 'CU', cm, cexp)).toBeLessThan(0);

@@ -4,7 +4,7 @@ import { monthLabel } from '../engine/calendar';
 import { COVENANT_VAR_PCT } from '../engine/limits';
 import { bookGreeks, deltaLadder, runStress } from '../engine/risk';
 import type { CommodityId, PnlExplain } from '../engine/types';
-import { nav } from '../engine/valuation';
+import { exposures, nav } from '../engine/valuation';
 import { Panel, Term } from './common';
 import { useLiveVar } from './derived';
 import { qty, signedUsd, tone, usd } from './format';
@@ -85,7 +85,7 @@ export function RiskPanel() {
 
       <h4><Term id="ladder">Échéancier des deltas</Term></h4>
       <div className="chips">
-        {COMMODITY_IDS.map((c) => <button key={c} className={ladderC === c ? 'on' : ''} onClick={() => setLadderC(c)}>{COMMODITIES[c].icon}</button>)}
+        {COMMODITY_IDS.filter((c) => c === ladderC || exposures(g).some((e) => e.commodity === c && Math.abs(e.netQty) + Math.abs(e.futuresQty) > 0)).map((c) => <button key={c} className={ladderC === c ? 'on' : ''} onClick={() => setLadderC(c)}>{COMMODITIES[c].icon}</button>)}
       </div>
       <Ladder c={ladderC} rows={ladder} />
 

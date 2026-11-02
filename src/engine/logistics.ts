@@ -10,6 +10,7 @@
  * Les incoterms déterminent qui organise et paie ce transport : le joueur qui achète FOB doit l'organiser
  * pour revendre ailleurs ; vendre CIF/CFR/DAP l'oblige à livrer à destination.
  */
+import { charterMult } from './staff';
 import { COMMODITIES, findLocation } from '../data/commodities';
 import { BALLAST_FACTOR, BUNKER_PER_BRENT, FREIGHT, LAYTIME_DAYS, PORT_DAYS } from '../data/freight';
 import { CHOKEPOINT_NAMES, INLAND_LEG, LOCATION_PORT, SEA_EDGES, SEA_NODES } from '../data/routes';
@@ -123,7 +124,7 @@ export function shipQuote(state: GameState, c: CommodityId, fromLoc: string, toL
   const paidDays = seaDays * (1 + BALLAST_FACTOR) + PORT_DAYS;
   const tce = freightRate(state.market, index);
   const fleet = vesselAssetId ? state.assets.find((a) => a.id === vesselAssetId) : undefined;
-  const hireUsd = fleet ? 0 : tce * paidDays * share * partial;
+  const hireUsd = fleet ? 0 : tce * paidDays * share * partial * charterMult(state);
   const opportunityUsd = fleet ? tce * paidDays : 0;
   const bunkerUsd = fr.consumption * seaDays * (1 + BALLAST_FACTOR) * bunkerPrice(state) * (fleet ? 1 : share * partial);
   const portUsd = (pa === pb ? 0 : 2 * fr.portCost) * (fleet ? 1 : share * partial);

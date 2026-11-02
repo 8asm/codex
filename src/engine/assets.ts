@@ -22,7 +22,8 @@ import { addCash, log, newId } from './ledger';
 import { basisAt, forwardAt, futuresPrice, fx, isHalted, rate, spotPrice } from './market';
 import { addNews } from './news';
 import { chance, normal, pick, randInt, uniform } from './rng';
-import type { ActionResult, AssetOpportunity, AssetPolicy, AssetState, GameState, StreamPosition } from './types';
+import type { ActionResult, AssetOpportunity, AssetPolicy, AssetState, CommodityId, GameState, StreamPosition } from './types';
+import { normCdf } from './math';
 import { localSpot, nav } from './valuation';
 
 export const POLICY: Record<AssetPolicy, { util: number; maintainBelow: number; hedge: number; label: string }> = {
@@ -33,7 +34,55 @@ export const POLICY: Record<AssetPolicy, { util: number; maintainBelow: number; 
 const AVAIL = 0.95;
 const OCCUPANCY = 0.85;
 
-export const isProducer = (d: AssetDef) => d.type === 'oilfield' || d.type === 'mine_cu' || d.type === 'mine_coal';
+export const isProducer = (d: AssetDef) => d.type === 'oilfield' || d.type === 'mine_cu' || d.type === 'mine_coal' || d.type === 'mine' || d.type === 'plantation';
+/** Usines de transformation : vivent d'une marge entre produits et intrants (phase 8). */
+export const isConverter = (d: AssetDef) => d.type === 'refinery' || d.type === 'crush' || d.type === 'powerplant' || d.type === 'smelter';
+
+/** Rendements de la raffinerie (fraction du brut, en masse) et barils par tonne de chaque produit. */
+export const REFINERY_YIELD = { GASOIL: [0.4, 7.45], GASOLINE: [0.3, 8.45], JET: [0.1, 7.88], FUELOIL: [0.15, 6.35] } as const;
+/** Centrale : rendement électrique et intensité carbone (t CO₂ par MWh). Fonderie : MWh et alumine par tonne. */
+export const CCGT = { efficiency: 0.55, co2: 0.37 };
+export const SMELTER = { mwhPerT: 14, aluminaT: 1.93, aluminaPrice: 380 };
+
+/**
+ * Marge brute (USD par unité de capacité, avant coûts variables) d'une usine de transformation, aux prix forward
+ * d'une date (`day`) ou spot :
+ *  - raffinerie (par baril de brut) : Σ rendement × produit ($/t) / (bbl/t) − Brent (5 % autoconsommé/pertes) ;
+ *  - trituration (par boisseau de soja) : 0,022 st de farine + 11 lb d'huile − soja ;
+ *  - centrale (par MWh) : électricité − gaz / rendement − carbone × intensité ;
+ *  - fonderie (par tonne d'aluminium) : aluminium − 14 MWh d'électricité − alumine.
+ */
+export function conversionMargin(state: GameState, d: AssetDef, day?: Day): number {
+  const m = state.market;
+  const px = (c: CommodityId) => {
+    const s = COMMODITIES[c];
+    return (day === undefined ? spotPrice(m, c) : forwardAt(m, c, day)) * s.valuePerUnit * fx(m, s.currency);
+  };
+  switch (d.type) {
+    case 'refinery':
+      return (Object.entries(REFINERY_YIELD) as [CommodityId, readonly [number, number]][]).reduce((s, [c, [y, bbl]]) => s + (y * px(c)) / bbl, 0) - px('BRENT');
+    case 'crush':
+      return 0.022 * px('SOYMEAL') + 11 * px('SOYOIL') - px('SOY');
+    case 'powerplant':
+      return px('POWER') - px('TTF') / CCGT.efficiency - CCGT.co2 * px('EUA');
+    case 'smelter':
+      return px('AL') - SMELTER.mwhPerT * px('POWER') - SMELTER.aluminaT * SMELTER.aluminaPrice;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Valeur de la flexibilité de dispatch d'une centrale : elle ne produit qu'aux heures où la marge est positive.
+ * Approximation : marge horaire ~ N(μ, σ²) avec σ = 35 % du prix de l'électricité ⇒ E[max(X, 0)] = μΦ(μ/σ) + σφ(μ/σ).
+ */
+export function dispatchValue(state: GameState, mu: number, day?: Day): number {
+  const s = COMMODITIES.POWER;
+  const p = (day === undefined ? spotPrice(state.market, 'POWER') : forwardAt(state.market, 'POWER', day)) * s.valuePerUnit * fx(state.market, s.currency);
+  const sig = Math.max(1e-6, 0.35 * Math.abs(p));
+  const z = mu / sig;
+  return mu * normCdf(z) + sig * Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+}
 export const isStorage = (d: AssetDef) => d.type === 'tank' || d.type === 'warehouse' || d.type === 'silo' || d.type === 'gas_storage';
 
 /** Tarif du stockage tiers (unité de cotation / unité / mois) : renchérit quand la courbe est en contango. */
@@ -64,14 +113,22 @@ function monthlyCash(state: GameState, d: AssetDef, day: Day, util: number, year
   switch (d.type) {
     case 'oilfield':
     case 'mine_cu':
-    case 'mine_coal': {
+    case 'mine_coal':
+    case 'mine':
+    case 'plantation': {
       const q = d.capacity * days * util * AVAIL * Math.exp(-d.decline * years);
       const px = forwardAt(state.market, d.commodity, day) + basisAt(state.market, d.commodity, d.locationId, day);
       return q * (px - d.opexPerUnit) * k - d.fixedMonthly;
     }
-    case 'refinery': {
+    case 'refinery':
+    case 'crush':
+    case 'smelter': {
       const q = d.capacity * days * util * AVAIL;
-      return q * (forwardAt(state.market, 'BRENT', day) * (d.crackMean ?? 0.1) - d.opexPerUnit) - d.fixedMonthly;
+      return q * (conversionMargin(state, d, day) - d.opexPerUnit * k) - d.fixedMonthly;
+    }
+    case 'powerplant': {
+      const q = d.capacity * days * AVAIL;
+      return q * dispatchValue(state, conversionMargin(state, d, day) - d.opexPerUnit * k, day) - d.fixedMonthly;
     }
     case 'tank':
     case 'warehouse':
@@ -408,12 +465,13 @@ export function stepAssets(state: GameState, days: number): string[] {
         if (lot) lot.qty += q;
         else state.inventory.push({ id: newId(state, 'i'), commodity: d.commodity, locationId: d.locationId, qty: q, cost: d.opexPerUnit, sinceDay: state.day });
       }
-    } else if (d.type === 'refinery') {
-      // marge de raffinage stochastique (en attendant les marchés de produits)
-      a.crack = Math.max(0, (a.crack ?? d.crackMean!) + 2 * (d.crackMean! - (a.crack ?? d.crackMean!)) * (days / 365) + 0.06 * Math.sqrt(days / 365) * normal(state.rng));
-      const q = d.capacity * a.utilization * a.share * days;
-      const margin = q * (spotPrice(state.market, 'BRENT') * a.crack - d.opexPerUnit);
-      addCash(state, margin, 'assets', 'BRENT');
+    } else if (isConverter(d)) {
+      // phase 8 : marge de transformation aux prix spot des vrais marchés (produits raffinés, soja, électricité…)
+      const unit = conversionMargin(state, d) - d.opexPerUnit * k;
+      a.crack = unit;
+      const q = d.capacity * a.share * days * (d.type === 'powerplant' ? 1 : a.utilization);
+      const margin = d.type === 'powerplant' ? q * dispatchValue(state, unit) : q * unit;
+      addCash(state, margin, 'assets', d.commodity);
       a.cumCash += margin;
       a.produced += q;
     } else if (isStorage(d)) {

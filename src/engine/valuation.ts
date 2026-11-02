@@ -5,7 +5,7 @@
  * `valueBy(view, book)` valorise un livre quelconque dans une vue de marché quelconque : c'est la brique
  * commune de la NAV, de la VaR (revalorisation complète), des stress tests, des greeks et du P&L expliqué.
  */
-import { exoticDeltaUnits, exoticValueUsd } from './exotics';
+import { exoticDeltaUnits, exoticLegs, exoticValueUsd } from './exotics';
 import { officeBookValue } from './offices';
 import { loansOutstanding, prepayValueIn } from './financing';
 import { cpRating } from './credit';
@@ -20,7 +20,11 @@ import { ffaValue } from './freight';
 import { streamBook } from './assets';
 import type { Book, CommodityId, ForwardDeal, FuturesPosition, GameState, InventoryLot, MarketState } from './types';
 
-const zero = () => Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as Record<CommodityId, number>;
+const zero = () => {
+  const o = {} as Record<CommodityId, number>;
+  for (const c of COMMODITY_IDS) o[c] = 0;
+  return o;
+};
 
 export function futuresUnrealizedIn(m: MarketState, p: FuturesPosition): number {
   const spec = COMMODITIES[p.commodity];
@@ -65,7 +69,8 @@ export function toleranceValueIn(m: MarketState, day: number, c: CommodityId, lo
   const F = localForwardIn(m, c, locationId, deliveryDay);
   const sigma = T > 0 ? Math.sqrt(integratedVariance(spec.model, T, T, m.volMult) / T) * m.ivLevel[c] : 0;
   const r = zeroRate(m, spec.currency, T);
-  const straddle = black76(F, K, T, sigma, r, 'C') + black76(F, K, T, sigma, r, 'P');
+  const sh = spec.model.shift ?? 0;
+  const straddle = black76(F + sh, K + sh, T, sigma, r, 'C') + black76(F + sh, K + sh, T, sigma, r, 'P');
   return (playerIsSeller ? 1 : -1) * tol * qty * straddle * spec.valuePerUnit * fx(m, spec.currency);
 }
 
@@ -208,10 +213,10 @@ export function exposures(state: GameState): Exposure[] {
         d += s.qty * forwardAt(m, c, s.day) * k * 0.01 * discount(m, spec.currency, state.day, s.day);
       }
     }
-    for (const x of (state.exotics ?? []).filter((y) => y.commodity === c)) {
-      const q = exoticDeltaUnits(m, x);
+    for (const x of (state.exotics ?? []).filter((y) => exoticLegs(y).includes(c))) {
+      const q = exoticDeltaUnits(m, x, c);
       xq += q;
-      d += q * futuresPrice(m, c, x.month) * k * 0.01;
+      d += q * futuresPrice(m, c, x.spreadId && c !== x.commodity ? x.month2! : x.month) * k * 0.01;
     }
     return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, transitQty: tq, optionQty: oq, otcQty: xq, netQty: fq + wq + iq + tq + oq + xq, delta1pct: d };
   });

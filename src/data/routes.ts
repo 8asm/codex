@@ -51,6 +51,33 @@ export const SEA_NODES: SeaNode[] = [
   { id: 'HORN', name: 'Cap Horn', lat: -56.5, lon: -67 },
   { id: 'PACE', name: 'Pacifique Est', lat: -20, lon: -120 },
   { id: 'PACW', name: 'Pacifique Ouest', lat: 15, lon: 160 },
+  // phase 8 : nouveaux ports
+  { id: 'SANTOS', name: 'Santos', lat: -24.0, lon: -46.3, port: true },
+  { id: 'PLATA', name: 'Río de la Plata (Rosario)', lat: -34.9, lon: -56.5, port: true },
+  { id: 'PHED', name: 'Port Hedland', lat: -20.3, lon: 118.6, port: true },
+  { id: 'NEWC', name: 'Newcastle (Australie)', lat: -32.9, lon: 151.8, port: true },
+  { id: 'TKY', name: 'Baie de Tokyo', lat: 35.4, lon: 139.8, port: true },
+  { id: 'DAL', name: 'Dalian', lat: 38.9, lon: 121.7, port: true },
+  { id: 'ABJ', name: 'Abidjan / San Pedro', lat: 5.2, lon: -4.0, port: true },
+  { id: 'TEM', name: 'Tema', lat: 5.6, lon: 0.0, port: true },
+  { id: 'BONNY', name: 'Lagos / Bonny', lat: 6.4, lon: 3.4, port: true },
+  { id: 'LUAN', name: 'Luanda', lat: -8.8, lon: 13.2, port: true },
+  { id: 'RASL', name: 'Ras Laffan', lat: 25.9, lon: 51.6, port: true },
+  { id: 'MCT', name: 'Mina al-Fahal (Oman)', lat: 23.6, lon: 58.5, port: true },
+  { id: 'PKL', name: 'Port Klang', lat: 3.0, lon: 101.4, port: true },
+  { id: 'NYH', name: 'Port de New York', lat: 40.5, lon: -74.0, port: true },
+  { id: 'MBA', name: 'Mombasa', lat: -4.1, lon: 39.7, port: true },
+  { id: 'CALL', name: 'Callao', lat: -12.0, lon: -77.2, port: true },
+  { id: 'KAR', name: 'Karachi', lat: 24.8, lon: 66.9, port: true },
+  { id: 'MUM', name: 'Mumbai (JNPT)', lat: 18.9, lon: 72.9, port: true },
+  { id: 'BKK', name: 'Laem Chabang', lat: 13.1, lon: 100.9, port: true },
+  { id: 'HCM', name: 'Cai Mep (Hô Chi Minh)', lat: 10.5, lon: 107.0, port: true },
+  { id: 'MNL', name: 'Manille', lat: 14.6, lon: 120.9, port: true },
+  { id: 'HAM', name: 'Hambourg', lat: 53.9, lon: 8.7, port: true },
+  { id: 'PIR', name: 'Le Pirée', lat: 37.9, lon: 23.6, port: true },
+  { id: 'VAN', name: 'Vancouver', lat: 49.3, lon: -123.2, port: true },
+  { id: 'MZO', name: 'Manzanillo (Mexique)', lat: 19.0, lon: -104.3, port: true },
+  { id: 'SALD', name: 'Saldanha', lat: -33.0, lon: 17.9, port: true },
 ];
 
 /** Arêtes du graphe ; `closable` = identifiant du passage qui peut être fermé par un événement. */
@@ -61,6 +88,10 @@ export const SEA_EDGES: [string, string, string?][] = [
   ['FIN', 'CVE'], ['CVE', 'GUI'], ['GUI', 'CAPE'], ['CVE', 'SATL'], ['SATL', 'CAPE'], ['CAPE', 'DUR'], ['DUR', 'RB'], ['RB', 'SIO'], ['SIO', 'LKA'], ['SIO', 'MALW'], ['SIO', 'ARAB'],
   ['CHAN', 'NATL'], ['NATL', 'FLA'], ['FLA', 'USGC'], ['NATL', 'CVE'], ['USGC', 'YUC'], ['YUC', 'CARIB'], ['CARIB', 'PANA'], ['PANA', 'PANP', 'panama'], ['PANP', 'PERU'], ['PERU', 'SAI'],
   ['CARIB', 'SATL'], ['SATL', 'HORN'], ['HORN', 'SAI'], ['SAI', 'PACE'], ['PACE', 'PACW'], ['PACW', 'SHA'], ['PANP', 'PACE'],
+  ['SANTOS', 'SATL'], ['PLATA', 'SATL'], ['PLATA', 'SANTOS'], ['PHED', 'SIO'], ['PHED', 'SCS'], ['NEWC', 'PACW'], ['TKY', 'PACW'], ['TKY', 'TWN'], ['DAL', 'SHA'],
+  ['ABJ', 'GUI'], ['ABJ', 'CVE'], ['TEM', 'GUI'], ['BONNY', 'GUI'], ['LUAN', 'GUI'], ['LUAN', 'CAPE'], ['HORM', 'RASL', 'hormuz'], ['MCT', 'ARAB'], ['PKL', 'MALA'],
+  ['NYH', 'NATL'], ['NYH', 'FLA'], ['MBA', 'SIO'], ['MBA', 'ARAB'], ['CALL', 'PERU'], ['KAR', 'ARAB'], ['MUM', 'ARAB'], ['MUM', 'LKA'], ['BKK', 'SCS'], ['HCM', 'SCS'],
+  ['MNL', 'SCS'], ['MNL', 'PACW'], ['HAM', 'CHAN'], ['PIR', 'MED'], ['VAN', 'PACW'], ['MZO', 'PANP'], ['MZO', 'PACE'], ['SALD', 'CAPE'],
 ];
 
 export const CHOKEPOINT_NAMES: Record<string, string> = {
@@ -74,11 +105,42 @@ export const LOCATION_PORT: Record<string, string | null> = {
   CU_RTM: 'RTM', CU_SHA: 'SHA', CU_SIN: 'SIN', CU_SCL: 'SAI', CU_DUR: 'DUR',
   WHT_GULF: 'USGC', WHT_CHI: 'USGC', WHT_RTM: 'RTM', WHT_DXB: 'FUJ',
   COAL_ARA: 'RTM', COAL_RB: 'RB', COAL_CN: 'SHA',
+  // phase 8
+  WTI_CUS: 'USGC', WTI_HOU: 'USGC', WTI_RTM: 'RTM', DUB_FUJ: 'FUJ', DUB_MCT: 'MCT', DUB_SIN: 'SIN', DUB_TKY: 'TKY',
+  GO_ARA: 'RTM', GO_USGC: 'USGC', GO_SIN: 'SIN', GO_LAG: 'BONNY', GL_ARA: 'RTM', GL_NYH: 'NYH', GL_SIN: 'SIN', GL_LAG: 'BONNY',
+  JET_NWE: 'RTM', JET_FUJ: 'FUJ', JET_SIN: 'SIN', JET_LDN: null, FO_RTM: 'RTM', FO_SIN: 'SIN', FO_FUJ: 'FUJ',
+  HH_HUB: null, HH_CHI: null, HH_NY: null, HH_CAL: null, JKM_TKY: 'TKY', JKM_SHA: 'SHA', JKM_SAB: 'USGC', JKM_RAS: 'RASL', JKM_RTM: 'RTM',
+  PWR_DE: null, PWR_FR: null, PWR_NL: null, PWR_PL: null, EUA_REG: null, EUA_FRA: null,
+  NEWC_FOB: 'NEWC', NEWC_JP: 'TKY', NEWC_CN: 'SHA', NEWC_IN: 'MUM', MC_FOB: 'NEWC', MC_CN: 'SHA', MC_IN: 'MUM', MC_VAN: 'VAN',
+  AL_RTM: 'RTM', AL_SHA: 'SHA', AL_TKY: 'TKY', AL_DXB: 'FUJ', ZN_RTM: 'RTM', ZN_SHA: 'SHA', ZN_LIM: 'CALL',
+  NI_RTM: 'RTM', NI_SHA: 'SHA', NI_JKT: 'SIN', NI_MNL: 'MNL', PB_RTM: 'RTM', PB_SHA: 'SHA', PB_MEX: 'MZO',
+  SN_RTM: 'RTM', SN_KL: 'PKL', SN_JKT: 'SIN', CO_RTM: 'RTM', CO_DUR: 'DUR', CO_LUB: 'DUR',
+  LI_SHA: 'SHA', LI_SCL: 'SAI', LI_PER: 'PHED', LI_TKY: 'TKY',
+  AU_LDN: null, AU_LUG: null, AU_HK: null, AU_DXB: null, AU_MUM: null, AG_LDN: null, AG_NY: null, AG_SHA: null, AG_MEX: null,
+  FE_CN: 'DAL', FE_PHED: 'PHED', FE_BR: 'SANTOS', FE_SA: 'SALD',
+  CORN_CHI: 'USGC', CORN_GULF: 'USGC', CORN_BR: 'SANTOS', CORN_CN: 'DAL', CORN_MX: null,
+  SOY_CHI: 'USGC', SOY_GULF: 'USGC', SOY_BR: 'SANTOS', SOY_AR: 'PLATA', SOY_CN: 'DAL',
+  SM_CHI: 'USGC', SM_AR: 'PLATA', SM_RTM: 'RTM', SM_HCM: 'HCM', SO_CHI: 'USGC', SO_AR: 'PLATA', SO_MUM: 'MUM',
+  RICE_ARK: 'USGC', RICE_BKK: 'BKK', RICE_HCM: 'HCM', RICE_LAG: 'BONNY',
+  SUG_SAN: 'SANTOS', SUG_BKK: 'BKK', SUG_DXB: 'FUJ', SUG_MUM: 'MUM',
+  COF_NY: 'NYH', COF_SAN: 'SANTOS', COF_BOG: 'CARIB', COF_NBO: 'MBA', COF_HAM: 'HAM',
+  COC_NY: 'NYH', COC_ABJ: 'ABJ', COC_ACC: 'TEM', COC_RTM: 'RTM',
+  COT_HOU: 'USGC', COT_BR: 'SANTOS', COT_KAR: 'KAR', COT_CN: 'SHA', COT_MUM: 'MUM',
+  PALM_PKL: 'PKL', PALM_JKT: 'SIN', PALM_MUM: 'MUM', PALM_RTM: 'RTM', OJ_FL: 'NYH', OJ_SAN: 'SANTOS', OJ_RTM: 'RTM',
 };
 
 /** Pré-acheminement terrestre vers le port (rail, barge, camion) : jours et coût par tonne. */
-export const INLAND_LEG: Record<string, { mode: 'rail' | 'barge' | 'camion'; days: number; costPerT: number; path: [number, number][] }> = {
-  WHT_CHI: { mode: 'barge', days: 12, costPerT: 18, path: [[41.88, -87.63], [38.6, -90.2], [35.1, -90.1], [32.3, -91.0], [29.95, -90.07], [29.2, -94.6]] },
+const MISSISSIPPI: [number, number][] = [[41.88, -87.63], [38.6, -90.2], [35.1, -90.1], [32.3, -91.0], [29.95, -90.07], [29.2, -94.6]];
+export const INLAND_LEG: Record<string, { mode: 'rail' | 'barge' | 'camion' | 'pipeline'; days: number; costPerT: number; path: [number, number][] }> = {
+  WHT_CHI: { mode: 'barge', days: 12, costPerT: 18, path: MISSISSIPPI },
+  CORN_CHI: { mode: 'barge', days: 12, costPerT: 18, path: MISSISSIPPI },
+  SOY_CHI: { mode: 'barge', days: 12, costPerT: 18, path: MISSISSIPPI },
+  SM_CHI: { mode: 'barge', days: 12, costPerT: 20, path: MISSISSIPPI },
+  SO_CHI: { mode: 'barge', days: 12, costPerT: 22, path: MISSISSIPPI },
+  RICE_ARK: { mode: 'barge', days: 8, costPerT: 14, path: [[34.75, -92.3], [33.0, -91.1], [29.95, -90.07], [29.2, -94.6]] },
+  // oléoduc Cushing → côte du Golfe : saturé quand les cuves débordent (d'où les prix négatifs)
+  WTI_CUS: { mode: 'pipeline', days: 5, costPerT: 9, path: [[35.98, -96.77], [33.5, -96.0], [30.8, -95.4], [29.75, -95.2]] },
+  CO_LUB: { mode: 'rail', days: 22, costPerT: 140, path: [[-11.66, 27.48], [-15.4, 28.3], [-17.8, 31.0], [-22.9, 30.0], [-26.2, 28.05], [-29.9, 31.0]] },
 };
 
 /** Liaisons terrestres et pipelines décoratifs (globe), avec mode d'animation. */
