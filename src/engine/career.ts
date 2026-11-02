@@ -183,18 +183,21 @@ export function fire(state: GameState, reason: string) {
 
 // ------------------------------------------------------------------ droits
 
-const TRADING_ACTIONS = new Set(['TRADE_FUTURE', 'TRADE_SPREAD', 'HEDGE_DELTA', 'TRADE_OPTION', 'EXERCISE_OPTION', 'ACCEPT_OFFER', 'SPOT_BUY', 'SPOT_SELL', 'TRADE_OTC', 'SHIP_CARGO', 'TRADE_FFA']);
+const TRADING_ACTIONS = new Set(['TRADE_FUTURE', 'TRADE_SPREAD', 'HEDGE_DELTA', 'TRADE_OPTION', 'EXERCISE_OPTION', 'ACCEPT_OFFER', 'ACCEPT_BRIBE_OFFER', 'SPOT_BUY', 'SPOT_SELL', 'TRADE_OTC', 'SHIP_CARGO', 'TRADE_FFA', 'TRADE_EXOTIC', 'CLOSE_EXOTIC']);
 const LEVEL_NEEDED: Record<string, number> = {
   TRADE_FUTURE: 2, TRADE_SPREAD: 2, HEDGE_DELTA: 2, TRADE_OPTION: 3, EXERCISE_OPTION: 3, ACCEPT_OFFER: 3, SPOT_BUY: 3, SPOT_SELL: 3,
   TRADE_OTC: 4, SHIP_CARGO: 4, TRADE_FFA: 4,
   BUY_OPPORTUNITY: 6, SELL_ASSET: 6, SET_ASSET: 6, MAINTAIN_ASSET: 6, HIRE_MANAGER: 6, FIRE_MANAGER: 6, HEDGE_PRODUCTION: 6,
   RCF_DRAW: 6, RCF_REPAY: 6, SET_AUTO_TREASURY: 6, SET_CSA: 6, SET_CREDIT_INSURANCE: 6, SET_LIMITS: 99, RELOCATE_HQ: 99,
+  TRADE_EXOTIC: 4, CLOSE_EXOTIC: 4, FINANCE_LOT: 6, REPAY_LOAN: 6, ACCEPT_PREPAY: 6, ACCEPT_BRIBE_OFFER: 3,
+  SET_COMPLIANCE: 99, SELF_REPORT: 99, SET_DEFENSE: 99, SETTLE_CASE: 99, APPEAL: 99,
   OFFICE_MOVE: 99, OFFICE_STYLE: 99, OFFICE_ITEM: 99, OFFICE_PROPERTY: 99, INVITE_HQ: 99,
 };
 
 function actionCommodity(state: GameState, a: Action): CommodityId | undefined {
   if ('commodity' in a && typeof a.commodity === 'string') return a.commodity as CommodityId;
-  if (a.type === 'ACCEPT_OFFER') return state.offers.find((o) => o.id === a.offerId)?.commodity;
+  if (a.type === 'ACCEPT_OFFER' || a.type === 'ACCEPT_BRIBE_OFFER') return state.offers.find((o) => o.id === a.offerId)?.commodity;
+  if (a.type === 'TRADE_EXOTIC') return a.spec.commodity;
   if (a.type === 'SPOT_SELL' || a.type === 'SHIP_CARGO') return state.inventory.find((l) => l.id === a.lotId)?.commodity;
   return undefined;
 }

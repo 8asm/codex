@@ -10,6 +10,7 @@ import { addBusinessDays, formatDayShort, monthLabel, ymd } from './calendar';
 import { lastTradingDay, listedMonths, physicalDeliveryDay } from './contracts';
 import { newId } from './ledger';
 import { managesOffice, seatsFree } from './offices';
+import { sanctionedOrigin } from './compliance';
 import { TIERS } from '../data/offices';
 import { forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
 import { otcNotional } from './derivatives';
@@ -299,6 +300,19 @@ function rules(state: GameState): Draft[] {
   const late = state.voyages.find((v) => v.delayDays >= 2);
   if (late) out.push({ advisor: 'ops', mood: 'worried', rule: `ops.late.${late.id}`, cooldown: 8, text: `Notre cargaison de ${COMMODITIES[late.commodity].short} est bloquée par la fermeture d’un passage : ${late.delayDays} jours de retard. Les livraisons dépendantes sont menacées.`, action: { kind: 'panel', panel: 'logistics' } });
 
+  // Conformité (phase 7) : dossiers repérés, enquêtes en cours, offres douteuses.
+  if (managesOffice(state) && state.compliance) {
+    const flagged = state.compliance.cases.filter((x) => x.status === 'latent' && x.flagged);
+    if (flagged.length) out.push({ advisor: 'legal', mood: 'worried', rule: 'legal.flagged', cooldown: 30, text: `J’ai trouvé ${flagged.length} dossier(s) embarrassant(s) dans nos archives. Si une autorité les découvre avant nous, ce sera beaucoup plus cher. Se dénoncer divise l’amende par deux.`, action: { kind: 'panel', panel: 'compliance' } });
+    const inv = state.compliance.investigations.find((x) => !x.done && !x.selfReported);
+    if (inv) out.push({ advisor: 'legal', mood: 'angry', rule: `legal.inv.${inv.stage}`, cooldown: 40, text: `${inv.authority} en est au stade « ${inv.stage} ». ${inv.stage === 'jugement' ? 'Trop tard pour transiger.' : 'Une transaction maintenant coûterait moins qu’une condamnation.'}`, action: { kind: 'panel', panel: 'compliance' } });
+    const bribe = state.offers.find((o) => o.bribe);
+    if (bribe) {
+      out.push({ advisor: 'trader', mood: 'smug', rule: 'trader.bribe', cooldown: 20, text: `Un intermédiaire nous apporte un contrat en or avec un producteur public. Il veut juste une petite « commission »… Tout le monde le fait.`, action: { kind: 'panel', panel: 'physical' } });
+      out.push({ advisor: 'legal', mood: 'angry', rule: 'legal.bribe', cooldown: 20, text: `Une commission à un « consultant » pour un contrat public, c’est de la corruption d’agent public. Les parquets ont la mémoire longue.` });
+    }
+    if (state.offers.some((o) => sanctionedOrigin(state, o))) out.push({ advisor: 'legal', mood: 'worried', rule: 'legal.secondary', cooldown: 25, text: 'Ces barils bradés viennent d’une zone sous sanctions. Même si notre siège n’y est pas soumis, le Trésor américain poursuit quiconque touche au dollar.' });
+  }
   // Bureaux (phase 6) : saturation des postes, croissance possible.
   if (managesOffice(state) && state.office) {
     const free = seatsFree(state);

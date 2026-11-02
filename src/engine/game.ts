@@ -12,7 +12,7 @@ import { CITY_BY_ID } from '../data/cities';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { adjustFollowing, dayFromYMD, monthIndexOf, nextBusinessDay, weekday, ymd, addBusinessDays, formatDay } from './calendar';
 import { addCash, log } from './ledger';
-import { baseVolMult, createMarket, exchangeImRate, stepMarket } from './market';
+import { baseVolMult, createMarket, DEFAULT_CURVE, exchangeImRate, stepMarket } from './market';
 import { recomputeIm } from './margin';
 import { addNews, dailyNews } from './news';
 import { acceptOffer, chargeStorage, generateOffers, processDeliveries, spotBuy, spotSell } from './physical';
@@ -50,14 +50,22 @@ import { accrueInterest, drawRcf, repayRcf, settleTreasury } from './treasury';
 import type { Action, ActionResult, CashCategory, CommodityId, GameConfig, GameState } from './types';
 import { nav, valueByCommodity } from './valuation';
 import { COMMODITIES as SPECS } from '../data/commodities';
+import { SCENARIO_BY_ID } from '../data/scenarios';
+import { applyScenario } from './scenarios';
+import { closeExotic, stepExotics, tradeExotic } from './exotics';
+import { acceptPrepay, financeLot, repayLoan, stepFinancing } from './financing';
+import { appeal, checkFuture, complianceMonth, defaultCompliance, exchangeSurveillance, LEVELS, selfReport, setDefense, settleCase, stepInvestigations, suspended } from './compliance';
+import { defaultStats, stepProgress } from './progress';
 import { defaultOffice, fitOutCost, inviteToHq, managesOffice, moveOffice, negotiationEdge, officeEffects, officeItem, officeMonth, officeProperty, relocateOffice, setStyle } from './offices';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 /** Déménagement du siège : coût fixe + taxe de sortie, une fois par an au plus. */
 export const RELOCATION_FIXED = 1_500_000;
 export const RELOCATION_EXIT_TAX = 0.01;
 export const RELOCATION_COOLDOWN = 250;
 const STAFF_MONTHLY = 90_000; // 3 personnes, base Genève
+/** Opérations interdites pendant une suspension de licence. */
+const SUSPENDED_ACTIONS = new Set(['TRADE_FUTURE', 'TRADE_SPREAD', 'TRADE_OPTION', 'TRADE_OTC', 'TRADE_EXOTIC', 'ACCEPT_OFFER', 'ACCEPT_BRIBE_OFFER', 'SPOT_BUY', 'TRADE_FFA', 'SHIP_CARGO', 'ACCEPT_PREPAY', 'HEDGE_DELTA']);
 /** Le marché est simulé ~3 mois avant le jour 1 : historique de prix et courbe « il y a 30 jours » dès le départ. */
 const WARMUP_DAYS = 91;
 
@@ -106,10 +114,13 @@ const zeroTrack = (): Record<AdvisorId, { right: number; wrong: number }> => ({
 const zeroBy = () => Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as Record<CommodityId, number>;
 
 export function createGame(partial: Partial<GameConfig> = {}): GameState {
-  const config: GameConfig = { ...DEFAULT_CONFIG, ...partial };
+  const sc = partial.scenario ? SCENARIO_BY_ID[partial.scenario] : undefined;
+  const config: GameConfig = sc
+    ? { ...DEFAULT_CONFIG, ...partial, ...sc.config, mode: 'sandbox', start: 'found', scenario: sc.id, goal: 'scenario' }
+    : { ...DEFAULT_CONFIG, ...partial };
   const startDay = adjustFollowing(dayFromYMD(config.startYear, 1, 4));
   const endDay = dayFromYMD(config.startYear + config.years, 1, 1) - 1;
-  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets', 'dividends', 'office'];
+  const cats: CashCategory[] = ['vm', 'commission', 'physical', 'storage', 'interest', 'overhead', 'tax', 'travel', 'liquidation', 'premium', 'otc', 'compliance', 'credit', 'freight', 'assets', 'dividends', 'office', 'financing'];
   const state: GameState = {
     version: SAVE_VERSION,
     config,
@@ -159,6 +170,11 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
     streams: [],
     automation: { ...DEFAULT_AUTOMATION, autoHedge: { ...DEFAULT_AUTOMATION.autoHedge } },
     office: defaultOffice(startDay),
+    exotics: [],
+    financing: { lcs: [], loans: [], prepays: [], offers: [] },
+    compliance: defaultCompliance(),
+    stats: defaultStats(config.capital),
+    achievements: [],
     career: null,
     npcs: [],
     situations: [],
@@ -185,6 +201,7 @@ export function createGame(partial: Partial<GameConfig> = {}): GameState {
   generateOpportunities(state, 4);
   seedNpcs(state);
   if (config.mode === 'story' || config.start === 'join') initCareer(state);
+  applyScenario(state);
   const city = CITY_BY_ID[state.company.hqCity]!;
   if (!state.career) {
     addNews(state, {
@@ -260,6 +277,8 @@ function paysCompanyCosts(state: GameState) {
 function closeDay(state: GameState) {
   const co = state.company;
   const days = state.day - state.lastCloseDay;
+  const mcBefore = !!co.marginCall;
+  const newMonth = monthIndexOf(state.day) !== monthIndexOf(state.lastCloseDay);
   // Automatisation (roll, couverture, logistique) aux prix du jour, avant les règlements du soir.
   runAutomation(state);
   // L'exercice des options précède la VM : les futures reçus au strike sont réglés dès ce soir.
@@ -269,10 +288,14 @@ function closeDay(state: GameState) {
   for (const msg of processDeliveries(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   recordFixings(state);
   for (const msg of settleOtc(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  for (const msg of stepExotics(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   recordFreightFixings(state);
   settleFfa(state);
+  const voyagesBefore = state.voyages.length;
   for (const msg of stepVoyages(state)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  state.stats.voyagesDone += Math.max(0, voyagesBefore - state.voyages.length);
   for (const msg of stepAssets(state, days)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  for (const msg of stepFinancing(state, days, newMonth)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   chargeStorage(state, days);
   accrueInterest(state, days);
   stepCredit(state, days);
@@ -285,6 +308,7 @@ function closeDay(state: GameState) {
     addCash(state, -cost, 'overhead');
     log(state, `Frais généraux du mois (salaires de l’équipe)`, -cost);
     officeMonth(state);
+    complianceMonth(state);
     // Déclaration réglementaire des dérivés (type EMIR / Dodd-Frank) : coût par transaction du mois écoulé.
     const fee = state.world.cityRegs[co.hqCity]!.reportingFee * co.tradesThisMonth;
     if (fee > 0) {
@@ -318,6 +342,8 @@ function closeDay(state: GameState) {
     resetCompanyYear(state);
   }
   state.offers = state.offers.filter((o) => o.expiresDay > state.day);
+  if (paysCompanyCosts(state)) stepInvestigations(state, days);
+  exchangeSurveillance(state);
 
   recomputeIm(state);
   let deficit = settleTreasury(state);
@@ -376,6 +402,7 @@ function closeDay(state: GameState) {
   state.lastValueBy = vb;
   state.lastNav = navNow;
   state.lastCloseDay = state.day;
+  stepProgress(state, mcBefore);
 }
 
 function bankrupt(state: GameState, reason: string) {
@@ -406,6 +433,7 @@ export function dispatch(state: GameState, action: Action): ActionResult {
   if (state.status !== 'running') return { ok: false, message: 'La partie est terminée.' };
   const denied = permissionError(state, action);
   if (denied) return { ok: false, message: denied };
+  if (suspended(state) && SUSPENDED_ACTIONS.has(action.type)) return { ok: false, message: `Licence de négoce suspendue jusqu’au ${formatDay(state.compliance.suspendedUntil)}.` };
   switch (action.type) {
     case 'RESOLVE_SITUATION':
       return resolveSituation(state, action.id, action.choice);
@@ -454,8 +482,12 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       state.pendingAlerts.push({ kind: 'ended', text: state.statusReason });
       return { ok: true, message: state.statusReason };
     }
-    case 'TRADE_FUTURE':
-      return counted(state, guarded(state, () => tradeFuture(state, action.commodity, action.month, action.lots)));
+    case 'TRADE_FUTURE': {
+      const chk = checkFuture(state, action.commodity, action.month, action.lots);
+      if (chk.block) return { ok: false, message: chk.block };
+      const r = counted(state, guarded(state, () => tradeFuture(state, action.commodity, action.month, action.lots)));
+      return r.ok && chk.warn ? { ...r, message: `${r.message} ${chk.warn}` } : r;
+    }
     case 'TRADE_SPREAD':
       return counted(state, guarded(state, () => tradeSpread(state, action.commodity, action.near, action.far, action.lots)), 2);
     case 'TRADE_OPTION':
@@ -514,7 +546,29 @@ export function dispatch(state: GameState, action: Action): ActionResult {
       return { ok: true, message: '' };
     }
     case 'ACCEPT_OFFER':
-      return guarded(state, () => acceptOffer(state, action.offerId));
+    case 'ACCEPT_BRIBE_OFFER':
+      return guarded(state, () => acceptOffer(state, action.offerId, action.type === 'ACCEPT_OFFER' ? action.inspect : false));
+    case 'TRADE_EXOTIC':
+      return guarded(state, () => tradeExotic(state, action.spec, action.qty));
+    case 'CLOSE_EXOTIC':
+      return guarded(state, () => closeExotic(state, action.id));
+    case 'FINANCE_LOT':
+      return financeLot(state, action.lotId);
+    case 'REPAY_LOAN':
+      return repayLoan(state, action.id);
+    case 'ACCEPT_PREPAY':
+      return guarded(state, () => acceptPrepay(state, action.offerId));
+    case 'SET_COMPLIANCE':
+      state.compliance.level = action.level;
+      return { ok: true, message: `Programme de conformité : ${LEVELS[action.level].label}.` };
+    case 'SELF_REPORT':
+      return selfReport(state, action.caseId);
+    case 'SET_DEFENSE':
+      return setDefense(state, action.id, action.strategy);
+    case 'SETTLE_CASE':
+      return settleCase(state, action.id);
+    case 'APPEAL':
+      return appeal(state, action.id);
     case 'SPOT_BUY':
       return guarded(state, () => spotBuy(state, action.commodity, action.locationId, action.qty));
     case 'SPOT_SELL':
@@ -626,6 +680,7 @@ function applyNegotiation(state: GameState) {
     case 'deal': {
       const o = state.offers.find((x) => x.id === n.context.offerId);
       if (o && r !== undefined) o.diff = Number(r.toFixed(4));
+      if (r !== undefined && r !== n.opening) state.stats.negotiationsWon++;
       break;
     }
     case 'salaire':
@@ -794,6 +849,12 @@ export function migrateState(raw: GameState): GameState {
     s.office = defaultOffice(s.day);
     s.company.cumCashByCategory.office = 0;
     s.version = 6;
+  }
+  if (s.version === 6) {
+    Object.assign(s, { exotics: [], financing: { lcs: [], loans: [], prepays: [], offers: [] }, compliance: defaultCompliance(), stats: defaultStats(s.lastNav), achievements: [] });
+    s.company.cumCashByCategory.financing = 0;
+    s.market.curve = { USD: { ...DEFAULT_CURVE.USD }, EUR: { ...DEFAULT_CURVE.EUR } };
+    s.version = 7;
   }
   return s;
 }

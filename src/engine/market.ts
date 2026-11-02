@@ -52,6 +52,7 @@ export function createMarket(startDay: Day, volatility = 1): MarketState {
     impact: {},
     ivLevel: Object.fromEntries(COMMODITY_IDS.map((c) => [c, IV_PARAMS.mean])) as Record<CommodityId, number>,
     rates: { ...RATES },
+    curve: { USD: { ...DEFAULT_CURVE.USD }, EUR: { ...DEFAULT_CURVE.EUR } },
     basisShift: {},
     halted: {},
     haltPending: {},
@@ -96,6 +97,23 @@ export function rate(m: MarketState, ccy: Currency): number {
   return (m.rates?.[ccy] ?? RATES[ccy]) + (m.rateShift ?? 0);
 }
 
+/** Courbe par défaut : légèrement pentue (prime de terme), sans bosse. */
+export const DEFAULT_CURVE: Record<Currency, { slope: number; hump: number }> = { USD: { slope: 0.004, hump: 0 }, EUR: { slope: 0.006, hump: 0 } };
+const NS_LAMBDA = 2; // années
+
+/**
+ * Taux zéro-coupon continu de maturité t (années), Nelson-Siegel :
+ *   z(t) = r₀ + pente·(1 − f(t)) + bosse·(f(t) − e^{−t/λ}),  f(t) = (1 − e^{−t/λ}) / (t/λ)
+ * z(0) = r₀ (taux directeur), z(∞) = r₀ + pente. Un choc parallèle (`rateShift`) décale toute la courbe.
+ */
+export function zeroRate(m: MarketState, ccy: Currency, t: number): number {
+  const r0 = rate(m, ccy);
+  const c = m.curve?.[ccy] ?? DEFAULT_CURVE[ccy];
+  const x = Math.max(1e-6, t) / NS_LAMBDA;
+  const f = (1 - Math.exp(-x)) / x;
+  return r0 + c.slope * (1 - f) + c.hump * (f - Math.exp(-x));
+}
+
 /** Cotation suspendue sur cette commodité ? */
 export function isHalted(m: MarketState, c: CommodityId): boolean {
   return (m.halted[c] ?? -1) >= m.day;
@@ -136,7 +154,8 @@ export function fx(m: MarketState, ccy: Currency): number {
 }
 
 export function discount(m: MarketState, ccy: Currency, from: Day, to: Day): number {
-  return Math.exp(-rate(m, ccy) * Math.max(0, yearFrac(from, to)));
+  const t = Math.max(0, yearFrac(from, to));
+  return Math.exp(-zeroRate(m, ccy, t) * t);
 }
 
 /** Vol (annuelle) du log-prix d'une échéance. */
@@ -237,7 +256,7 @@ export function cloneMarket(m: MarketState): MarketState {
   return {
     day: m.day, volRegime: m.volRegime, volMult: m.volMult, fxLog: m.fxLog, commodities,
     history: [], impact: { ...m.impact }, ivLevel: { ...m.ivLevel }, rateShift: m.rateShift, volShift: m.volShift,
-    rates: { ...m.rates }, basisShift: { ...m.basisShift }, halted: { ...m.halted }, haltPending: { ...m.haltPending }, drift: { ...m.drift },
+    rates: { ...m.rates }, curve: m.curve ? { USD: { ...m.curve.USD }, EUR: { ...m.curve.EUR } } : undefined, basisShift: { ...m.basisShift }, halted: { ...m.halted }, haltPending: { ...m.haltPending }, drift: { ...m.drift },
     freight: { ...m.freight },
   };
 }

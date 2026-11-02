@@ -80,9 +80,30 @@ npm run build      # build de production dans dist/
   - art valorisé net des frais d'enchères ;
   - débordement en coworking quand les postes manquent.
 
+## Phase 7 — ce qui s'ajoute
+
+- **Produits structurés** (🧪, `X`) : barrières, digitales, lookbacks, options sur spread calendaire, composées, quantos, cliquets. Ils sont cotés par les banques avec des formules fermées, et le ticket propose un **contrôle Monte Carlo** de chaque prix. Barrière, extrême et constatations sont suivis à chaque clôture, avec règlement à l'échéance.
+- **Courbe des taux** (Nelson-Siegel) : chaque maturité a son taux, et les banques centrales aplatissent ou pentifient la courbe.
+- **Financement** (🏧, `Y`) :
+  - lettres de crédit exigées par certains vendeurs, ou fournies par les acheteurs (protection contre leur défaut) ;
+  - **financement de stock** avec décote et appels de marge ;
+  - **préfinancement de producteurs**, remboursé en cargaisons.
+- **Qualité** : des cargaisons arrivent hors spécification ou contaminées ; l'inspection indépendante permet d'obtenir une réfaction ou de refuser la marchandise.
+- **Conformité et enquêtes** (⚖️, `Z`) :
+  - raccourcis tentants (barils sanctionnés bradés, commissions d'intermédiaires, positions dominantes à l'échéance) ;
+  - **sanctions secondaires** et limites de position des bourses ;
+  - enquêtes en plusieurs étapes (enquête, poursuites, jugement, appel) : coopérer ou contester, transiger, se dénoncer ;
+  - amendes, banques coupées, licence suspendue, prison ;
+  - programme de conformité minimal, standard ou renforcé.
+- **Scénarios historiques** (onglet « Scénarios » de l'accueil) : la crise du détroit, le super-cycle, la grande pause, l'hiver sans gaz, le squeeze du métal.
+- **Objectifs de victoire** au choix : taille, rendement, fortune, réputation, domination, survie.
+- **26 succès**, collection conservée entre les parties, et panneau 🏆 **Partie** (`Q`).
+- **Récapitulatif de fin de partie** : verdict, meilleurs et pires deals, P&L par commodité, erreurs de risque, chronologie.
+- **Équilibrage** : `npx vite-node scripts/balance.ts [années] [graines]` fait jouer des stratégies-robots (inactif, négociant couvert, négociant discipliné, raccourcis, spéculateur).
+
 ### Raccourcis
 
-`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `C` codex · `Échap` fermer
 
 ## Structure
 

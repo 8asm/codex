@@ -26,6 +26,10 @@ import { NegotiationModal, SituationOverlay } from './NegotiationModal';
 import { rights } from '../engine/career';
 import { clock, DAY_SECONDS, useStore, type PanelId } from './store';
 import { OfficesPanel } from './OfficesPanel';
+import { ExoticsPanel } from './ExoticsPanel';
+import { FinancePanel } from './FinancePanel';
+import { CompliancePanel } from './CompliancePanel';
+import { GamePanel } from './GamePanel';
 import { CityCanvas } from './CityCanvas';
 import { COMPANY_BY_ID } from '../data/companies';
 import { CITY_BY_ID } from '../data/cities';
@@ -46,6 +50,10 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'world', icon: '🌍', label: 'Monde', key: 'G' },
   { id: 'rivals', icon: '🏢', label: 'Rivaux', key: 'K' },
   { id: 'offices', icon: '🏛️', label: 'Bureaux', key: 'B' },
+  { id: 'exotics', icon: '🧪', label: 'Structurés', key: 'X' },
+  { id: 'finance', icon: '🏧', label: 'Financement', key: 'Y' },
+  { id: 'compliance', icon: '⚖️', label: 'Conformité', key: 'Z' },
+  { id: 'game', icon: '🏆', label: 'Partie', key: 'Q' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
 ];
 
@@ -157,11 +165,14 @@ export function App() {
     if (id === 'assets') return rg.assets;
     if (id === 'treasury') return rg.treasury || rg.trade;
     if (id === 'risk' || id === 'book') return rg.trade;
+    if (id === 'exotics') return rg.otc;
+    if (id === 'finance') return rg.treasury;
+    if (id === 'compliance') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     return true;
   };
   const visible0 = (id: PanelId) => byRights(id) && (id === 'logistics' ? showLogi || !!game?.career : id === 'assets' ? showAssets || !!game?.career : id === 'automation' ? false : true);
   const visible = (id: PanelId) => visible0(id) && visible1(id);
-  const visible1 = (id: PanelId) => (id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
+  const visible1 = (id: PanelId) => (id === 'exotics' ? showOptions && (game!.history.length > 20 || game!.exotics.length > 0) : id === 'finance' ? showTreasury : id === 'compliance' ? game!.history.length > 10 || game!.compliance.cases.length > 0 : id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
   return (
     <div className="app">
@@ -176,7 +187,7 @@ export function App() {
               <button onClick={async () => { await saveGame('manuel', game); toast('Partie sauvegardée.', 'good'); setMenu(false); }}>💾 Sauvegarder</button>
               <button onClick={() => { exportJson(game); setMenu(false); }}>⬇ Exporter (JSON)</button>
               <button onClick={() => { setMenu(false); quit(); }}>⏏ Quitter vers l’accueil</button>
-              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K B C U : panneaux · H : vue ville · Échap : fermer</div>
+              <div className="muted small keys">Espace : pause · 1/2/3 : vitesse · N : jour suivant · J M P F I O L R T V A G K B X Y Z Q C U : panneaux · H : vue ville · Échap : fermer</div>
             </div>
           )}
           <nav className="dock">
@@ -204,6 +215,10 @@ export function App() {
             {panel === 'automation' && <AutomationPanel />}
             {panel === 'career' && <CareerPanel />}
             {panel === 'offices' && <OfficesPanel />}
+            {panel === 'exotics' && <ExoticsPanel />}
+            {panel === 'finance' && <FinancePanel />}
+            {panel === 'compliance' && <CompliancePanel />}
+            {panel === 'game' && <GamePanel />}
           </div>
           {!cityPhase && <LayerBar />}
           {!cityPhase && (

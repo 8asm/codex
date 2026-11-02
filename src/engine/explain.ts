@@ -16,12 +16,13 @@ import { COMMODITIES } from '../data/commodities';
 import { yearFrac } from './calendar';
 import { lotQty } from './contracts';
 import { apoUnitPrice, avgInputs, expectedAverage, type View } from './derivatives';
-import { basis, basisAt, cloneMarket, discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
+import { basis, basisAt, cloneMarket, discount, forwardAt, futuresPrice, fx, spotPrice, zeroRate } from './market';
 import { vanillaPrice } from './pricing';
 import { ffaFair } from './freight';
 import type { Book, GameState, PnlExplain } from './types';
 import { impliedVolAt } from './volsurface';
 import { bookOf } from './valuation';
+import { exoticDeltaUnits, exoticValueUsd } from './exotics';
 
 export function snapshotForExplain(state: GameState) {
   state.explainBase = { market: cloneMarket(state.market), book: JSON.parse(JSON.stringify(bookOf(state))) as Book, day: state.day };
@@ -76,7 +77,7 @@ export function computeExplain(state: GameState, totalPnl: number): PnlExplain |
     const T0 = Math.max(0, yearFrac(d0, o.expiry)), T1 = Math.max(0, yearFrac(d1, o.expiry));
     const s0 = impliedVolAt(m0, o.commodity, o.month, o.expiry, o.strike, F0);
     const s1 = T1 > 0 ? impliedVolAt(m1, o.commodity, o.month, o.expiry, o.strike, F1) : s0;
-    const r0 = rate(m0, spec.currency), r1 = rate(m1, spec.currency);
+    const r0 = zeroRate(m0, spec.currency, T0), r1 = zeroRate(m1, spec.currency, T1);
     const P = (F: number, s: number, T: number, r: number) => vanillaPrice(F, o.strike, T, s, r, o.type, o.style);
     const a = P(F0, s0, T0, r0), bP = P(F1, s0, T0, r0), c = P(F1, s1, T0, r0), dP = P(F1, s1, T1, r1);
     e.price += (bP - a) * q * x0;
@@ -124,6 +125,17 @@ export function computeExplain(state: GameState, totalPnl: number): PnlExplain |
   for (const p of b.ffa ?? []) {
     const v0f = { market: m0, day: d0, freightFixings: state.freightFixings };
     e.price += p.days * (ffaFair(state, p.index, p.month) - ffaFair(v0f, p.index, p.month));
+  }
+  // Exotiques : delta de la veille × variation du future en « prix », le reste (vol, temps, chemin) en « vol ».
+  for (const x of b.exotics ?? []) {
+    const spec = COMMODITIES[x.commodity];
+    const V0 = exoticValueUsd({ market: m0 }, x);
+    const live = (state.exotics ?? []).find((y) => y.id === x.id);
+    const V1 = live ? exoticValueUsd(state, live) : V0;
+    const dF = futuresPrice(m1, x.commodity, x.month) - futuresPrice(m0, x.commodity, x.month);
+    const pricePart = exoticDeltaUnits(m0, x) * dF * spec.valuePerUnit * fx(m0, spec.currency);
+    e.price += pricePart;
+    e.vol += V1 - V0 - pricePart;
   }
   const sum = e.price + e.basis + e.fx + e.vol + e.time;
   return { day: d1, ...e, other: totalPnl - sum, total: totalPnl };

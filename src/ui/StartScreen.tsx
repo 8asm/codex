@@ -6,7 +6,9 @@ import { formatDay } from '../engine/calendar';
 import { usd } from './format';
 import { COMPANIES } from '../data/companies';
 import { TRACK_LABEL } from '../data/career';
-import type { CareerTrack } from '../engine/types';
+import type { CareerTrack, GoalId } from '../engine/types';
+import { SCENARIOS } from '../data/scenarios';
+import { GOALS } from '../data/achievements';
 import { useStore } from './store';
 
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
@@ -22,7 +24,9 @@ export function StartScreen() {
   const [vol, setVol] = useState(1);
   const [crisis, setCrisis] = useState(1);
   const [seed, setSeed] = useState(randomSeed());
-  const [mode, setMode] = useState<'story' | 'found' | 'join'>('story');
+  const [mode, setMode] = useState<'story' | 'found' | 'join' | 'scenario'>('story');
+  const [scenario, setScenario] = useState(SCENARIOS[0]!.id);
+  const [goal, setGoal] = useState<GoalId>('taille');
   const [employer, setEmployer] = useState('glenmoor');
   const [track, setTrack] = useState<CareerTrack>('trading');
   const [player, setPlayer] = useState('Alex Martin');
@@ -33,7 +37,8 @@ export function StartScreen() {
   }, []);
 
   const start = () =>
-    newGame({
+    mode === 'scenario' ? newGame({ scenario, seed, playerName: player || 'Vous' }) : newGame({
+      goal,
       mode: mode === 'story' ? 'story' : 'sandbox', start: mode === 'join' ? 'join' : 'found', employerId: employer, track, playerName: player || 'Vous',
       companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years: mode === 'story' ? Math.max(years, 6) : years, volatility: vol, crisisFrequency: crisis, seed,
     });
@@ -63,8 +68,23 @@ export function StartScreen() {
           <button className={mode === 'story' ? 'on' : ''} onClick={() => setMode('story')}>📖 Histoire<small>de stagiaire à CEO</small></button>
           <button className={mode === 'found' ? 'on' : ''} onClick={() => setMode('found')}>🏢 Sandbox : ma société</button>
           <button className={mode === 'join' ? 'on' : ''} onClick={() => setMode('join')}>👔 Sandbox : trader salarié</button>
+          <button className={mode === 'scenario' ? 'on' : ''} onClick={() => setMode('scenario')}>📜 Scénarios<small>crises historiques</small></button>
         </div>
-        {mode !== 'found' && (
+        {mode === 'scenario' && (
+          <div className="scenario-pick">
+            {SCENARIOS.map((sc) => (
+              <button key={sc.id} className={scenario === sc.id ? 'on' : ''} onClick={() => setScenario(sc.id)}>
+                <span className="sc-icon">{sc.icon}</span>
+                <div>
+                  <b>{sc.name}</b> <small className="muted">{sc.era}</small>
+                  <div className="small">{sc.intro}</div>
+                  <div className="small muted">🎯 {sc.objective.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {(mode === 'story' || mode === 'join') && (
           <>
             {mode === 'story' && <label>Votre nom<input value={player} onChange={(e) => setPlayer(e.target.value)} maxLength={30} /></label>}
             <div className="label">Société d’entrée</div>
@@ -97,7 +117,14 @@ export function StartScreen() {
             </div>
           </>
         )}
-        <div className="row2">
+        {mode !== 'scenario' && (
+          <label>Objectif de victoire
+            <select value={goal} onChange={(e) => setGoal(e.target.value as GoalId)}>
+              {GOALS.filter((x) => x.id !== 'scenario').map((x) => <option key={x.id} value={x.id}>{x.label} — {x.desc}</option>)}
+            </select>
+          </label>
+        )}
+        {mode !== 'scenario' && <><div className="row2">
           {mode !== 'story' && <label>{mode === 'join' ? 'Capital alloué au livre' : 'Capital initial'} : <b>{capital} M$</b><input type="range" min={5} max={100} step={5} value={capital} onChange={(e) => setCapital(Number(e.target.value))} /></label>}
           <label>Durée : <b>{years} an{years > 1 ? 's' : ''}</b><input type="range" min={1} max={8} value={years} onChange={(e) => setYears(Number(e.target.value))} /></label>
         </div>
@@ -113,11 +140,11 @@ export function StartScreen() {
             </select>
           </label>
           <label>Graine<input value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
-        </div>
+        </div></>}
         <div className="start-actions">
           <button className="ghost" onClick={() => fileRef.current?.click()}>Importer une sauvegarde…</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { loadState(await importJson(f)); } catch (err) { toast((err as Error).message, 'bad'); } }} />
-          <button className="primary big" onClick={start}>{mode === 'story' ? 'Premier jour →' : mode === 'join' ? 'Rejoindre le desk →' : 'Ouvrir les bureaux →'}</button>
+          <button className="primary big" onClick={start}>{mode === 'story' ? 'Premier jour →' : mode === 'join' ? 'Rejoindre le desk →' : mode === 'scenario' ? 'Entrer dans l’histoire →' : 'Ouvrir les bureaux →'}</button>
         </div>
       </div>
     </div>

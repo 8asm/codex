@@ -49,14 +49,14 @@ export function evaluateLimits(state: GameState, navValue: number) {
 
 function snapshot(state: GameState) {
   return JSON.stringify({
-    futures: state.futures, options: state.options, otc: state.otc, forwards: state.forwards, inventory: state.inventory,
+    futures: state.futures, options: state.options, otc: state.otc, forwards: state.forwards, inventory: state.inventory, exotics: state.exotics,
     offers: state.offers, company: state.company, impact: state.market.impact, nextId: state.nextId, logLen: state.log.length,
   });
 }
 
 function restore(state: GameState, snap: string) {
   const s = JSON.parse(snap);
-  state.futures = s.futures; state.options = s.options; state.otc = s.otc; state.forwards = s.forwards;
+  state.futures = s.futures; state.options = s.options; state.otc = s.otc; state.exotics = s.exotics ?? []; state.forwards = s.forwards;
   state.inventory = s.inventory; state.offers = s.offers; state.company = s.company; state.market.impact = s.impact;
   state.nextId = s.nextId; state.log.length = s.logLen;
 }

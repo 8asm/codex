@@ -10,7 +10,7 @@ import type { Action, ActionResult, CommodityId, GameConfig, GameState } from '.
 import { saveGame } from '../save/saveStore';
 import { sfx } from './sound';
 
-export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices';
+export type PanelId = 'market' | 'physical' | 'book' | 'treasury' | 'travel' | 'codex' | 'options' | 'risk' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' | 'exotics' | 'finance' | 'compliance' | 'game';
 export type LayerId = 'tension' | 'sanctions' | 'meteo' | 'prix' | 'rivals' | 'routes' | 'stocks';
 export type Speed = 0 | 1 | 2 | 5;
 
@@ -21,7 +21,7 @@ export interface Toast {
 }
 
 export interface Modal {
-  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation' | 'limit' | 'career';
+  kind: 'margin_call' | 'bankrupt' | 'ended' | 'major_news' | 'liquidation' | 'limit' | 'career' | 'scenario';
   text: string;
 }
 
@@ -71,6 +71,25 @@ interface UIState {
 }
 
 let toastId = 1;
+
+/** Collection de succès persistante entre les parties (navigateur). */
+export function loadCollection(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem('tw-achievements') ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+
+function saveToCollection(ids: string[]) {
+  try {
+    const cur = new Set(loadCollection());
+    for (const id of ids) cur.add(id);
+    localStorage.setItem('tw-achievements', JSON.stringify([...cur]));
+  } catch {
+    /* stockage indisponible */
+  }
+}
 const loadSeen = (): string[] => {
   try {
     return JSON.parse(localStorage.getItem('tw-codex') ?? '[]') as string[];
@@ -105,8 +124,8 @@ export const useStore = create<UIState>((set, get) => ({
 
   newGame: (cfg) => {
     const g = createGame(cfg);
-    consumeAlerts(g);
-    set({ game: g, rev: 0, speed: 0, panel: 'market', modal: null, month: listedMonths(COMMODITIES.BRENT, g.day)[0]!, commodity: 'BRENT', selectedCity: null });
+    const intro = consumeAlerts(g).find((a) => a.kind === 'scenario');
+    set({ game: g, rev: 0, speed: 0, panel: 'market', modal: intro ? { kind: 'scenario', text: intro.text } : null, month: listedMonths(COMMODITIES.BRENT, g.day)[0]!, commodity: 'BRENT', selectedCity: null });
   },
   loadState: (s) => set({ game: s, rev: get().rev + 1, speed: 0, modal: null, month: listedMonths(COMMODITIES[get().commodity], s.day)[0]! }),
   quit: () => set({ game: null, speed: 0, modal: null, cityView: null, cityPhase: null, interior: false }),
@@ -144,6 +163,11 @@ export const useStore = create<UIState>((set, get) => ({
         pause = true;
       }
       else if (al.kind === 'advice') continue;
+      else if (al.kind === 'achievement') {
+        sfx.deal();
+        get().toast(al.text, 'good');
+        saveToCollection(g.achievements.map((a) => a.id));
+      }
       else if (al.kind === 'limit') {
         sfx.alarm();
         get().toast(`⚠️ ${al.text}`, 'bad');

@@ -89,7 +89,7 @@ export function computeVar(state: GameState, book: Book = bookOf(state)): VarRes
   const scen = scenarios(state.config.seed, state.day);
   const totals: number[] = [];
   const by: Record<CommodityId, number[]> = Object.fromEntries(COMMODITY_IDS.map((c) => [c, []])) as never;
-  const empty = !book.futures.length && !book.forwards.length && !book.inventory.length && !book.options.length && !book.otc.length && !(book.voyages?.length) && !(book.ffa?.length);
+  const empty = !book.futures.length && !book.forwards.length && !book.inventory.length && !book.options.length && !book.otc.length && !(book.voyages?.length) && !(book.ffa?.length) && !(book.exotics?.length) && !(book.prepays?.length);
   if (empty) return { var99: 0, es99: 0, varBy: Object.fromEntries(COMMODITY_IDS.map((c) => [c, 0])) as never, pnls: [] };
   for (const s of scen) {
     const m = applyScenario(state.market, s);

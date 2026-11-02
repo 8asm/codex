@@ -525,3 +525,41 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .invite-list { display: flex; flex-direction: column; gap: 4px; }
 .invite-row { display: grid; grid-template-columns: 1fr 40px auto; gap: 8px; align-items: center; }
 .warn { color: var(--warn); }
+
+/* ---------------------------------------------------------------- phase 7 : structurés, financement, conformité, partie */
+.offer-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.tag-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; background: #ffffff14; border: 1px solid #ffffff22; font-size: .72rem; }
+.tag-chip.good { border-color: var(--pos); color: var(--pos); }
+.tag-chip.bad { border-color: var(--neg); color: var(--neg); }
+.tag-chip input { margin: 0; }
+.exo-form { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 6px 0 8px; }
+.exo-form label { display: flex; flex-direction: column; font-size: .78rem; min-width: 170px; }
+.ticket .row, .inv-card .row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.case-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--panel-2); border-radius: 10px; padding: 6px 10px; margin-bottom: 6px; }
+.inv-card { background: var(--panel-2); border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; border: 2px solid transparent; }
+.inv-card.active { border-color: var(--neg); }
+.inv-stages { display: flex; gap: 4px; margin: 4px 0; }
+.inv-stages span { font-size: .7rem; padding: 1px 8px; border-radius: 999px; background: #ffffff10; color: var(--muted); }
+.inv-stages span.done { background: #ffffff22; color: var(--text); }
+.inv-stages span.on { background: var(--neg); color: #fff; font-weight: 800; }
+.scenario-pick { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; margin-bottom: 8px; }
+.scenario-pick button { display: flex; gap: 10px; text-align: left; align-items: flex-start; padding: 8px 10px; }
+.scenario-pick button.on { outline: 2px solid var(--gold); }
+.sc-icon { font-size: 1.8rem; }
+.scenario-banner { background: var(--panel-2); border-left: 4px solid var(--gold); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+.goal-bar { height: 10px; border-radius: 6px; background: #ffffff18; overflow: hidden; margin: 6px 0 2px; }
+.goal-bar i { display: block; height: 100%; background: linear-gradient(90deg, #7dd3fc, var(--gold)); }
+.ach-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.ach { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: #ffffff08; opacity: .55; }
+.ach.known { opacity: .8; }
+.ach.on { opacity: 1; background: var(--panel-2); border: 1px solid var(--gold); }
+.ach-icon { font-size: 1.4rem; }
+.timeline { list-style: none; padding: 0; margin: 4px 0; }
+.timeline li { padding: 2px 0; border-bottom: 1px dashed #ffffff14; }
+.wide-modal { width: min(980px, 94vw); max-height: 92vh; overflow-y: auto; }
+.recap-verdict { font-size: 1.05rem; font-weight: 800; }
+.recap-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; text-align: left; font-size: .85rem; }
+.recap-cols ul { padding-left: 16px; margin: 4px 0; }
+.recap-cols h4 { margin: 8px 0 2px; }
+@media (max-width: 800px) { .recap-cols, .ach-grid { grid-template-columns: 1fr; } }
+.scenario-pick button.on .muted { color: #4a3800; }

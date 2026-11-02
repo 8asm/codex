@@ -163,6 +163,8 @@ export interface MarketState {
   haltPending: Partial<Record<CommodityId, [number, number]>>;
   /** Dérive du facteur long sous la probabilité réelle (« narratif » de marché = prime de risque), par an. */
   drift: Partial<Record<CommodityId, number>>;
+  /** Phase 7 : forme de la courbe zéro-coupon (Nelson-Siegel) : pente long − court et bosse, par devise. */
+  curve?: Record<Currency, { slope: number; hump: number }>;
   /** Chocs transitoires utilisés pour les greeks / stress (jamais persistés en partie). */
   rateShift?: number;
   volShift?: number;
@@ -191,6 +193,10 @@ export interface ForwardDeal {
   tradeDay: Day;
   /** Tolérance de quantité (±) au choix du vendeur. */
   tolerance?: number;
+  /** Phase 7 : crédit documentaire (émis par notre banque à l'achat, reçu de l'acheteur à la vente). */
+  lc?: 'issued' | 'received';
+  /** Phase 7 : inspection indépendante commandée au chargement. */
+  inspected?: boolean;
 }
 
 export interface InventoryLot {
@@ -200,6 +206,8 @@ export interface InventoryLot {
   qty: number;
   cost: number; // prix unitaire de revient
   sinceDay: Day;
+  /** Phase 7 : facteur de valeur lié à la qualité (1 = conforme ; < 1 hors spécification). */
+  quality?: number;
 }
 
 export interface OptionPosition {
@@ -278,7 +286,7 @@ export interface Advice {
 
 export type AdviceAction =
   | { kind: 'hedge'; commodity: CommodityId }
-  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' }
+  | { kind: 'panel'; panel: 'treasury' | 'risk' | 'book' | 'market' | 'options' | 'physical' | 'news' | 'world' | 'rivals' | 'logistics' | 'assets' | 'automation' | 'career' | 'offices' | 'compliance' | 'finance' | 'exotics' }
   | { kind: 'trade'; action: Action; label: string };
 
 export interface Offer {
@@ -301,6 +309,8 @@ export interface Offer {
   negotiated?: boolean;
   /** Contrôles KYC en cours jusqu'à ce jour (offre non acceptable avant). */
   kycReadyDay?: Day;
+  /** Phase 7 : commission versée à un « consultant » pour obtenir le contrat (USD). */
+  bribe?: number;
 }
 
 export interface Travel {
@@ -328,7 +338,8 @@ export type CashCategory =
   | 'freight'
   | 'assets'
   | 'dividends'
-  | 'office';
+  | 'office'
+  | 'financing';
 
 export interface Company {
   name: string;
@@ -526,6 +537,9 @@ export interface GameConfig {
   years: number;
   volatility: number; // multiplicateur global (0.6..1.6)
   crisisFrequency: number; // multiplicateur des chocs (0..2)
+  /** Phase 7 : scénario historique (identifiant), objectif de victoire choisi. */
+  scenario?: string;
+  goal?: GoalId;
 }
 
 export interface GameState {
@@ -564,6 +578,11 @@ export interface GameState {
   streams: StreamPosition[];
   automation: Automation;
   office: OfficeState;
+  exotics: ExoticPosition[];
+  financing: FinancingState;
+  compliance: ComplianceState;
+  stats: GameStats;
+  achievements: Achievement[];
   companies: AICompanyState[];
   credit: CreditState;
   advice: Advice[];
@@ -581,7 +600,7 @@ export interface GameState {
   lastNav: number;
   lastCloseDay: Day;
   /** Événements de la dernière clôture, consommés par l'UI (pause auto, sons…). */
-  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended' | 'limit' | 'limit_ok' | 'advice' | 'situation' | 'career'; text: string }[];
+  pendingAlerts: { kind: 'margin_call' | 'liquidation' | 'bankrupt' | 'major_news' | 'delivery' | 'ended' | 'limit' | 'limit_ok' | 'advice' | 'situation' | 'career' | 'achievement' | 'scenario'; text: string }[];
 }
 
 // ---------------------------------------------------------------- phase 5 : mode Histoire
@@ -711,6 +730,8 @@ export interface Book {
   otc: OtcPosition[];
   voyages: Voyage[];
   ffa: FfaPosition[];
+  exotics?: ExoticPosition[];
+  prepays?: Prepayment[];
 }
 
 // ---------------------------------------------------------------- phase 4 : logistique, actifs, automatisation
@@ -822,7 +843,7 @@ export interface Automation {
 
 export type Action =
   | { type: 'TRADE_FUTURE'; commodity: CommodityId; month: MonthIndex; lots: number }
-  | { type: 'ACCEPT_OFFER'; offerId: string }
+  | { type: 'ACCEPT_OFFER'; offerId: string; inspect?: boolean }
   | { type: 'SPOT_BUY'; commodity: CommodityId; locationId: string; qty: number }
   | { type: 'SPOT_SELL'; lotId: string; qty?: number }
   | { type: 'TRAVEL'; to: string }
@@ -864,6 +885,17 @@ export type Action =
   | { type: 'OFFICE_ITEM'; item: PrestigeItemId; sell?: boolean }
   | { type: 'OFFICE_PROPERTY'; buy: boolean }
   | { type: 'INVITE_HQ'; npcId: string }
+  | { type: 'TRADE_EXOTIC'; spec: ExoticSpec; qty: number }
+  | { type: 'CLOSE_EXOTIC'; id: string }
+  | { type: 'FINANCE_LOT'; lotId: string }
+  | { type: 'REPAY_LOAN'; id: string }
+  | { type: 'ACCEPT_PREPAY'; offerId: string }
+  | { type: 'SET_COMPLIANCE'; level: ComplianceLevel }
+  | { type: 'SELF_REPORT'; caseId: string }
+  | { type: 'SET_DEFENSE'; id: string; strategy: DefenseStrategy }
+  | { type: 'SETTLE_CASE'; id: string }
+  | { type: 'APPEAL'; id: string }
+  | { type: 'ACCEPT_BRIBE_OFFER'; offerId: string }
   | { type: 'RETIRE' };
 
 export type NegotiationMove = 'ancrer' | 'concéder' | 'bluffer' | 'argumenter' | 'accepter' | 'rompre';
@@ -898,4 +930,190 @@ export interface OfficeState {
   lastConferenceYear: number;
   /** Candidatures spontanées reçues (statistique affichée). */
   applicants: number;
+}
+
+// ---------------------------------------------------------------- phase 7 : exotiques
+export type ExoticKind = 'barrier' | 'digital' | 'lookback' | 'spread' | 'compound' | 'quanto' | 'cliquet';
+export type BarrierType = 'up-out' | 'down-out' | 'up-in' | 'down-in';
+
+/** Caractéristiques d'une option exotique de gré à gré sur un future. */
+export interface ExoticSpec {
+  kind: ExoticKind;
+  commodity: CommodityId;
+  month: MonthIndex;
+  type: OptType;
+  /** Strike (barrière, digitale, spread : strike du spread, composée : strike du call sous-jacent, quanto). */
+  strike: number;
+  /** Échéance de l'exotique (composée : échéance de l'option composée). */
+  expiry: Day;
+  barrier?: number;
+  barrierType?: BarrierType;
+  /** Digitale : montant versé par unité si l'option finit dans la monnaie (devise de cotation). */
+  payout?: number;
+  /** Spread calendaire : second mois (payoff sur F(month) − F(month2)). */
+  month2?: MonthIndex;
+  /** Composée : prime à payer à l'échéance pour obtenir le call sous-jacent, et échéance de celui-ci. */
+  strike2?: number;
+  expiry2?: Day;
+  /** Quanto : taux de conversion fixé (devise de paiement par unité de devise de cotation). */
+  quantoFx?: number;
+  /** Cliquet : nombre de périodes (dates de constatation équiréparties). */
+  resets?: number;
+}
+
+export interface ExoticPosition extends ExoticSpec {
+  id: string;
+  /** Quantité physique signée (+ acheteur de l'option). */
+  qty: number;
+  /** Prime unitaire payée/encaissée (devise de règlement : devise de cotation, ou de paiement pour un quanto). */
+  premium: number;
+  bankId: string;
+  tradeDay: Day;
+  /** Barrière franchie (surveillance aux clôtures quotidiennes). */
+  hit?: boolean;
+  /** Lookback : extrême observé (minimum pour un call, maximum pour un put). */
+  extreme?: number;
+  /** Cliquet : dates de constatation et prix constatés (refs[0] = prix initial). */
+  resetDays?: Day[];
+  refs?: number[];
+}
+
+// ---------------------------------------------------------------- phase 7 : financement
+/** Lettre de crédit documentaire émise par la banque du joueur au profit d'un vendeur. */
+export interface LetterOfCredit {
+  id: string;
+  dealId: string;
+  amount: number; // USD
+  issued: Day;
+  expiry: Day;
+}
+
+/** Financement de stock (emprunt garanti par un lot : « borrowing base » / repo de matières premières). */
+export interface InventoryLoan {
+  id: string;
+  lotId: string;
+  principal: number; // USD
+  haircut: number; // décote initiale
+  rate: number; // spread au-dessus du taux USD
+  since: Day;
+  /** quantité nantie à l'origine (le prêt est remboursé au prorata des sorties de stock) */
+  qty: number;
+}
+
+/** Préfinancement d'un producteur, remboursé en nature (livraisons mensuelles). */
+export interface Prepayment {
+  id: string;
+  counterpartyId: string;
+  commodity: CommodityId;
+  locationId: string;
+  /** dates et quantités de livraison restantes */
+  schedule: { day: Day; qty: number }[];
+  paid: number; // USD versés
+  /** prix de revient unitaire des lots livrés (devise de cotation) */
+  unitCost: number;
+  /** spread de crédit implicite figé à l'origine (calibré pour que valeur = prix payé) */
+  spread0: number;
+  rating0: string;
+  tradeDay: Day;
+}
+
+export interface PrepayOffer {
+  id: string;
+  counterpartyId: string;
+  commodity: CommodityId;
+  locationId: string;
+  months: number;
+  qtyPerMonth: number;
+  discount: number; // décote vs la courbe forward actualisée
+  expiresDay: Day;
+}
+
+export interface FinancingState {
+  lcs: LetterOfCredit[];
+  loans: InventoryLoan[];
+  prepays: Prepayment[];
+  offers: PrepayOffer[];
+}
+
+// ---------------------------------------------------------------- phase 7 : conformité
+export type ComplianceLevel = 'minimal' | 'standard' | 'renforcé';
+export type CaseKind = 'sanctions' | 'kyc' | 'manipulation' | 'corruption' | 'initié';
+
+/** Fait potentiellement répréhensible, inconnu des autorités tant qu'il n'est pas découvert. */
+export interface CaseFile {
+  id: string;
+  day: Day;
+  kind: CaseKind;
+  severity: number; // 1..5
+  gain: number; // profit tiré (USD), base de la confiscation
+  label: string;
+  /** détecté par la conformité interne (auto-déclaration possible) */
+  flagged: boolean;
+  status: 'latent' | 'investigated' | 'closed';
+}
+
+export type InvestigationStage = 'enquête' | 'poursuites' | 'jugement' | 'appel';
+export type DefenseStrategy = 'coopérer' | 'contester';
+
+export interface Investigation {
+  id: string;
+  caseIds: string[];
+  kind: CaseKind;
+  authority: string;
+  opened: Day;
+  stage: InvestigationStage;
+  stageEnds: Day;
+  strategy: DefenseStrategy;
+  legalSpent: number;
+  fineEstimate: number;
+  selfReported: boolean;
+  outcome?: string;
+  done: boolean;
+}
+
+export interface ComplianceState {
+  level: ComplianceLevel;
+  cases: CaseFile[];
+  investigations: Investigation[];
+  /** licence de négoce suspendue : aucune nouvelle opération */
+  suspendedUntil: Day;
+  /** banques occidentales qui coupent leurs lignes (RCF, crédits documentaires) */
+  banksCutUntil: Day;
+  fines: number;
+  /** offres « avec commission » proposées par des intermédiaires */
+  bribeOffers: string[];
+}
+
+// ---------------------------------------------------------------- phase 7 : scénarios, succès, objectifs
+export type GoalId = 'taille' | 'rendement' | 'fortune' | 'reputation' | 'domination' | 'survie' | 'scenario';
+
+export interface GameStats {
+  exoticPnl: number[];
+  marginCalls: number;
+  marginCallsMet: number;
+  lastMarginCallDay: Day;
+  carryWins: number;
+  negotiationsWon: number;
+  voyagesDone: number;
+  lcsIssued: number;
+  lotsFinanced: number;
+  prepaysDone: number;
+  investigationsWon: number;
+  /** jours ouvrés consécutifs avec du physique couvert à ±10 % */
+  hedgedStreak: number;
+  bestHedgedStreak: number;
+  stressedDays: number;
+  haltWatch: null | { c: CommodityId; until: Day };
+  squeezesSurvived: number;
+  peakNav: number;
+  maxDrawdown: number;
+  /** grands moments de la partie (récapitulatif) */
+  timeline: { day: Day; text: string }[];
+  /** P&L réalisé par opération dénouée (récapitulatif : meilleurs et pires deals) */
+  deals: { day: Day; label: string; pnl: number }[];
+}
+
+export interface Achievement {
+  id: string;
+  day: Day;
 }

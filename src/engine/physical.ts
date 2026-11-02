@@ -13,6 +13,9 @@ import { COMPANY_BY_ID } from '../data/companies';
 import { CITY_BY_ID } from '../data/cities';
 import { cpRating } from './credit';
 import { sanctionedDiscount } from './events';
+import { checkOffer, recordCase, suspended } from './compliance';
+import { recordDeal } from './progress';
+import { issueLc, offerHasBuyerLc, offerNeedsLc } from './financing';
 import { addNews } from './news';
 import { contactAt, remember } from './npcs';
 import { isRestricted, sanctionFor, zoneOf } from './world';
@@ -21,9 +24,9 @@ import { physicalDeliveryDay } from './contracts';
 import { addCash, log, newId } from './ledger';
 import { basisAt, discount, forwardAt, fx } from './market';
 import { roundTo } from './math';
-import { chance, normal, pick, poisson, randInt, uniform } from './rng';
+import { chance, hashUniform, normal, pick, poisson, randInt, uniform } from './rng';
 import { drawRcf, rcfHeadroom } from './treasury';
-import type { ActionResult, CommodityId, ForwardDeal, GameState, Offer } from './types';
+import type { ActionResult, CommodityId, ForwardDeal, GameState, InventoryLot, Offer } from './types';
 import { localSpot, nav, toleranceValueIn } from './valuation';
 import { ownedCapacity, storageRate } from './assets';
 
@@ -62,6 +65,17 @@ export function offerEdge(state: GameState, o: Offer): number {
   const perUnit = o.side * (fair - effectiveDiff(state, o));
   const linear = perUnit * o.qty * spec.valuePerUnit * fx(state.market, spec.currency) * discount(state.market, spec.currency, state.day, offerDeliveryDay(o));
   return linear + offerToleranceValue(state, o);
+}
+
+/**
+ * Valeur nette d'une sortie au comptant (phase 7, équilibrage) : un achat isolé se revend au spot (fourchette
+ * spot) ; une vente isolée se source au spot, ou en rachat d'urgence si rien n'est prévu. La valeur « brute »
+ * d'une offre ne se réalise pleinement qu'adossée à l'opération inverse (achat et vente appariés).
+ */
+export function offerNetEdge(state: GameState, o: Offer): number {
+  const spec = COMMODITIES[o.commodity];
+  const exit = (spec.physical.spotSpreadPct + (isPresent(state, o.cityId) ? 0 : REMOTE_SPOT_PENALTY)) * notionalUsd(state, o.commodity, o.qty, offerPrice(state, o));
+  return offerEdge(state, o) - exit;
 }
 
 /** Valeur de la clause de tolérance pour le joueur (négative s'il achète : l'option appartient au vendeur). */
@@ -164,7 +178,28 @@ export function offerBlock(state: GameState, o: Offer): string | null {
   return null;
 }
 
-export function acceptOffer(state: GameState, offerId: string): ActionResult {
+/** Marge réalisée sur une sortie de stock (récapitulatif) ; un stock gardé 60 jours et vendu avec profit est un portage réussi. */
+function noteSale(state: GameState, lot: InventoryLot, q: number, price: number, label: string) {
+  const spec = COMMODITIES[lot.commodity];
+  const pnl = q * (price - lot.cost) * spec.valuePerUnit * fx(state.market, spec.currency);
+  recordDeal(state, label, pnl);
+  if (pnl > 0 && state.day - lot.sinceDay >= 60 && state.stats) state.stats.carryWins++;
+}
+
+/** Coût d'une inspection indépendante au chargement (fraction du notionnel). */
+export const INSPECTION_COST = 0.0003;
+
+/**
+ * Probabilité qu'une cargaison achetée soit hors spécification : 4 % de base, plus pour un vendeur mal noté ou
+ * une zone instable. Un cas sur cinq est une contamination grave.
+ */
+export function offSpecProbability(state: GameState, cpId: string): number {
+  const r = cpRating(state, cpId);
+  const st = state.world.zones[zoneOf(cpId)]?.stability ?? 80;
+  return 0.04 + (['B', 'CCC'].includes(r) ? 0.06 : r === 'BB' ? 0.03 : 0) + (st < 50 ? 0.04 : 0);
+}
+
+export function acceptOffer(state: GameState, offerId: string, inspect = false): ActionResult {
   const o = state.offers.find((x) => x.id === offerId);
   if (!o) return { ok: false, message: 'Offre expirée.' };
   const block = offerBlock(state, o);
@@ -175,6 +210,9 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
   if (physicalExposureUsd(state) + notional > cap) {
     return { ok: false, message: `Les banques refusent : encours physique plafonné à ${PHYSICAL_LEVERAGE}× vos fonds propres.` };
   }
+  if (suspended(state)) return { ok: false, message: 'Licence de négoce suspendue : aucune nouvelle opération.' };
+  const pre = checkOffer(state, o, notional, offerEdge(state, o), kycRisky(state, o.counterpartyId));
+  if (pre.block) return { ok: false, message: pre.block };
   const deal: ForwardDeal = {
     id: newId(state, 'f'),
     commodity: o.commodity,
@@ -188,6 +226,20 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
     tradeDay: state.day,
     tolerance: o.tolerance,
   };
+  if (offerNeedsLc(state, o)) {
+    const err = issueLc(state, deal, notional, nav(state));
+    if (err) return { ok: false, message: err };
+  } else if (offerHasBuyerLc(state, o)) deal.lc = 'received';
+  if (inspect && o.side > 0) {
+    const cost = notional * INSPECTION_COST;
+    addCash(state, -cost, 'physical', o.commodity);
+    deal.inspected = true;
+  }
+  if (o.bribe) {
+    addCash(state, -o.bribe, 'overhead');
+    log(state, 'Honoraires de « conseil » versés à un intermédiaire', -o.bribe);
+  }
+  for (const c of pre.cases) recordCase(state, c.kind, c.severity, c.gain, c.label);
   state.forwards.push(deal);
   state.company.physVolumeYtd += notional;
   remember(state, contactAt(state, o.counterpartyId)?.id, 3, 'Affaire conclue ensemble');
@@ -195,7 +247,7 @@ export function acceptOffer(state: GameState, offerId: string): ActionResult {
   const loc = findLocation(o.commodity, o.locationId);
   const cp = COUNTERPARTY_BY_ID[o.counterpartyId]!;
   log(state, `${o.side > 0 ? 'Achat' : 'Vente'} physique ${COMMODITIES[o.commodity].short} ${loc.label} ${monthLabel(o.month)} à ${price.toFixed(COMMODITIES[o.commodity].decimals)} (${cp.name})`);
-  return { ok: true, message: `Deal conclu avec ${cp.name}.` };
+  return { ok: true, message: `Deal conclu avec ${cp.name}.${deal.lc === 'issued' ? ' Lettre de crédit émise.' : deal.lc === 'received' ? ' Paiement garanti par LC.' : ''}${pre.warn ? ` ${pre.warn}` : ''}` };
 }
 
 /** Achat spot d'une cargaison prompte, mise en stock immédiatement, payée comptant. */
@@ -224,9 +276,10 @@ export function spotSell(state: GameState, lotId: string, qty?: number): ActionR
   const loc = findLocation(lot.commodity, lot.locationId);
   const q = Math.min(lot.qty, qty ?? lot.qty);
   const pen = isPresent(state, loc.cityId) ? 0 : REMOTE_SPOT_PENALTY;
-  const price = roundTo(localSpot(state, lot.commodity, lot.locationId) * (1 - spec.physical.spotSpreadPct - pen), spec.tick);
+  const price = roundTo(localSpot(state, lot.commodity, lot.locationId) * (lot.quality ?? 1) * (1 - spec.physical.spotSpreadPct - pen), spec.tick);
   const proceeds = q * price * spec.valuePerUnit * fx(state.market, spec.currency);
   addCash(state, proceeds, 'physical', lot.commodity);
+  noteSale(state, lot, q, price, `Vente spot ${spec.short} ${loc.label}`);
   lot.qty -= q;
   if (lot.qty <= 1e-9) state.inventory = state.inventory.filter((l) => l.id !== lotId);
   log(state, `Vente spot ${spec.short} ${loc.label} à ${price.toFixed(spec.decimals)}`, proceeds);
@@ -269,10 +322,25 @@ export function processDeliveries(state: GameState): string[] {
   }
   for (const d of due.filter((x) => x.side > 0)) {
     const spec = COMMODITIES[d.commodity];
-    const pay = d.qty * d.price * spec.valuePerUnit * fx(state.market, spec.currency);
+    // Qualité (phase 7) : tirage haché sur le contrat (n'affecte pas l'aléa du marché).
+    const u = hashUniform(state.config.seed, d.id, 'quality');
+    const p = offSpecProbability(state, d.counterpartyId);
+    const severe = u < p / 5;
+    const offSpec = u < p;
+    const disc = offSpec ? (severe ? 0.15 + 0.15 * hashUniform(state.config.seed, d.id, 'q2') : 0.03 + 0.06 * hashUniform(state.config.seed, d.id, 'q2')) : 0;
+    if (offSpec && d.inspected && severe) {
+      // contamination détectée par l'inspecteur au chargement : cargaison refusée, rien à payer
+      msgs.push(`Inspection : cargaison de ${spec.short} contaminée, refusée au chargement. Contrat annulé sans paiement.`);
+      continue;
+    }
+    // hors spécification détecté par l'inspection : réfaction de prix négociée (le vendeur supporte la décote)
+    const price = offSpec && d.inspected ? d.price * (1 - disc) : d.price;
+    const pay = d.qty * price * spec.valuePerUnit * fx(state.market, spec.currency);
     addCash(state, -pay, 'physical', d.commodity);
-    state.inventory.push({ id: newId(state, 'i'), commodity: d.commodity, locationId: d.locationId, qty: d.qty, cost: d.price, sinceDay: state.day });
-    msgs.push(`Livraison reçue : ${spec.short} ${findLocation(d.commodity, d.locationId).label} (${d.qty.toLocaleString('fr-FR')} ${spec.qtyUnit}) mise en stock.`);
+    state.inventory.push({ id: newId(state, 'i'), commodity: d.commodity, locationId: d.locationId, qty: d.qty, cost: price, sinceDay: state.day, quality: offSpec ? 1 - disc : undefined });
+    if (offSpec && d.inspected) msgs.push(`Inspection : ${spec.short} hors spécification, réfaction de ${(disc * 100).toFixed(1)} % obtenue du vendeur.`);
+    else if (offSpec) msgs.push(`${severe ? 'Contamination' : 'Qualité hors spécification'} découverte sur votre ${spec.short} à réception : la cargaison vaut ${(disc * 100).toFixed(1)} % de moins. Sans inspection, aucun recours.`);
+    else msgs.push(`Livraison reçue : ${spec.short} ${findLocation(d.commodity, d.locationId).label} (${d.qty.toLocaleString('fr-FR')} ${spec.qtyUnit}) mise en stock.`);
   }
   for (const d of due.filter((x) => x.side < 0)) {
     const spec = COMMODITIES[d.commodity];
@@ -288,6 +356,9 @@ export function processDeliveries(state: GameState): string[] {
       const src = findLocation(d.commodity, lot.locationId);
       const transfer = lot.locationId === d.locationId ? 0 : Math.abs(target.basisMean - src.basisMean) + spec.tick * 10;
       if (transfer > 0) addCash(state, -q * transfer * k, 'physical', d.commodity);
+      // marchandise hors spécification livrée : l'acheteur obtient une réfaction
+      if ((lot.quality ?? 1) < 1) addCash(state, -q * d.price * (1 - lot.quality!) * k, 'physical', d.commodity);
+      noteSale(state, lot, q, d.price, `Livraison ${spec.short} ${target.label} (vente à ${COUNTERPARTY_BY_ID[d.counterpartyId]?.name ?? '?'})`);
       lot.qty -= q;
       remaining -= q;
     }

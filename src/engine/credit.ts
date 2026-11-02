@@ -11,6 +11,8 @@
  *    une CVA (fourchette ×1,3).
  *  - Assurance-crédit : prime annuelle sur l'encours physique, couvre 90 % des pertes de défaut sur le physique.
  */
+import { exoticValueUsd } from './exotics';
+import { prepayValueIn } from './financing';
 import { COMPANY_BY_ID } from '../data/companies';
 import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { RATING_PD, RATINGS, type Rating } from '../data/world';
@@ -60,10 +62,12 @@ export function exposureTo(state: GameState, id: string): { physical: number; ot
  */
 export function handleDefault(state: GameState, id: string) {
   const name = COUNTERPARTY_BY_ID[id]?.name ?? id;
-  const phys = state.forwards.filter((d) => d.counterpartyId === id);
+  // une vente garantie par la LC de l'acheteur reste honorée par sa banque : pas de perte, le contrat continue
+  const phys = state.forwards.filter((d) => d.counterpartyId === id && d.lc !== 'received');
   const otc = state.otc.filter((x) => x.bankId === id);
   const physMtm = phys.reduce((s, d) => s + forwardMtm(state, d), 0);
-  const otcMtm = otc.reduce((s, x) => s + otcValueUsd(state, x), 0);
+  const exo = (state.exotics ?? []).filter((x) => x.bankId === id);
+  const otcMtm = otc.reduce((s, x) => s + otcValueUsd(state, x), 0) + exo.reduce((s, x) => s + exoticValueUsd(state, x), 0);
   const coll = state.credit.collateral[id] ?? 0;
   let loss = 0, recovered = 0, insured = 0;
   const settle = (amount: number, insurable: boolean) => {
@@ -80,7 +84,7 @@ export function handleDefault(state: GameState, id: string) {
     }
   };
   if (phys.length) settle(physMtm, true);
-  if (otc.length || coll) {
+  if (otc.length || exo.length || coll) {
     // Collatéral posté (coll > 0) : il s'ajoute à notre créance. Reçu (coll < 0) : on le conserve en compensation.
     settle(otcMtm + coll, false);
     delete state.credit.collateral[id];
@@ -91,8 +95,12 @@ export function handleDefault(state: GameState, id: string) {
     else loss += (s.upfront * s.monthsLeft) / s.monthsTotal;
   }
   if (state.streams) state.streams = state.streams.filter((x) => x.counterpartyId !== id);
-  state.forwards = state.forwards.filter((d) => d.counterpartyId !== id);
+  // Préfinancements : livraisons restantes perdues, créance sur la masse (assurable)
+  for (const p of (state.financing?.prepays ?? []).filter((x) => x.counterpartyId === id)) settle(prepayValueIn(state.market, state.day, p, 'BBB'), true);
+  if (state.financing) state.financing.prepays = state.financing.prepays.filter((x) => x.counterpartyId !== id);
+  state.forwards = state.forwards.filter((d) => d.counterpartyId !== id || d.lc === 'received');
   state.otc = state.otc.filter((x) => x.bankId !== id);
+  if (state.exotics) state.exotics = state.exotics.filter((x) => x.bankId !== id);
   state.offers = state.offers.filter((o) => o.counterpartyId !== id);
   if (phys.length || otc.length || coll || loss > 0) {
     state.credit.losses.push({ day: state.day, cp: id, loss, recovered, insured });
@@ -108,10 +116,10 @@ export function handleDefault(state: GameState, id: string) {
  */
 export function stepCredit(state: GameState, days: number) {
   const cr = state.credit;
-  const banks = new Set([...state.otc.map((x) => x.bankId), ...Object.keys(cr.collateral)]);
+  const banks = new Set([...state.otc.map((x) => x.bankId), ...(state.exotics ?? []).map((x) => x.bankId), ...Object.keys(cr.collateral)]);
   for (const b of banks) {
     if (!cr.csa[b]) continue;
-    const net = state.otc.filter((x) => x.bankId === b).reduce((s, x) => s + otcValueUsd(state, x), 0);
+    const net = state.otc.filter((x) => x.bankId === b).reduce((s, x) => s + otcValueUsd(state, x), 0) + (state.exotics ?? []).filter((x) => x.bankId === b).reduce((s, x) => s + exoticValueUsd(state, x), 0);
     const target = -net; // on poste quand notre MTM est négatif, on reçoit quand il est positif
     const move = target - (cr.collateral[b] ?? 0);
     if (Math.abs(move) > 1) {
@@ -120,7 +128,7 @@ export function stepCredit(state: GameState, days: number) {
     }
   }
   for (const b of Object.keys(cr.collateral)) {
-    if (!cr.csa[b] || !state.otc.some((x) => x.bankId === b)) {
+    if (!cr.csa[b] || !(state.otc.some((x) => x.bankId === b) || (state.exotics ?? []).some((x) => x.bankId === b))) {
       state.company.cash += cr.collateral[b]!; // restitution
       delete cr.collateral[b];
     }
@@ -131,7 +139,7 @@ export function stepCredit(state: GameState, days: number) {
   }
   // Défauts des contreparties à notation fixe (producteurs, utilities)
   const stress = state.market.volRegime === 'stressed' ? 2 : 1;
-  const ids = new Set([...state.forwards.map((d) => d.counterpartyId), ...(state.streams ?? []).map((x) => x.counterpartyId)]);
+  const ids = new Set([...state.forwards.map((d) => d.counterpartyId), ...(state.streams ?? []).map((x) => x.counterpartyId), ...(state.financing?.prepays ?? []).map((x) => x.counterpartyId)]);
   for (const id of ids) {
     if (state.companies.some((c) => c.id === id)) continue;
     const pd = cpPD(state, id);

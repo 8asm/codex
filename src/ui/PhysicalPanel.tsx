@@ -5,7 +5,9 @@ import { COUNTERPARTY_BY_ID } from '../data/counterparties';
 import { formatDayShort, monthLabel } from '../engine/calendar';
 import { basis } from '../engine/market';
 import { roundTo } from '../engine/math';
-import { effectiveDiff, isPresent, LOCAL_EDGE_PCT, offerBlock, offerDeliveryDay, offerEdge, offerPrice, offerToleranceValue, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { effectiveDiff, offerNetEdge, INSPECTION_COST, isPresent, LOCAL_EDGE_PCT, notionalUsd, offerBlock, offerDeliveryDay, offerEdge, offerPrice, offerToleranceValue, offSpecProbability, REMOTE_SPOT_PENALTY } from '../engine/physical';
+import { offerHasBuyerLc, offerNeedsLc } from '../engine/financing';
+import { sanctionedOrigin } from '../engine/compliance';
 import { cpRating } from '../engine/credit';
 import { ZONE_BY_ID } from '../data/world';
 import type { CommodityId, Offer } from '../engine/types';
@@ -75,8 +77,13 @@ function OfferCard({ o }: { o: Offer }) {
   const zone = ZONE_BY_ID[cp.zone];
   const focusCompany = useStore.getState().focusCompany;
 
+  const [inspect, setInspect] = useState(false);
+  const needLc = offerNeedsLc(g, o);
+  const buyerLc = offerHasBuyerLc(g, o);
+  const sanct = sanctionedOrigin(g, o);
+  const pOff = o.side > 0 ? offSpecProbability(g, o.counterpartyId) : 0;
   const accept = (hedge: boolean) => {
-    const r = act({ type: 'ACCEPT_OFFER', offerId: o.id });
+    const r = act({ type: 'ACCEPT_OFFER', offerId: o.id, inspect });
     if (r.ok && hedge) {
       const h = act({ type: 'TRADE_FUTURE', commodity: o.commodity, month: hm, lots: -o.side * hl }, true);
       toast(h.ok ? `Couvert : ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}.` : `Couverture refusée : ${h.message}`, h.ok ? 'good' : 'bad');
@@ -99,11 +106,22 @@ function OfferCard({ o }: { o: Offer }) {
         <div><span>Diff proposé</span><b>{diff >= 0 ? '+' : ''}{price(o.commodity, diff)}</b></div>
         <div><span>Diff de marché</span><b>{fair >= 0 ? '+' : ''}{price(o.commodity, roundTo(fair, spec.tick))}</b></div>
         <div><span>Prix fixe</span><b>{price(o.commodity, px)} {spec.priceUnit}</b></div>
-        <div><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b></div>
+        <div title={`Valeur nette d'un débouclage isolé au comptant : ${signedUsd(offerNetEdge(g, o))}. La valeur brute ne se réalise qu'adossée à l'opération inverse.`}><span>Valeur estimée</span><b className={tone(edge)}>{signedUsd(edge)}</b><small className="muted"> net seul {signedUsd(offerNetEdge(g, o))}</small></div>
       </div>
       <div className="incoterm small">
         <Term id={INCOTERM_TERM[loc.incoterm] ?? 'basis'}>{loc.incoterm}</Term> : {INCOTERM_DUTY[loc.incoterm]} · laycan {formatDayShort(offerDeliveryDay(o) - 2)} – {formatDayShort(offerDeliveryDay(o) + 2)}
         {o.tolerance ? <> · <Term id="tolerance">tolérance ±{Math.round(o.tolerance * 100)} %</Term> au choix du vendeur ({signedUsd(offerToleranceValue(g, o))})</> : null}
+      </div>
+      <div className="offer-tags small">
+        {needLc && <span className="tag-chip" title="Le vendeur exige une lettre de crédit : commission 0,15 % + 0,08 %/mois, ligne de crédit documentaire consommée."><Term id="lc">LC exigée</Term></span>}
+        {buyerLc && <span className="tag-chip good" title="L'acheteur fournit une lettre de crédit confirmée : sa banque paie même s'il fait défaut."><Term id="lc">LC confirmée</Term></span>}
+        {sanct && <span className="tag-chip bad" title="Marchandise d'une zone sous sanctions : décote attractive, mais risque de poursuites (sanctions secondaires)."><Term id="secondary">origine sanctionnée</Term></span>}
+        {o.bribe && <span className="tag-chip bad" title="Un « consultant » réclame une commission pour ce contrat. Rien ne vous y oblige.">💼 commission {usd(o.bribe)}</span>}
+        {o.side > 0 && (
+          <label className="tag-chip" title={`Probabilité de cargaison hors spécification : ${Math.round(pOff * 100)} %. L'inspecteur indépendant la détecte au chargement : réfaction ou refus.`}>
+            <input type="checkbox" checked={inspect} onChange={(e) => setInspect(e.target.checked)} /> <Term id="inspection">inspection</Term> ({usd(notionalUsd(g, o.commodity, o.qty, px) * INSPECTION_COST)}) · risque qualité {Math.round(pOff * 100)} %
+          </label>
+        )}
       </div>
       {block && <div className="offer-block">⛔ {block}{o.kycReadyDay && g.day < o.kycReadyDay ? ` (prêt le ${formatDayShort(o.kycReadyDay)})` : ''}</div>}
       <div className="offer-actions">

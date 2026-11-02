@@ -406,6 +406,12 @@ function calendarEvents(state: GameState) {
     const r = uniform(rng);
     const dv = r < pHike ? 0.0025 : r < pHike + pCut && state.market.rates[ccy] > 0.003 ? -0.0025 : 0;
     applyImpact(state, { k: 'rate', ccy, v: dv });
+    // Phase 7 : le court terme bouge plus que le long — une hausse aplatit la courbe, une baisse la pentifie.
+    if (dv !== 0) {
+      const cv = (state.market.curve ??= { USD: { slope: 0.004, hump: 0 }, EUR: { slope: 0.006, hump: 0 } })[ccy];
+      cv.slope = Math.max(-0.015, Math.min(0.025, cv.slope - dv * 0.6));
+      cv.hump = Math.max(-0.01, Math.min(0.01, cv.hump + dv * 0.3));
+    }
     if (dv !== 0) {
       // Dollar plus fort quand la Fed monte (EURUSD ↓) ; euro plus fort quand la BCE monte.
       state.market.fxLog += (ccy === 'USD' ? -1 : 1) * Math.sign(dv) * 0.006;

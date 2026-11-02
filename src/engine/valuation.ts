@@ -1,4 +1,3 @@
-import { officeBookValue } from './offices';
 /**
  * Valorisation : mark-to-market des futures (depuis le dernier marquage), forwards physiques (actualisés),
  * stocks (spot local), options listées et OTC. NAV = trésorerie − dette + MTM.
@@ -6,10 +5,14 @@ import { officeBookValue } from './offices';
  * `valueBy(view, book)` valorise un livre quelconque dans une vue de marché quelconque : c'est la brique
  * commune de la NAV, de la VaR (revalorisation complète), des stress tests, des greeks et du P&L expliqué.
  */
+import { exoticDeltaUnits, exoticValueUsd } from './exotics';
+import { officeBookValue } from './offices';
+import { loansOutstanding, prepayValueIn } from './financing';
+import { cpRating } from './credit';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { lotQty } from './contracts';
 import { optionUnitGreeks, optionValueUsd, otcValueUsd, avgInputs, apoUnitPrice, type View } from './derivatives';
-import { basis, basisAt, discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
+import { basis, basisAt, discount, forwardAt, futuresPrice, fx, spotPrice, zeroRate } from './market';
 import { integratedVariance } from './model';
 import { black76 } from './pricing';
 import { voyageValue } from './logistics';
@@ -61,7 +64,7 @@ export function toleranceValueIn(m: MarketState, day: number, c: CommodityId, lo
   const T = Math.max(0, (deliveryDay - day) / 365);
   const F = localForwardIn(m, c, locationId, deliveryDay);
   const sigma = T > 0 ? Math.sqrt(integratedVariance(spec.model, T, T, m.volMult) / T) * m.ivLevel[c] : 0;
-  const r = rate(m, spec.currency);
+  const r = zeroRate(m, spec.currency, T);
   const straddle = black76(F, K, T, sigma, r, 'C') + black76(F, K, T, sigma, r, 'P');
   return (playerIsSeller ? 1 : -1) * tol * qty * straddle * spec.valuePerUnit * fx(m, spec.currency);
 }
@@ -80,7 +83,7 @@ export function localSpot(state: GameState, c: CommodityId, locationId: string):
 
 export function inventoryValueIn(m: MarketState, lot: InventoryLot): number {
   const spec = COMMODITIES[lot.commodity];
-  return lot.qty * localSpotIn(m, lot.commodity, lot.locationId) * spec.valuePerUnit * fx(m, spec.currency);
+  return lot.qty * localSpotIn(m, lot.commodity, lot.locationId) * (lot.quality ?? 1) * spec.valuePerUnit * fx(m, spec.currency);
 }
 
 export function inventoryValue(state: GameState, lot: InventoryLot): number {
@@ -88,7 +91,7 @@ export function inventoryValue(state: GameState, lot: InventoryLot): number {
 }
 
 export function bookOf(state: GameState): Book {
-  return { futures: state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc, voyages: state.voyages ?? [], ffa: state.ffa ?? [] };
+  return { futures: state.futures, forwards: state.forwards, inventory: state.inventory, options: state.options, otc: state.otc, voyages: state.voyages ?? [], ffa: state.ffa ?? [], exotics: state.exotics ?? [], prepays: state.financing?.prepays ?? [] };
 }
 
 /** Valeur de marché (hors cash) d'un livre, ventilée par commodité. */
@@ -100,6 +103,12 @@ export function valueBy(v: View, book: Book): Record<CommodityId, number> {
   for (const o of book.options) out[o.commodity] += optionValueUsd(v.market, o);
   for (const x of book.otc) out[x.commodity] += otcValueUsd(v, x);
   for (const y of book.voyages ?? []) out[y.commodity] += voyageValue(v, y);
+  for (const x of book.exotics ?? []) out[x.commodity] += exoticValueUsd(v, x);
+  for (const p of book.prepays ?? []) {
+    // notation courante si l'état complet est disponible, sinon celle de l'origine (scénarios de risque)
+    const rating = 'companies' in v ? cpRating(v as GameState, p.counterpartyId) : p.rating0;
+    out[p.commodity] += prepayValueIn(v.market, v.day, p, rating);
+  }
   return out;
 }
 
@@ -120,7 +129,7 @@ export function fixedAssetsValue(state: GameState): number {
 
 export function nav(state: GameState): number {
   const coll = Object.values(state.credit?.collateral ?? {}).reduce((a, b) => a + b, 0);
-  return state.company.cash - state.company.rcfDrawn + coll + bookValue(state, bookOf(state)) + fixedAssetsValue(state);
+  return state.company.cash - state.company.rcfDrawn - loansOutstanding(state) + coll + bookValue(state, bookOf(state)) + fixedAssetsValue(state);
 }
 
 /** Valeur économique cumulée par commodité (flux cumulés + MTM ouvert). Sa variation = P&L de la commodité. */
@@ -178,7 +187,7 @@ export function exposures(state: GameState): Exposure[] {
     }
     for (const l of state.inventory.filter((x) => x.commodity === c)) {
       iq += l.qty;
-      d += l.qty * spotPrice(m, c) * k * 0.01;
+      d += l.qty * spotPrice(m, c) * (l.quality ?? 1) * k * 0.01;
     }
     for (const o of state.options.filter((x) => x.commodity === c)) {
       const g = optionUnitGreeks(m, o);
@@ -192,6 +201,17 @@ export function exposures(state: GameState): Exposure[] {
       const a = avgInputs(state, c, x.month);
       const favg = a.fwds.length ? a.fwds.reduce((s, f) => s + f, 0) / a.fwds.length : spotPrice(m, c);
       d += q * favg * k * 0.01;
+    }
+    for (const p of (state.financing?.prepays ?? []).filter((y) => y.commodity === c)) {
+      for (const s of p.schedule) {
+        wq += s.qty;
+        d += s.qty * forwardAt(m, c, s.day) * k * 0.01 * discount(m, spec.currency, state.day, s.day);
+      }
+    }
+    for (const x of (state.exotics ?? []).filter((y) => y.commodity === c)) {
+      const q = exoticDeltaUnits(m, x);
+      xq += q;
+      d += q * futuresPrice(m, c, x.month) * k * 0.01;
     }
     return { commodity: c, futuresQty: fq, forwardQty: wq, inventoryQty: iq, transitQty: tq, optionQty: oq, otcQty: xq, netQty: fq + wq + iq + tq + oq + xq, delta1pct: d };
   });

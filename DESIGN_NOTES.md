@@ -33,7 +33,7 @@ Décisions :
 - **Chocs de news** : sauts additifs sur χ (temporaires) ou ξ (structurels), sans compensateur de drift. Le biais de convexité `e^{½J²}` est négligeable (< 0,3 %).
 - **Corrélations** : matrice 6×6 (5 facteurs courts + EURUSD) décomposée par Cholesky. Les facteurs longs utilisent la même structure de corrélation.
 - **Différentiels physiques (basis)** : processus d'Ornstein-Uhlenbeck autour d'une moyenne par lieu. **Phase 4** : courbe de basis `b(T) = moyenne + écart·e^{−4τ} + décalage d'événement + lien fret`. L'écart du jour se résorbe avec l'échéance. Le différentiel suit le forward du taux d'affrètement : les prix rendus montent et les prix FOB baissent quand le fret flambe, pondéré par la part de l'affrètement dans le coût d'un voyage (60 %). Les moyennes sont calibrées pour que l'écart entre deux ports d'une grande route ≈ coût complet du fret (±20 %, testé) : l'arbitrage géographique n'est pas gratuit, il s'ouvre sur les chocs.
-- **Taux** : un taux plat par devise (USD 4 %, EUR 2,25 % au départ), actualisation continue en ACT/365, intérêts de trésorerie en ACT/360. **Phase 3** : les taux bougent par pas de 25 pb aux réunions de la Fed et de la BCE (biais selon le narratif macro), avec effet sur l'EURUSD et les matières premières. *Phase 7 : vraies courbes de taux.*
+- **Taux** : un taux plat par devise (USD 4 %, EUR 2,25 % au départ), actualisation continue en ACT/365, intérêts de trésorerie en ACT/360. **Phase 3** : les taux bougent par pas de 25 pb aux réunions de la Fed et de la BCE (biais selon le narratif macro), avec effet sur l'EURUSD et les matières premières. **Phase 7** : courbe zéro-coupon de Nelson-Siegel par devise (voir plus bas).
 - **FX** : EURUSD en OU sur le log. Le TTF se règle en EUR, converti en USD au spot du jour. **Simplification** : un seul compte de trésorerie en USD (en réalité, un compte de marge en EUR).
 
 ## Contrats
@@ -64,7 +64,7 @@ Décisions :
 
 - Offres de cargaisons à prix fixe = courbe au mois de livraison + diff. Le diff proposé avantage la contrepartie de 0,15 % en moyenne. Sur place, le joueur gagne environ 0,4 % : en espérance, voyager rend les deals rentables, et le téléphone non.
 - Livraison le 15 du mois (jour ouvré suivant). Un achat livré entre en stock et se paie comptant. Une vente se sert depuis le stock (même lieu en priorité). Sinon, transfert au coût de la différence de basis moyen, approximation du fret. À défaut de stock, rachat d'urgence au spot + 1,5 %.
-- **Phase 4 — fret explicite** : les Incoterms déterminent qui organise le transport. Acheter FOB oblige le joueur à affréter pour revendre ailleurs ; vendre CIF/CFR/DAP l'oblige à livrer à destination (stock sur place ou cargaison arrivée à temps, sinon rachat d'urgence). Les obligations de chaque Incoterm sont affichées sur les offres. Laycan affiché. **Tolérance de quantité ±5/10 % au choix du vendeur**, valorisée comme une option (straddle Black-76 au prix du contrat sur la quantité de tolérance), exercée à la livraison. Surestaries au-delà du temps de planche, pertes en transit, accidents en mer, assurance marine. **Simplifications** : la date de livraison est le milieu du laycan ; le transfert de risque au chargement (CIF/FOB) n'est pas simulé sur les achats rendus ; inspection, qualité et contamination arrivent en *phase 7*.
+- **Phase 4 — fret explicite** : les Incoterms déterminent qui organise le transport. Acheter FOB oblige le joueur à affréter pour revendre ailleurs ; vendre CIF/CFR/DAP l'oblige à livrer à destination (stock sur place ou cargaison arrivée à temps, sinon rachat d'urgence). Les obligations de chaque Incoterm sont affichées sur les offres. Laycan affiché. **Tolérance de quantité ±5/10 % au choix du vendeur**, valorisée comme une option (straddle Black-76 au prix du contrat sur la quantité de tolérance), exercée à la livraison. Surestaries au-delà du temps de planche, pertes en transit, accidents en mer, assurance marine. **Simplifications** : la date de livraison est le milieu du laycan ; le transfert de risque au chargement (CIF/FOB) n'est pas simulé sur les achats rendus ; inspection, qualité et contamination : *phase 7* (voir plus bas).
 - **Simplification** : le gaz physique est livré « en bloc » le 15, au lieu d'un flux horaire sur le mois.
 - **Phase 4 — stockage** : le tarif du stockage tiers renchérit avec le contango (×(1 + 3 × contango sur 6 échéances)). Les capacités détenues (cuves, entrepôts, silos, stockage de gaz) couvrent le stock sans frais tiers, et la capacité inutilisée est louée au marché (85 % d'occupation). **Simplification** : le stockage tiers reste disponible sans limite (à prix croissant).
 - Plafond d'encours physique = 6 × fonds propres (lignes de trade finance).
@@ -154,14 +154,14 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
   - El Niño / La Niña, ouragans dans le Golfe, explosion de raffinerie, coup d'État dans un pays minier.
 - **Simplification — prix négatifs** : le modèle lognormal ne peut pas produire de prix négatif. Le remake « pétrole à prix négatif » est un effondrement du front avec un contango extrême. Un modèle arithmétique (ou à décalage) sera nécessaire si un brut enclavé type WTI est ajouté (*phase 8*).
 - **Simplification — suspension** : pendant une suspension, les prix publiés sont figés et tous les chocs (marché et news) s'accumulent, puis tombent à la réouverture. Il n'y a pas d'annulation rétroactive des transactions de la journée (contrairement à l'épisode réel du nickel). Seuls les futures et options de la commodité sont bloqués ; le physique continue.
-- **Délits d'initiés** : informations obtenues en avance par les relations, traitées en phase 5 (voir plus bas). La conformité complète (procédures, sanctions de la société, contrôles automatiques) viendra en *phase 7*.
+- **Délits d'initiés** : informations obtenues en avance par les relations, traitées en phase 5 (voir plus bas). La conformité complète (procédures, sanctions de la société, contrôles automatiques) : *phase 7* (voir plus bas).
 
 ### Géopolitique et réglementation
 - **Zones** : les 9 pays réels des villes, plus 5 zones de production fictives remaniées (Fédération de Sarmatie, Royaumes du Golfe, République du Kassaï, Tauride, Archipel d'Insulinde), chacune avec un bloc et une stabilité qui dérive et réagit aux événements. Tension entre blocs de 0 à 100.
 - **Sanctions selon la juridiction du siège** : régime occidental (Genève, Londres, Rotterdam, Houston, Chicago), ONU seulement (Singapour, Santiago, Johannesburg ; ne s'applique qu'aux sanctions totales en période de très forte tension), oriental (Shanghai), aucun (Dubaï).
   - Sanctions totales : les offres des entités visées disparaissent, et les contrats en cours sont **frustrés** (force majeure, annulés sans indemnité, le MTM disparaît).
   - Plafond de prix : achat autorisé uniquement sous le plafond. Les barils sanctionnés se négocient avec une décote de 15 à 25 %.
-  - **Simplification** : traiter des barils sanctionnés depuis Dubaï n'a pas encore de conséquence (sanctions secondaires, banques occidentales) : *phase 7 (conformité)*.
+  - **Simplification** : traiter des barils sanctionnés depuis Dubaï : sanctions secondaires traitées en *phase 7* (voir plus bas).
 - **Embargos et interdictions d'export** : les offres concernées sont filtrées, les différentiels régionaux s'écartent.
 - **Réglementation par ville**, évolutive :
   - impôt ;
@@ -185,7 +185,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - **Close-out netting** par contrepartie, avec deux ensembles distincts : physique (accord type GTMA/EFET) et OTC (ISDA). Montant net dû au joueur : récupération de 35 %. Montant dû par le joueur : payé intégralement. Testé, y compris le cas où on doit de l'argent.
 - **Assurance-crédit** : 0,4 % par an de l'encours physique, couvre 90 % de la perte de défaut sur le physique.
 - **CSA par banque** : collatéral égal à −MTM net des OTC avec cette banque, échangé chaque soir. La NAV ne bouge pas, mais le cash, oui (liquidité). Le défaut de la banque devient alors quasi sans perte (testé). Sans CSA, la banque facture une **CVA** (fourchette ×1,3).
-- **Simplifications** : seuil et montant minimum de transfert du CSA nuls ; récupération fixe à 35 % ; pas de lettres de crédit ni de garanties bancaires (*phase 7, financement*).
+- **Simplifications** : seuil et montant minimum de transfert du CSA nuls ; récupération fixe à 35 % ; lettres de crédit : *phase 7* ; garanties bancaires de bonne fin non modélisées.
 
 ### Interface
 - Panneaux **Actualités** (filtres par catégorie, statut rumeur / confirmé / démenti, impacts, calendrier des réunions), **Monde** (tension, taux, ENSO, narratifs, sanctions, zones, comparaison réglementaire, transfert de siège) et **Concurrents** (classement, fiches, expositions, assurance, CSA, défauts subis).
@@ -322,7 +322,7 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 - Chaque raccourci éthique laisse une **compromission** : type, gravité 1 à 5, témoins. Une enquête peut s'ouvrir au plus tôt 4 mois après ; probabilité quotidienne = gravité² × 0,006 %, ×2 si un témoin est hostile, ×1,5 si la presse ou le régulateur est au courant. Pour une gravité 5, cela donne environ 15 % par an.
 - Le joueur choisit coopérer, nier ou engager un avocat. Issues : amende (proportionnelle au patrimoine), réputation, licenciement, **interdiction d'exercer** ou **prison** (fins de partie).
 - **Tuyaux** : un PNJ de confiance peut annoncer un mouvement. S'il est réel, l'impact est réellement programmé sur le marché quelques jours plus tard ; sinon c'est une fausse piste (fiabilité liée à l'honnêteté du PNJ). Si l'information est **privilégiée** et que l'exposition du joueur bouge dans le sens annoncé avant publication, un délit d'initié (gravité 4) est enregistré.
-- **Simplification** : pas de procès en plusieurs étapes ni d'appel ; la conformité interne automatisée viendra en *phase 7*.
+- **Simplification** : pas de procès en plusieurs étapes ni d'appel ; conformité interne et procédures en plusieurs étapes avec appel : *phase 7*.
 
 ### Négociation en mini-jeu (`engine/negotiation.ts`)
 - Cinq tours au plus et une jauge de patience. Coups : ancrer, concéder, bluffer, argumenter, accepter, rompre. La contrepartie a une limite cachée qui dépend de la confiance, de la compétence de négociation, de la présence physique (deals) et du levier. Le résultat ne dépasse jamais cette limite (testé). Bluff éventé : −12 de confiance.
@@ -436,3 +436,191 @@ Effet Samuelson, crédit de spread SPAN, marge trade-date, révision des marges 
 
 ### Sauvegardes
 - Version 6. Migration automatique depuis les versions 1 à 5 : bureaux par défaut (étage loué, style classique).
+
+## Phase 7 — exotiques, financement, conformité et enquêtes, scénarios, succès, équilibrage
+
+### Courbe des taux (`engine/market.ts`)
+- **Taux zéro-coupon de Nelson-Siegel** par devise : z(t) = r₀ + pente·(1 − f) + bosse·(f − e^{−t/λ}), avec f = (1 − e^{−t/λ})/(t/λ) et λ = 2 ans.
+  - z(0) = taux directeur ; z(∞) = taux + pente.
+  - Pentes initiales : +0,4 % (USD) et +0,6 % (EUR).
+- **Effet des banques centrales** : une hausse de taux aplatit la courbe (pente −0,6 × la variation), une baisse la pentifie.
+- **Usage** : toutes les actualisations (forwards, options, tolérances, marge SPAN, P&L expliqué, préfinancements) utilisent le taux de la bonne maturité.
+- **Taux à court terme** : les intérêts de trésorerie et de la RCF restent au taux court (ACT/360).
+
+### Options exotiques (`engine/exotics.ts`, testées contre Monte Carlo)
+- **Sept produits de gré à gré sur futures**, cotés par les banques :
+  - barrière (knock-in/out, hausse/baisse) ;
+  - digitale (cash-or-nothing) ;
+  - lookback à strike flottant ;
+  - option sur spread calendaire ;
+  - composée (call sur call) ;
+  - quanto (payée dans l'autre devise à taux fixé) ;
+  - cliquet.
+- **Formules fermées** (revalorisation complète en VaR possible) :
+  - barrière : Reiner-Rubinstein avec b = 0 ;
+  - lookback : loi du minimum/maximum d'un brownien à dérive, intégrée par quadrature ;
+  - spread : approximation de Kirk (exacte pour K = 0, Margrabe) ;
+  - composée : Geske, avec une normale bivariée de Genz (précision ~1e-15) ;
+  - quanto : forward ajusté de −cov(ln F, ln X) ;
+  - cliquet : somme d'options à départ différé, chacune avec la variance de sa propre période.
+- **Vol dépendante du temps** (effet Samuelson du modèle à deux facteurs) : le log-prix d'un future est un brownien changé de temps. Le minimum et le maximum sont invariants par changement de temps monotone : barrières et lookbacks continus sont exacts avec la variance totale v = ∫σ².
+- **Corrélation du spread calendaire** : covariance exacte du modèle entre deux échéances, ∫ σ_F(T₁−s)·σ_F(T₂−s) ds, en forme fermée.
+- **Quanto** : seul le facteur court de la commodité est corrélé au choc de change dans la simulation. La covariance est donc ρ σ_X ∫(σχ e^{−κ(τ−s)} + ρ_ss σξ) ds. Le signe dépend de la devise de cotation : une option USD payée en EUR, ou EUR payée en USD.
+- **Surveillance quotidienne** (à la clôture), correction de Broadie-Glasserman-Kou :
+  - barrière décalée de e^{±0,5826 σ√Δt} ;
+  - extrême du lookback : E[min_d] ≈ e^{βσ√Δt}·E[min_c(m₀e^{−βσ√Δt})].
+- **Digitale** : répliquée par un call-spread serré sur la surface avec smile (−∂C/∂K), donc cohérente avec les vanilles et sensible au skew.
+- **Monte Carlo de contrôle** sur la dynamique EXACTE du modèle :
+  - pas quotidiens ouvrés, variables antithétiques, vol × niveau de vol implicite ;
+  - décalage initial pour retrouver exactement les prix cotés ;
+  - disponible dans le ticket (« contrôle MC », 3 000 chemins, ±2 écarts-types) ;
+  - tests : barrière, digitale, lookback, spread, composée et cliquet, tous dans la tolérance (3,5 écarts-types + 3 à 8 % selon l'approximation).
+- **Cycle de vie** :
+  - prime payée ou encaissée comptant ;
+  - barrière touchée, extrême et constatations du cliquet enregistrés à chaque clôture ;
+  - règlement en cash à l'échéance (la composée est réglée en cash à sa propre échéance : max(valeur du call − prime, 0)) ;
+  - débouclage possible à la fourchette.
+- **Fourchette** : max(3 % de la prime, 0,6 point de vol de vega), doublée en crise. Les exotiques sont chères à traiter et à défaire.
+- **Intégration au risque** : valeur dans la VL et la VaR (revalorisation complète), delta (différences centrées) dans les expositions et la couverture automatique, P&L expliqué (delta × ΔF en « prix », le reste en « vol »), risque de contrepartie bancaire (défaut, CSA).
+- **Simplifications** :
+  - pas de smile pour les exotiques autres que la digitale (vol ATM du modèle × niveau implicite) ;
+  - la composée et la quanto ne sont pas validées par le MC (Geske suppose une vol constante ; la dynamique jointe commodité/change n'est pas simulée sous la mesure de paiement), seulement par des cas limites ;
+  - pas d'option sur crack spread tant que les produits raffinés n'existent pas (*phase 8*) ;
+  - pas de barrière à fenêtre ni de rebate.
+
+### Financement (`engine/financing.ts`)
+- **Crédit documentaire (LC)** :
+  - certains vendeurs l'exigent : 20 % de base, +35 % pour un producteur ou un mineur, +10 % pour une petite maison (capital < 50 M$) ;
+  - coût : 0,15 % à l'émission + 0,08 %/mois, avec une ligne dédiée de 3× les fonds propres (plafond 6× le capital initial) ;
+  - à la vente, un acheteur peut fournir une LC confirmée (plus souvent s'il est mal noté) : s'il fait défaut, sa banque paie et le contrat continue ;
+  - tirages hachés sur l'offre : aucune consommation de l'aléa principal.
+- **Financement de stock** (borrowing base / repo de matières premières) :
+  - prêt = (1 − décote) × valeur du lot, avec des décotes de 12 % (énergie), 10 % (métaux), 15 % (agricoles) ;
+  - taux USD + 1,75 %, moins cher que la RCF (+2,5 %) ;
+  - VL inchangée à l'origine (cash contre dette) ; dette déduite de la VL ;
+  - appel de marge si le prêt dépasse (1 − décote/2) × valeur ; à défaut de paiement, la banque vend le lot au spot ;
+  - remboursement au prorata de toute sortie de stock.
+- **Préfinancement** (achat à terme payé d'avance, remboursé en nature) :
+  - prix = Σ q·F_local·DF × (1 − décote) ; la décote vaut (spread de crédit + 3 à 5 % de financement) × la maturité moyenne ;
+  - valorisation : livraisons restantes au forward local, actualisées au taux sans risque + spread ;
+  - le spread est **calibré à l'origine** (valeur = prix payé : pas de gain du premier jour), puis suit la notation du producteur (spread ≈ PD × 60 %) ;
+  - expositions : la quantité restante compte comme du physique (VaR, couverture automatique) ;
+  - défaut du producteur : récupération de 35 % de la valeur restante, assurable par l'assurance-crédit.
+- **Simplifications** :
+  - pas d'affacturage ni de délais de paiement sur les ventes (le paiement à la livraison rend l'affacturage sans objet) ;
+  - la fraude documentaire sur LC n'est pas simulée (la fraude au double nantissement existe en événement) ;
+  - les offres de préfinancement sont générées au changement de mois, par tirages hachés.
+
+### Qualité et inspection (`engine/physical.ts`)
+- **Risque qualité** : probabilité de cargaison hors spécification de 4 %, +6 % pour un vendeur noté B ou CCC, +3 % pour BB, +4 % en zone instable. Un cas sur cinq est une contamination grave (décote de 15 à 30 %, contre 3 à 9 % sinon).
+- **Inspection indépendante** (0,03 % du notionnel, cochée sur l'offre) : réfaction obtenue du vendeur, ou cargaison contaminée refusée au chargement (contrat annulé, rien à payer).
+- **Sans inspection** : le lot entre en stock avec un facteur de qualité < 1 (valeur, vente spot), et un acheteur à qui on le livre obtient la même réfaction.
+- **Simplifications** :
+  - pas de spreads de qualité par grade (soufre, API…) : *phase 8* avec les grades de brut ;
+  - pas de litige ni d'arbitrage.
+
+### Conformité et enquêtes (`engine/compliance.ts`)
+- **Raccourcis tentants, sans morale imposée** :
+  - barils d'une zone sous sanctions (décote de 15 à 25 %), achetables depuis un siège hors régime occidental ;
+  - offres « avec commission » d'intermédiaires (contrat décoté de 2,5 à 4,5 %, commission de 2 %), jusqu'à une fois par mois ;
+  - contreparties opaques ;
+  - positions dominantes à l'échéance.
+
+  Chaque raccourci crée un **dossier latent**, avec une gravité de 1 à 5 et le gain obtenu.
+- **Découverte** : chaque mois, probabilité 1 − exp(−g² × 0,006 × facteur d'autorité). Le facteur vaut 1,2 pour les sanctions (le Trésor américain poursuit quiconque utilise le dollar : **sanctions secondaires**) et 0,5 + la sévérité KYC de la ville pour le reste. Prescription : 5 ans. Une enquête ouverte sur le même thème absorbe les nouveaux faits.
+- **Procédure** : enquête (60 à 120 jours) → poursuites → jugement → appel possible sous 30 jours.
+  - Frais d'avocats : (20 k$ + 15 k$ × gravité) par mois, ×2,2 si l'on conteste.
+  - Force des preuves : 0,3 + 0,1 × gravité, +0,1 si l'on coopère, −0,1 si l'on conteste.
+  - Transaction possible avant le jugement : 80 % de l'amende estimée, conséquences divisées par deux.
+  - Appel : 10 % de relaxe, 35 % d'amende réduite de moitié, sinon condamnation confirmée.
+- **Amende** = (2 × gain + 0,5 M$ × gravité) × facteur du programme, ×0,75 si l'on coopère, ×1,3 si l'on conteste et perd. Conséquences d'une condamnation :
+  - sanctions : banques coupées un an (RCF, LC, prêts sur stock), lignes de crédit −20 % ;
+  - manipulation : licence suspendue un mois ;
+  - réputation −15 ;
+  - en carrière, gravité ≥ 4 en corruption ou sanctions : prison (25 %) ou interdiction d'exercer (35 %) ;
+  - troisième condamnation : retrait de licence.
+- **Programme de conformité** :
+
+  | Niveau | Coût mensuel (× indice du coût du personnel) | Postes | Détection interne | Amendes | Contrôle avant opération |
+  |---|---|---|---|---|---|
+  | Minimal | 0 | 0 | 15 % | ×1,3 | aucun |
+  | Standard | 60 k$ | 1 | 60 % | ×1 | alerte |
+  | Renforcé | 180 k$ | 3 | 95 % | ×0,6 | blocage |
+
+  Un dossier repéré en interne peut faire l'objet d'une **auto-déclaration** : amende divisée par deux, sans poursuites ni sanctions annexes.
+- **Limites de position des bourses** (mois spot, 15 derniers jours de cotation) : Brent 1 000 lots, TTF 600, cuivre 400, blé 600, charbon 300. Une **exemption de couverture de bonne foi** couvre la part qui compense une exposition physique de sens opposé. Le dépassement crée un dossier de manipulation et une alerte de la bourse ; le niveau renforcé bloque l'ordre.
+- **Aléa sans état** (graine, jour, dossier) : la séquence du marché reste identique.
+- **Simplifications** :
+  - pas de législation propre à chaque pays ni de coopération entre autorités ;
+  - pas de lanceur d'alerte nominatif hors mode carrière (où les compromissions de la phase 5 restent gérées par les situations) ;
+  - délit d'initié de la société non distingué de celui du dirigeant.
+
+### Scénarios historiques (`data/scenarios.ts`, `engine/scenarios.ts`)
+- **Cinq scénarios remaniés** :
+
+  | Scénario | Inspiré de | Situation de départ | Objectif |
+  |---|---|---|---|
+  | La crise du détroit | 1990 | Stock de Brent couvert, invasion et embargo, envolée puis effondrement | 1,4× le capital |
+  | Le super-cycle | 2003-2008 | Dérive haussière sur 3 ans puis krach | 3× le capital |
+  | La grande pause | 2020 | Effondrement de la demande, contango extrême | +30 % et un portage réussi |
+  | L'hiver sans gaz | 2022 | Stockage de gaz couvert par des futures ; l'envolée appelle la marge | Finir à 1× le capital |
+  | Le squeeze du métal | 2022 | Cuivre couvert, squeeze et suspension de cotation | 1,1× le capital |
+
+- **Mise en place** : configuration imposée, positions de départ apportées au bilan à leur valeur de marché (le capital de référence est la VL initiale), chronologie d'impacts du moteur d'événements, crises aléatoires réduites. L'objectif est évalué à la fin de la partie.
+
+### Succès, objectifs, récapitulatif (`data/achievements.ts`, `engine/progress.ts`)
+- **26 succès**, évalués à chaque clôture ; la collection est conservée entre les parties (stockage du navigateur). Exemples :
+  - survivre à un squeeze (suspension de cotation traversée avec une position) ;
+  - un hedge parfait (250 jours de bourse d'affilée avec un physique couvert à ±10 %) ;
+  - le portage paie (stock gardé 60 jours et revendu avec profit) ;
+  - structuré gagnant, préfinanceur, relaxé, irréprochable, rival dépassé, de stagiaire à CEO…
+- **Objectifs de victoire** choisis au départ :
+
+  | Objectif | Condition |
+  |---|---|
+  | Taille | 250 M$ de VL |
+  | Rendement | 25 %/an sur au moins un an |
+  | Fortune personnelle | 50 M$ (salaire, bonus, part de la société) |
+  | Réputation | 90 en carrière ; prestige 80 sans condamnation en société |
+  | Domination | Top 15 mondial des maisons |
+  | Survie | Terminer la partie sans faillite ni condamnation |
+  | Scénario | Objectif propre au scénario |
+
+  Une victoire est annoncée, et la partie peut continuer.
+- **Récapitulatif de fin** : verdict ; rendement (annualisé au-delà d'un an seulement) ; pire repli ; meilleurs et pires deals (marge réalisée sur chaque sortie de stock et règlement de chaque exotique) ; P&L par commodité ; erreurs de risque (appels de marge, repli > 25 %, amendes, taux de deals perdants) ; chronologie ; compétences ; rang mondial.
+- **Simplification** : les futures n'ont pas de « deal » réalisé (marge de variation quotidienne) ; ils apparaissent dans le P&L par commodité et les meilleures et pires journées.
+
+### Interface
+- **Nouveaux panneaux** :
+  - 🧪 **Structurés** (`X`) : ticket paramétrable, contrôle MC, positions et état du chemin ;
+  - 🏧 **Financement** (`Y`) ;
+  - ⚖️ **Conformité** (`Z`) : niveau du programme, dossiers repérés, enquêtes avec étapes, défense, transaction, appel ;
+  - 🏆 **Partie** (`Q`) : objectif, succès, chronologie.
+- **Fiches d'offres physiques** : LC exigée ou confirmée, origine sanctionnée, commission, case d'inspection avec son coût et le risque qualité.
+- **Écran d'accueil** : onglet « Scénarios » et choix de l'objectif de victoire.
+- **Conseillers** : la juriste signale dossiers, enquêtes, barils sanctionnés et commissions ; le trader, lui, trouve que « tout le monde le fait ».
+- **Codex** : 15 nouvelles entrées (exotiques, Monte Carlo, LC, financement de stock, préfinancement, inspection, sanctions secondaires, limites de position, courbe des taux).
+
+### Sauvegardes
+- Version 7. Migration automatique depuis les versions 1 à 6.
+
+### Équilibrage (`scripts/balance.ts`)
+- **Banc d'essai** : stratégies-robots sur 8 graines, 1 an, 25 M$ de capital (`npx vite-node scripts/balance.ts 1 8`). Résultats à la livraison de la phase 7 :
+
+  | Robot | Rendement moyen | Écart-type | Faillites | Lecture |
+  |---|---|---|---|---|
+  | Inactif | −2,4 % | 0,3 % | 0/8 | Les frais fixes (équipe, loyer) coûtent : ne rien faire n'est pas gratuit. |
+  | Discipliné | +1,4 % | 15,8 % | 0/8 | Valeur nette > 30 k$, 8 contrats ouverts au plus, ventes sourcées au comptant avant livraison, stocks financés en banque. La discipline paie, modestement pour un robot : un joueur adosse achats et ventes, négocie et choisit son moment. |
+  | Négociant naïf | −9,4 % | 41,2 % | 2/8 | Toute offre à valeur brute positive. La valeur « brute » ignore la sortie au comptant (fourchette de 0,3 à 0,6 %) et le rachat d'urgence (+1,5 %) des ventes non sourcées. Le levier physique (jusqu'à 4× les fonds propres) tue par le cash, même couvert. |
+  | Couverture manuelle | −18,3 % | 50,1 % | 6/8 | Couvertures jamais débouclées après livraison : elles deviennent spéculatives. |
+  | Raccourcis | −21,9 % | 31,0 % | 0/8 | Barils sanctionnés et commissions. Quatre enquêtes ouvertes en un an ; les amendes tombent la 2ᵉ ou la 3ᵉ année. |
+  | Spéculateur | +15,7 % | 109,8 % | 0/8 | Long Brent et cuivre à 3× les fonds propres : loterie (de −94 % à +255 %). |
+
+- **Ajustements issus du banc** :
+  - **exemption de couverture de bonne foi** dans les limites de position : la couverture automatique déclenchait une enquête pour manipulation à chaque échéance ;
+  - KYC réservé aux contreparties réellement opaques (notation B ou CCC et zone instable), et regroupement des faits dans l'enquête ouverte du même thème : une quinzaine d'enquêtes mineures par an noyaient le joueur ;
+  - frais d'avocats proportionnels à la gravité ;
+  - **valeur nette** d'une sortie isolée affichée sur chaque offre physique, pour enseigner l'adossement achat-vente.
+- **Constats** :
+  - une vente physique non sourcée paie le rachat d'urgence : le métier consiste à adosser ;
+  - le financement de stock supprime les faillites par manque de liquidité des livres couverts : le robot discipliné n'en fait aucune, contre 2 sur 8 pour le naïf.

@@ -31,6 +31,7 @@ import { ymd } from './calendar';
 import type { Day } from './calendar';
 import type { ActionResult, FloorStyle, GameState, OfficeState, OfficeTier, PrestigeItemId } from './types';
 import { nav } from './valuation';
+import { complianceSeats } from './compliance';
 
 const DAYS_PER_MONTH = 365.25 / 12;
 
@@ -101,7 +102,7 @@ const AUTOMATION_SEATS = (state: GameState) => {
 
 /** Postes occupés : équipe de base, gérants d'actifs en poste, un opérateur par automatisation. */
 export function seatsUsed(state: GameState): number {
-  return BASE_SEATS + state.managers.filter((m) => m.assetId).length + AUTOMATION_SEATS(state);
+  return BASE_SEATS + state.managers.filter((m) => m.assetId).length + AUTOMATION_SEATS(state) + complianceSeats(state);
 }
 
 export function seatsFree(state: GameState): number {

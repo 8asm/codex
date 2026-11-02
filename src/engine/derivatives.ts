@@ -13,7 +13,7 @@ import { monthIndexOf, monthLabel, yearFrac, type Day, type MonthIndex } from '.
 import { fixingDays, listedMonths, lotQty, optionExpiry, optionMonths } from './contracts';
 import { addCash, log, newId } from './ledger';
 import { depthLots, halfSpread, monthOffset } from './liquidity';
-import { discount, forwardAt, futuresPrice, fx, rate, spotPrice } from './market';
+import { discount, forwardAt, futuresPrice, fx, spotPrice, zeroRate } from './market';
 import { fixingCovariance } from './model';
 import { asianMoments, asianPrice, vanillaGreeks, vanillaPrice, type Greeks } from './pricing';
 import { roundTo } from './math';
@@ -40,7 +40,7 @@ export function optionInputs(m: MarketState, o: OptionLike) {
   const F = futuresPrice(m, o.commodity, o.month);
   const T = Math.max(0, yearFrac(m.day, o.expiry));
   const sigma = impliedVolAt(m, o.commodity, o.month, o.expiry, o.strike, F);
-  const r = rate(m, COMMODITIES[o.commodity].currency);
+  const r = zeroRate(m, COMMODITIES[o.commodity].currency, T);
   return { F, T, sigma, r };
 }
 

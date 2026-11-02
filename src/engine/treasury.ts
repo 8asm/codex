@@ -24,7 +24,7 @@ export function rcfLimit(state: GameState, navValue = nav(state)): number {
 
 /** Capacité de tirage. Nulle si la banque a gelé la ligne (covenant violé). */
 export function rcfHeadroom(state: GameState, navValue?: number): number {
-  if (state.risk.rcfFrozen) return 0;
+  if (state.risk.rcfFrozen || (state.compliance?.banksCutUntil ?? -1) >= state.day) return 0;
   return Math.max(0, rcfLimit(state, navValue) - state.company.rcfDrawn);
 }
 

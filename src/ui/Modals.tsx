@@ -3,6 +3,7 @@ import { nav } from '../engine/valuation';
 import { Sparkline, Term } from './common';
 import { signedUsd, usd } from './format';
 import { useStore } from './store';
+import { RecapView } from './GamePanel';
 
 export function Modals() {
   const modal = useStore((s) => s.modal);
@@ -24,6 +25,24 @@ export function Modals() {
           <div className="modal-actions">
             <button onClick={() => { close(); setPanel('market'); }}>Voir les marchés</button>
             <button className="primary" onClick={close}>Continuer</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (modal.kind === 'scenario') {
+    const [head, goal] = modal.text.split('\n\nObjectif : ');
+    return (
+      <div className="modal-bg">
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="siren">📜</div>
+          <h2>Scénario historique</h2>
+          <p>{head}</p>
+          {goal && <p><b>🎯 Objectif :</b> {goal}</p>}
+          <div className="modal-actions">
+            <button onClick={() => { close(); setPanel('game', true); }}>Voir la partie</button>
+            <button className="primary" onClick={close}>C’est parti</button>
           </div>
         </div>
       </div>
@@ -98,7 +117,7 @@ export function Modals() {
   const worst = [...g.history].sort((a, b) => a.pnl - b.pnl)[0];
   return (
     <div className="modal-bg">
-      <div className={`modal ${modal.kind === 'bankrupt' ? 'danger' : 'victory'}`}>
+      <div className={`modal wide-modal ${modal.kind === 'bankrupt' ? 'danger' : 'victory'}`}>
         <h2>{g.status === 'prison' ? '⛓️ Prison' : g.status === 'banned' ? '🚫 Interdiction d’exercer' : modal.kind === 'bankrupt' ? '💥 Faillite' : '🏁 Fin de partie'}</h2>
         <p>{modal.text}</p>
         {g.career && (
@@ -108,12 +127,8 @@ export function Modals() {
           </div>
         )}
         <Sparkline data={g.history.map((h) => h.nav)} width={420} height={80} color={ret >= 0 ? '#5eead4' : '#f87171'} />
-        <div className="stats">
-          <div className="stat"><div className="stat-label">Fonds propres finaux</div><div className="stat-value">{usd(n, 2)}</div></div>
-          <div className="stat"><div className="stat-label">Rendement</div><div className="stat-value">{(ret * 100).toFixed(1)} %</div></div>
-          {best && <div className="stat"><div className="stat-label">Meilleur jour</div><div className="stat-value pos">{signedUsd(best.pnl)}</div></div>}
-          {worst && <div className="stat"><div className="stat-label">Pire jour</div><div className="stat-value neg">{signedUsd(worst.pnl)}</div></div>}
-        </div>
+        <div className="small muted">Fonds propres finaux {usd(n, 2)} ({(ret * 100).toFixed(1)} %){best ? ` · meilleur jour ${signedUsd(best.pnl)}` : ''}{worst ? ` · pire jour ${signedUsd(worst.pnl)}` : ''}</div>
+        <RecapView />
         <div className="modal-actions">
           <button onClick={close}>Revoir le livre</button>
           <button className="primary" onClick={quit}>Nouvelle partie</button>
