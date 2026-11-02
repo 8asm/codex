@@ -3,6 +3,10 @@
 Jeu de stratégie navigateur : dirigez une maison de négoce de matières premières sur un globe 3D stylisé.
 Pas de guerre : des cargaisons, des courbes forward, des appels de marge et du cash.
 
+## Jouer en ligne
+
+https://tradewinds-nu.vercel.app (version de la branche de développement ; les sauvegardes restent dans votre navigateur).
+
 ## Lancer
 
 ```bash
