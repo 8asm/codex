@@ -237,6 +237,7 @@ export class Globe {
       const group = new THREE.Group();
       group.position.copy(pos);
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), pos.clone().normalize());
+      group.scale.setScalar(0.62); // villes voisines (Genève, Zoug, Lugano…) : les maquettes ne se touchent plus
       group.add(buildCityCluster(i + 1));
       (hubsByCity[city.id] ?? []).forEach((c, j) => {
         const prop = buildHubProp(c);
@@ -482,6 +483,10 @@ export class Globe {
       }
     }
     if (this.paused) return;
+    // vitesse de rotation et de zoom proportionnelles à l'altitude : de près, on vise une ville au pixel près
+    const alt = Math.max(0.02, this.camera.position.length() - 1);
+    this.controls.rotateSpeed = Math.min(0.5, Math.max(0.03, 0.45 * alt));
+    this.controls.zoomSpeed = Math.min(0.8, Math.max(0.2, 0.25 + 0.3 * alt));
     this.controls.update();
 
     // drapeau qui ondule, avatar qui sautille
@@ -515,26 +520,34 @@ export class Globe {
     const h = this.container.clientHeight;
     const camDir = this.camera.position.clone().normalize();
     const dist = this.camera.position.length();
+    // 1. candidats visibles, avec une priorité : vos villes, puis les grandes places, puis les autres
+    const cand: { n: Globe["nodes"][number]; x: number; y: number; facing: number; prio: number }[] = [];
     for (const n of this.nodes) {
       const facing = n.pos.clone().normalize().dot(camDir);
-      const visible = facing > 0.25;
-      if (!visible) {
-        n.label.style.display = 'none';
-        continue;
-      }
+      if (facing <= 0.25) { n.label.style.display = 'none'; continue; }
       const p = n.pos.clone().multiplyScalar(1.02).project(this.camera);
       // niveau de détail : de loin, seules les grandes places (et les villes qui vous concernent) sont nommées
       const v = this.view;
       const mine = v && (n.city.id === v.hqCity || n.city.id === v.playerCity || n.city.id === v.selectedCity || !!v.activeCities[n.city.id] || !!v.branches?.includes(n.city.id));
-      const major = n.city.airportHub + n.city.bankingHub >= 1.55;
-      if (!mine && ((dist > 2.4 && !major) || (dist > 3.3 && n.city.airportHub + n.city.bankingHub < 1.8))) {
-        n.label.style.display = 'none';
-        continue;
-      }
-      n.label.style.display = '';
-      n.label.style.transform = `translate(-50%, -100%) translate(${((p.x + 1) / 2) * w}px, ${((1 - p.y) / 2) * h - 6}px)`;
-      n.label.style.opacity = String(Math.min(1, (facing - 0.25) * 4));
-      n.label.classList.toggle('compact', dist > 3.6);
+      const size = n.city.airportHub + n.city.bankingHub;
+      if (!mine && ((dist > 2.4 && size < 1.55) || (dist > 3.3 && size < 1.8))) { n.label.style.display = 'none'; continue; }
+      cand.push({ n, x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h - 6, facing, prio: (mine ? 10 : 0) + size });
+    }
+    // 2. placement sans chevauchement : une étiquette qui en recouvrirait une plus importante devient un simple point
+    cand.sort((a, b) => b.prio - a.prio);
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    for (const c of cand) {
+      const name = c.n.city.name;
+      const half = (name.length * 6.2 + 22) / 2;
+      const box = { x0: c.x - half, x1: c.x + half, y0: c.y - 18, y1: c.y };
+      const clash = placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0);
+      const compact = dist > 3.6 || clash;
+      if (!compact) placed.push(box);
+      else if (placed.some((b) => c.x > b.x0 - 4 && c.x < b.x1 + 4 && c.y > b.y0 - 4 && c.y < b.y1 + 8)) { c.n.label.style.display = 'none'; continue; }
+      c.n.label.style.display = '';
+      c.n.label.style.transform = `translate(-50%, -100%) translate(${c.x}px, ${c.y}px)`;
+      c.n.label.style.opacity = String(Math.min(1, (c.facing - 0.25) * 4));
+      c.n.label.classList.toggle('compact', compact);
     }
     for (const m of this.markerEls.values()) {
       const facing = m.pos.clone().normalize().dot(camDir);

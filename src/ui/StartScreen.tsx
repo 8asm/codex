@@ -11,6 +11,7 @@ import { SCENARIOS } from '../data/scenarios';
 import { MARKET_SETS } from '../data/commodities';
 import { GOALS } from '../data/achievements';
 import { useStore } from './store';
+import { MusicButton } from './common';
 import { DIFFICULTY_BLURB, DIFFICULTY_LABEL, DIFFICULTY_PRESET, type Difficulty } from '../engine/difficulty';
 
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
@@ -60,6 +61,7 @@ export function StartScreen() {
 
   return (
     <div className="start">
+      <MusicButton className="ghost start-music" />
       <div className="start-card">
         <div className="start-title">
           <span className="logo">⛵</span>

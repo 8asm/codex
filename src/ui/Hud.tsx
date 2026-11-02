@@ -5,6 +5,7 @@ import { nav } from '../engine/valuation';
 import { AnimatedNumber, Term } from './common';
 import { signedUsd, tone, usd } from './format';
 import { isMuted, setMuted } from './sound';
+import { MusicButton } from './common';
 import { useStore, type Speed } from './store';
 import { useState } from 'react';
 import { useLiveVar } from './derived';
@@ -128,7 +129,8 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
       </div>
       <div className="hud-tools">
         <button className="ghost mute" onClick={() => setPanel('automation')} title="Automatisation (U)">⚙️</button>
-        <button className="ghost mute" onClick={() => { setMuted(!muted); setM(!muted); }} title="Son">{muted ? '🔇' : '🔊'}</button>
+        <button className="ghost mute" onClick={() => { setMuted(!muted); setM(!muted); }} title="Effets sonores">{muted ? '🔇' : '🔊'}</button>
+        <MusicButton />
       </div>
     </header>
   );

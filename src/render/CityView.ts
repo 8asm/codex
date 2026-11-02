@@ -8,6 +8,7 @@
  *    l'effectif et les objets de prestige reflètent l'état du jeu ; un mur d'écrans affiche les vrais prix.
  * La caméra descend du ciel à l'entrée (continuité avec le plongeon du globe) et remonte à la sortie.
  */
+import { LANDMARK_MAX_H, LANDMARK_PLOTS, LANDMARKS } from './landmarks';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { FloorStyle, OfficeTier, PrestigeItemId } from '../engine/types';
@@ -417,7 +418,27 @@ export class CityView {
   }
 
   private reserved(i: number, j: number) {
-    return (i === 0 && j === 0) || RIVAL_PLOTS.some(([a, b]) => a === i && b === j);
+    return (i === 0 && j === 0) || RIVAL_PLOTS.some(([a, b]) => a === i && b === j) || this.monumentPlots.some(([a, b]) => a === i && b === j);
+  }
+
+  /** Îlots occupés par les monuments de la ville courante, et leurs étiquettes. */
+  private monumentPlots: [number, number][] = [];
+  private monuments: { name: string; pos: THREE.Vector3 }[] = [];
+
+  private buildLandmarks(s: CityViewState) {
+    this.monuments = [];
+    (LANDMARKS[s.cityId] ?? []).slice(0, LANDMARK_PLOTS.length).forEach((l, k) => {
+      const [i, j] = LANDMARK_PLOTS[k]!;
+      const g = l.build();
+      // échelle « maquette » : le monument tient dans le cadrage par défaut (proportions conservées)
+      const h0 = new THREE.Box3().setFromObject(g).max.y;
+      g.scale.setScalar(Math.min(1, LANDMARK_MAX_H[k]! / Math.max(1, h0)));
+      g.position.set(i * BLOCK, 0.8, j * BLOCK);
+      g.rotation.y = Math.PI / 4; // de trois quarts face à la caméra
+      this.cityGroup.add(g);
+      // étiquette au pied du monument : au sommet, elle passerait sous la barre de la vue ville
+      this.monuments.push({ name: l.name, pos: new THREE.Vector3(i * BLOCK, 2, j * BLOCK + BLOCK * 0.35) });
+    });
   }
 
   private buildCity(s: CityViewState) {
@@ -426,6 +447,7 @@ export class CityView {
     this.cars = [];
     this.ship = null;
     const rnd = rng(s.cityId);
+    this.monumentPlots = LANDMARK_PLOTS.slice(0, (LANDMARKS[s.cityId] ?? []).length);
     const size = (HALF * 2 + 1) * BLOCK + 400;
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(size * 2, size * 2), flat('#59616b', { roughness: 1 }));
     ground.rotation.x = -Math.PI / 2;
@@ -595,6 +617,7 @@ export class CityView {
     }
     this.carMesh.castShadow = true;
     this.cityGroup.add(this.carMesh);
+    this.buildLandmarks(s);
   }
 
   private buildCrane(): THREE.Group {
@@ -835,6 +858,7 @@ export class CityView {
     };
     if (s.hq) add(`<b>${s.hq.name}</b><span>${['Étage loué', 'Plusieurs étages', 'Tour', 'Campus'][s.hq.tier]}${s.hq.employer ? ' · votre employeur' : ''}</span>`, new THREE.Vector3(0, this.hqTop + 8, 0), 'hq');
     this.rivalGroup.children.forEach((g) => add(`<b>${g.userData.name as string}</b>`, new THREE.Vector3(g.position.x, (g.userData.top as number) + 5, g.position.z), 'rival'));
+    for (const m of this.monuments) add(`<span>🏛️ ${m.name}</span>`, m.pos, 'monument');
   }
 
   // ---------------------------------------------------------------- salle de marché

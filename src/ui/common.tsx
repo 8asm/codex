@@ -4,6 +4,7 @@ import { COMMODITIES } from '../data/commodities';
 import { activeCommodities } from '../engine/physical';
 import type { CommodityId, CommoditySpec } from '../engine/types';
 import { useStore } from './store';
+import { musicOn, onMusicChange, setMusic } from './music';
 
 /** Terme technique : infobulle courte + clic vers le codex. Le survol débloque l'entrée. */
 export function Term({ id, children }: { id: string; children?: ReactNode }) {
@@ -125,5 +126,16 @@ export function CommodityPicker({ value, onChange, only }: { value: CommodityId;
         {shown.map((id) => <button key={id} className={value === id ? 'on' : ''} onClick={() => onChange(id)} title={COMMODITIES[id].name}>{COMMODITIES[id].icon} {COMMODITIES[id].short}</button>)}
       </div>
     </div>
+  );
+}
+
+/** Bouton musique d'ambiance (🎵 / 🔕), synchronisé entre l'accueil et le jeu. */
+export function MusicButton({ className = 'ghost mute' }: { className?: string }) {
+  const [on, setOn] = useState(musicOn());
+  useEffect(() => onMusicChange(setOn), []);
+  return (
+    <button data-music className={className} onClick={(e) => { e.stopPropagation(); setMusic(!on); }} title={on ? 'Couper la musique' : 'Musique d’ambiance'}>
+      {on ? '🎵' : '🔕'}
+    </button>
   );
 }
