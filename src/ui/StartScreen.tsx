@@ -12,6 +12,7 @@ import { MARKET_SETS } from '../data/commodities';
 import { GOALS } from '../data/achievements';
 import { useStore } from './store';
 import { MusicButton } from './common';
+import { OnlineLobby } from './OnlineLobby';
 import { useSettings } from './settings';
 import { DIFFICULTY_BLURB, DIFFICULTY_LABEL, DIFFICULTY_PRESET, type Difficulty } from '../engine/difficulty';
 
@@ -28,7 +29,7 @@ export function StartScreen() {
   const [vol, setVol] = useState(1);
   const [crisis, setCrisis] = useState(1);
   const [seed, setSeed] = useState(randomSeed());
-  const [mode, setMode] = useState<'story' | 'found' | 'join' | 'scenario'>('story');
+  const [mode, setMode] = useState<'story' | 'found' | 'join' | 'scenario' | 'online'>('story');
   const [scenario, setScenario] = useState(SCENARIOS[0]!.id);
   const [goal, setGoal] = useState<GoalId>('taille');
   const [markets, setMarkets] = useState('extended');
@@ -88,8 +89,10 @@ export function StartScreen() {
           <button className={mode === 'found' ? 'on' : ''} onClick={() => setMode('found')}>🏢 Sandbox : ma société</button>
           <button className={mode === 'join' ? 'on' : ''} onClick={() => setMode('join')}>👔 Sandbox : trader salarié</button>
           <button className={mode === 'scenario' ? 'on' : ''} onClick={() => setMode('scenario')}>📜 Scénarios<small>crises historiques</small></button>
+          <button className={mode === 'online' ? 'on' : ''} onClick={() => setMode('online')}>🌐 En ligne<small>jusqu’à 4 joueurs</small></button>
         </div>
-        {mode !== 'scenario' && (
+        {mode === 'online' && <OnlineLobby />}
+        {mode !== 'scenario' && mode !== 'online' && (
           <>
             <div className="label">Difficulté {saves.length === 0 && <span className="badge">première partie ? choisissez Débutant</span>}</div>
             <div className="tabs mode-pick">
@@ -157,14 +160,14 @@ export function StartScreen() {
             </select>
           </label>
         )}
-        {mode !== 'scenario' && (
+        {mode !== 'scenario' && mode !== 'online' && (
           <label>Objectif de victoire
             <select value={goal} onChange={(e) => setGoal(e.target.value as GoalId)}>
               {GOALS.filter((x) => x.id !== 'scenario').map((x) => <option key={x.id} value={x.id}>{x.label} — {x.desc}</option>)}
             </select>
           </label>
         )}
-        {mode !== 'scenario' && <><div className="row2">
+        {mode !== 'scenario' && mode !== 'online' && <><div className="row2">
           {mode !== 'story' && <label>{mode === 'join' ? 'Capital alloué au livre' : 'Capital initial'} : <b>{capital} M$</b><input type="range" min={5} max={100} step={5} value={capital} onChange={(e) => setCapital(Number(e.target.value))} /></label>}
           <label>Durée : <b>{years} an{years > 1 ? 's' : ''}</b><input type="range" min={1} max={8} value={years} onChange={(e) => setYears(Number(e.target.value))} /></label>
         </div>
@@ -181,11 +184,11 @@ export function StartScreen() {
           </label>
           <label>Graine<input value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
         </div></>}
-        <div className="start-actions">
+        {mode !== 'online' && <div className="start-actions">
           <button className="ghost" onClick={() => fileRef.current?.click()}>Importer une sauvegarde…</button>
           <input ref={fileRef} type="file" accept="application/json" hidden onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { loadState(await importJson(f)); } catch (err) { toast((err as Error).message, 'bad'); } }} />
           <button className="primary big" onClick={start}>{mode === 'story' ? 'Premier jour →' : mode === 'join' ? 'Rejoindre le desk →' : mode === 'scenario' ? 'Entrer dans l’histoire →' : 'Ouvrir les bureaux →'}</button>
-        </div>
+        </div>}
       </div>
     </div>
   );

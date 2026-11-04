@@ -904,3 +904,47 @@ Rythme mesuré : à vitesse maximale, environ un jour de jeu par seconde, soit u
   - Sept échos au plus, espacés d'au moins deux mois, pas avant le cinquième mois de jeu.
 - **Apartés** : au plus un tous les quatre-vingt-dix jours, glissés dans une conversation, une note d'analyste ou une fin de négociation.
 - **Neutralité** : aucun effet sur les marchés, l'argent ou les probabilités. Tirages hachés, la séquence aléatoire est intacte.
+
+
+## Phase 11 — en ligne, progressivité, langue, gouvernements, personnalisation
+
+### Multijoueur (`engine/multiplayer.ts`, `ui/mp.ts`)
+- **Lockstep déterministe** : chaque navigateur simule la même partie à partir de la même configuration. L'hôte numérote les trames (une action d'un joueur, ou « jour suivant ») et tous les appliquent dans le même ordre. Les messages sont minuscules et aucun serveur de jeu n'est nécessaire.
+- **Transport** : WebRTC pair-à-pair via PeerJS. Le service public de PeerJS ne sert qu'à la mise en relation.
+- **Monde partagé** : le marché, la géopolitique et les sociétés IA sont ceux de la société n° 0, partagés par référence. Seule celle-ci fait vivre le monde ; les autres reçoivent ses nouvelles. Chaque société a ses livres, ses offres, son équipe. Les impacts de marché des uns se voient chez les autres.
+- **Rôles** dans une société partagée : PDG (toutes les décisions) ou trader (marchés, physique, voyages).
+- **Robustesse** : une empreinte de l'état est diffusée tous les 25 jours, avec resynchronisation par instantané en cas d'écart ou de trame manquante. Rejoindre en cours de partie passe aussi par un instantané.
+- **Achat et couverture** : ils forment une seule action atomique, ce qui supprime le risque d'une couverture sans achat quand le résultat arrive après l'aller-retour réseau.
+- **Tests** : deux simulations qui reçoivent les mêmes trames restent identiques, y compris après un instantané. Un vrai test à deux navigateurs (Playwright, PeerJS) a été réalisé : salon, fondation d'une seconde société, lancement, 5 jours avancés par l'hôte, même date des deux côtés.
+- **Limites** : pas de sauvegarde d'une partie en ligne ; si l'hôte quitte, la partie s'arrête.
+
+### Complexité progressive (`engine/progression.ts`)
+- Huit panneaux de base, puis quinze déblocages déclenchés par l'activité (première position, premier stock, plusieurs contrats…) ou par l'ancienneté de la partie.
+- Chaque déblocage est annoncé avec son utilité et la leçon associée. Bouton « tout afficher » dans les paramètres.
+- Le moteur, lui, ne change pas.
+
+### Leçons
+- Diagnostic de l'étape courante (ce qui bloque, comment débloquer), étape passable. Une étape déjà réalisée est validée d'office.
+- Quinze leçons facultatives de plus, 24 au total.
+
+### Paramètres et langue (`ui/settings.ts`, `ui/i18n.ts`)
+- **Langue** : traduction de l'interface par dictionnaire (texte français exact → anglais, appliqué à l'affichage) et modèles pour les messages fréquents. Les leçons sont entièrement traduites.
+- **Limite** : les nouvelles et le journal générés par le moteur restent en partie en français.
+- **Échelle** : automatique, conçue pour 1440 × 880 et réduite jusqu'à 62 %, ou fixée par le joueur.
+- **Mode simplifié** : marge, VaR et calques masqués tant qu'ils ne sont pas préoccupants ; conseillers limités aux vrais risques.
+
+### Gouvernements (`engine/government.ts`)
+- **Appels d'offres** : dix agences d'État, enchère scellée sur le différentiel, de 3 à 6 concurrents (marge moyenne 0,3 %, écart 0,15 %). La relation avec l'État vaut jusqu'à 0,2 %. Gagner crée un vrai contrat à terme.
+- **Licences** : droit annuel, nécessaire pour soumissionner, et +0,05 % sur les offres du pays.
+- **Lobbying** : dossier technique, ou dîner (dans un pays opaque, un dossier de corruption latent).
+- **Rescrit fiscal** : −3 points d'impôt pendant 3 ans.
+- Les relations s'érodent de 3 % par mois.
+
+### Siège, monuments, globe
+- **Personnalisation** : forme, hauteur, façade, couleur, toit, de 0 à 3 ailes (+15 % de postes, +12 % de loyer chacune), sol, murs, éclairage, plantes. Les travaux sont capitalisés et amortis sur 60 mois.
+- **Monuments** : une quarantaine de villes, avec des formes génériques mises à l'échelle du cadrage.
+- **Globe** : villes trop proches écartées pour l'affichage (écart minimal 2,1°, déplacement plafonné à 1,1°) ; plongée au ras du sol. Zoomer sur son siège fait entrer dans la salle de marché.
+
+### Sociétés IA
+- Risque normalisé par le nombre de desks, réduit de moitié après 30 % de perte, recapitalisation possible une fois sur quatre.
+- Faillites sur 3 ans : 12,5 sur 40 → 0,5.

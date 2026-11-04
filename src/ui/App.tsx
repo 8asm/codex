@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { MpBar } from './OnlineLobby';
 import { GovernmentPanel } from './GovernmentPanel';
 import { SettingsModal } from './SettingsModal';
 import { applyLanguage } from './i18n';
@@ -260,6 +261,7 @@ export function App() {
             </button>
           )}
           <LessonCard />
+          <MpBar />
           <AdvisorBar />
           <NewsTicker />
           <Modals />

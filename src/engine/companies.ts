@@ -209,6 +209,8 @@ export function leaderboard(state: GameState): Ranked[] {
     const n = nav(state);
     out.push({ id: 'player', name: state.company.name, nav: n, ytd: n / Math.max(1, state.company.yearStartNav) - 1, rating: '—', cityId: state.company.hqCity, kind: 'trader' });
   }
+  // partie à plusieurs : les autres maisons humaines figurent au classement
+  for (const r of state.mp?.rivals ?? []) if (r.status === 'running') out.push({ id: `mp${r.slot}`, name: `👤 ${r.name}`, nav: r.nav, ytd: 0, rating: '—', cityId: r.cityId, kind: 'trader' });
   return out.sort((a, b) => b.nav - a.nav);
 }
 

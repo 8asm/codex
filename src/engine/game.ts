@@ -16,7 +16,7 @@ import { loreDay } from './lore';
 import { CITIES, CITY_BY_ID } from '../data/cities';
 import { ZONES } from '../data/world';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
-import { adjustFollowing, dayFromYMD, monthIndexOf, nextBusinessDay, weekday, ymd, addBusinessDays, formatDay } from './calendar';
+import { adjustFollowing, dayFromYMD, monthIndexOf, monthLabel, nextBusinessDay, weekday, ymd, addBusinessDays, formatDay } from './calendar';
 import { addCash, log } from './ledger';
 import { baseVolMult, createMarket, DEFAULT_CURVE, exchangeImRate, stepMarket } from './market';
 import { recomputeIm } from './margin';
@@ -257,7 +257,7 @@ function openDay(state: GameState) {
   }
   // Les bourses révisent leurs marges chaque lundi, ou en urgence quand la volatilité explose.
   const m = state.market;
-  for (const c of COMMODITY_IDS) {
+  for (const c of state.mp?.follower ? [] : COMMODITY_IDS) {
     const target = exchangeImRate(m, c);
     const cur = m.commodities[c].imRate;
     if (weekday(state.day) === 1 || target > cur * 1.25) {
@@ -272,10 +272,14 @@ function openDay(state: GameState) {
       m.commodities[c].imRate = target;
     }
   }
-  stepWorld(state);
-  for (const n of dailyNews(state)) if (n.major) state.pendingAlerts.push({ kind: 'major_news', text: n.headline });
-  dailyEvents(state);
-  if (state.day !== state.startDay) stepCompanies(state);
+  // partie à plusieurs : seul le maître fait vivre le monde partagé (géopolitique, nouvelles de marché, événements,
+  // sociétés IA) ; les sociétés suiveuses le reçoivent par référence
+  if (!state.mp?.follower) {
+    stepWorld(state);
+    for (const n of dailyNews(state)) if (n.major) state.pendingAlerts.push({ kind: 'major_news', text: n.headline });
+    dailyEvents(state);
+    if (state.day !== state.startDay) stepCompanies(state);
+  }
   recomputeIm(state);
   generateOffers(state);
   // débutant : il y a toujours au moins une cargaison à acheter et une à vendre sur la table (offres hors KYC)
@@ -476,6 +480,40 @@ export function advanceDay(state: GameState): void {
   openDay(state);
 }
 
+/**
+ * Journée commune d'une partie à plusieurs : chaque société clôture au prix du jour, puis le maître fait avancer le
+ * marché et le monde ; les suiveuses ouvrent la journée sur ce monde partagé et reçoivent ses nouvelles.
+ */
+export function advanceDayMulti(states: GameState[]): void {
+  const master = states[0]!;
+  if (master.status !== 'running' && states.every((s) => s.status !== 'running')) return;
+  const newsBefore = new Set(master.news.map((n) => n.id));
+  for (const s of states) if (s.status === 'running') closeDay(s);
+  const next = nextBusinessDay(master.day);
+  if (next > master.endDay) {
+    for (const s of states) if (s.status === 'running') {
+      s.status = 'ended';
+      s.statusReason = `Fin de partie le ${formatDay(s.day)}.`;
+      s.pendingAlerts.push({ kind: 'ended', text: s.statusReason });
+    }
+    return;
+  }
+  stepMarket(master.market, master.rng, next, master.config.volatility, master.config.crisisFrequency);
+  for (const s of states) {
+    s.day = next;
+    if (s === master || s.status === 'running') openDay(s);
+  }
+  // les nouvelles du monde partagé (pas les annonces propres à la société maître) sont diffusées aux suiveuses
+  const fresh = master.news.filter((n) => !newsBefore.has(n.id) && n.cityId !== master.company.hqCity);
+  for (const s of states.slice(1)) {
+    for (const n of [...fresh].reverse()) {
+      s.news.unshift({ ...n });
+      if (n.major) s.pendingAlerts.push({ kind: 'major_news', text: n.headline });
+    }
+    if (s.news.length > 120) s.news.length = 120;
+  }
+}
+
 export function dispatch(state: GameState, action: Action): ActionResult {
   const r = dispatchAction(state, action);
   if (r.ok) { stepProgression(state); lessonTick(state); }
@@ -598,9 +636,17 @@ function dispatchAction(state: GameState, action: Action): ActionResult {
       if (a) a.seen = true;
       return { ok: true, message: '' };
     }
-    case 'ACCEPT_OFFER':
+    case 'ACCEPT_OFFER': {
+      const offer = state.offers.find((o) => o.id === action.offerId);
+      const r = guarded(state, () => acceptOffer(state, action.offerId, action.inspect));
+      if (r.ok && action.hedge && offer && action.hedge.lots !== 0) {
+        const h = tradeFuture(state, offer.commodity, action.hedge.month, action.hedge.lots);
+        return { ok: true, message: `${r.message} ${h.ok ? `Couvert : ${action.hedge.lots < 0 ? 'vente' : 'achat'} de ${Math.abs(action.hedge.lots)} lots ${monthLabel(action.hedge.month)}.` : `Couverture refusée : ${h.message}`}` };
+      }
+      return r;
+    }
     case 'ACCEPT_BRIBE_OFFER':
-      return guarded(state, () => acceptOffer(state, action.offerId, action.type === 'ACCEPT_OFFER' ? action.inspect : false));
+      return guarded(state, () => acceptOffer(state, action.offerId, false));
     case 'TRADE_EXOTIC':
       return guarded(state, () => tradeExotic(state, action.spec, action.qty));
     case 'CLOSE_EXOTIC':

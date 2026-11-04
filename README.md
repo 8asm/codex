@@ -134,9 +134,20 @@ npm run build      # build de production dans dist/
 - **Corrections** issues d'une partie jouée de bout en bout dans le navigateur (voir DESIGN_NOTES, phase 10).
 - Une ville de plus : Lyon.
 
+## Phase 11 — ce qui s'ajoute
+
+- **🌐 En ligne, jusqu'à 4 joueurs**, sans serveur : un joueur héberge, les autres rejoignent avec un code à 6 caractères. Même société (rôles PDG ou trader), sociétés concurrentes dans le même monde, ou un mélange. L'hôte règle le temps ; discussion intégrée.
+- **Complexité progressive** (option à la création) : les panneaux apparaissent quand vous en avez besoin, avec une explication et une leçon.
+- **Paramètres 🛠️** : français ou anglais, taille de l'interface (automatique selon l'écran), mode simplifié, musique.
+- **24 leçons** : visite guidée vérifiée (diagnostic de l'étape, étape passable) et leçons facultatives dans n'importe quel ordre.
+- **Gouvernements** (🏛️, `D`) : appels d'offres publics, licences d'import-export, lobbying, rescrit fiscal.
+- **Siège personnalisable** : forme, hauteur, couleurs, toit, ailes d'extension, intérieur. Zoomez sur votre bâtiment pour y entrer.
+- **Une quarantaine de villes avec monuments**, villes voisines écartées sur le globe, dock défilant.
+- Faillites des sociétés IA bien plus rares (recapitalisations, réduction des risques).
+
 ### Raccourcis
 
-`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `W` leçons · `C` codex · `Échap` fermer
+`J` carrière · `Espace` pause · `1` `2` `3` vitesse · `N` jour suivant · `M` marchés · `P` physique · `F` fret · `I` actifs · `O` options · `L` livre · `R` risque · `T` trésorerie · `V` voyages · `A` actualités · `G` monde · `K` concurrents · `B` bureaux · `E` équipes · `X` structurés · `Y` financement · `Z` conformité · `Q` partie · `H` vue ville · `U` automatisation · `D` gouvernements · `W` leçons · `C` codex · `Échap` fermer
 
 ## Structure
 

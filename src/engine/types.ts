@@ -621,6 +621,8 @@ export interface GameState {
   unlocked?: string[];
   /** relations avec les gouvernements (phase 11) */
   gov?: GovState;
+  /** partie à plusieurs : emplacement de la société, suiveuse (monde partagé) ou maître, rivaux humains */
+  mp?: { slot: number; follower: boolean; companies: string[]; rivals?: { slot: number; name: string; nav: number; cityId: string; status: string }[] };
   /** bruits de couloir déjà entendus (aucun effet sur le jeu) */
   lore?: { lastNews: Day; lastAside: Day; seen: string[] };
   companies: AICompanyState[];
@@ -892,7 +894,7 @@ export interface Automation {
 
 export type Action =
   | { type: 'TRADE_FUTURE'; commodity: CommodityId; month: MonthIndex; lots: number }
-  | { type: 'ACCEPT_OFFER'; offerId: string; inspect?: boolean }
+  | { type: 'ACCEPT_OFFER'; offerId: string; inspect?: boolean; /** couverture immédiate, atomique avec l'achat (rien si le deal échoue) */ hedge?: { month: number; lots: number } }
   | { type: 'SPOT_BUY'; commodity: CommodityId; locationId: string; qty: number }
   | { type: 'SPOT_SELL'; lotId: string; qty?: number }
   | { type: 'TRAVEL'; to: string }

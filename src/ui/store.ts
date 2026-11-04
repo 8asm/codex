@@ -2,6 +2,7 @@
  * Store UI (Zustand). L'état de jeu est un objet muté par le moteur ; `rev` est incrémenté après
  * chaque mutation pour re-rendre les composants.
  */
+import { setMpHooks, useMp } from './mp';
 import { create } from 'zustand';
 import { COMMODITIES } from '../data/commodities';
 import { listedMonths } from '../engine/contracts';
@@ -51,6 +52,8 @@ interface UIState {
   quit: () => void;
   act: (a: Action, quiet?: boolean) => ActionResult;
   step: () => void;
+  /** traitement des alertes d'une journée écoulée (jeu solo ou trame reçue en ligne) */
+  afterDay: () => void;
   setSpeed: (s: Speed) => void;
   setPanel: (p: PanelId | null, force?: boolean) => void;
   selectCommodity: (c: CommodityId, month?: number | null) => void;
@@ -128,11 +131,17 @@ export const useStore = create<UIState>((set, get) => ({
     set({ game: g, rev: 0, speed: 0, panel: 'market', modal: intro ? { kind: 'scenario', text: intro.text } : null, month: listedMonths(COMMODITIES.BRENT, g.day)[0]!, commodity: 'BRENT', selectedCity: null });
   },
   loadState: (s) => set({ game: s, rev: get().rev + 1, speed: 0, modal: null, month: listedMonths(COMMODITIES[get().commodity], s.day)[0]! }),
-  quit: () => set({ game: null, speed: 0, modal: null, cityView: null, cityPhase: null, interior: false }),
+  quit: () => { if (useMp.getState().active) useMp.getState().leave(); set({ game: null, speed: 0, modal: null, cityView: null, cityPhase: null, interior: false }); },
 
   act: (a, quiet) => {
     const g = get().game;
     if (!g) return { ok: false, message: 'Pas de partie' };
+    // partie en ligne : l'action part chez l'hôte, qui l'ordonne et la renvoie à tous ; le résultat s'affiche au retour
+    const mp = useMp.getState();
+    if (mp.active) {
+      mp.sendAction(a, quiet);
+      return { ok: true, message: '' };
+    }
     const r = dispatch(g, a);
     set({ rev: get().rev + 1 });
     if (!quiet) get().toast(r.message, r.ok ? 'good' : 'bad');
@@ -146,8 +155,20 @@ export const useStore = create<UIState>((set, get) => ({
 
   step: () => {
     const g = get().game;
-    if (!g || g.status !== 'running') return;
+    if (!g) return;
+    // partie en ligne : seul l'hôte fait avancer le temps (trame « jour suivant » diffusée à tous)
+    const mp = useMp.getState();
+    if (mp.active) {
+      if (mp.isHost) mp.tick();
+      return;
+    }
+    if (g.status !== 'running') return;
     advanceDay(g);
+    get().afterDay();
+  },
+  afterDay: () => {
+    const g = get().game;
+    if (!g) return;
     const alerts = consumeAlerts(g);
     let modal: Modal | null = get().modal;
     let pause = false;
@@ -189,10 +210,14 @@ export const useStore = create<UIState>((set, get) => ({
     const months = listedMonths(COMMODITIES[get().commodity], g.day);
     const month = get().month !== null && months.includes(get().month!) ? get().month : months[0]!;
     set({ rev: get().rev + 1, modal, month, speed: pause ? 0 : get().speed });
-    if (g.history.length % 20 === 0) void saveGame('auto', g).catch(() => undefined);
+    if (g.history.length % 20 === 0 && !useMp.getState().active) void saveGame('auto', g).catch(() => undefined);
   },
 
-  setSpeed: (s) => set({ speed: s }),
+  setSpeed: (s) => {
+    const mp = useMp.getState();
+    if (mp.active && !mp.isHost) { get().toast('En ligne, c’est l’hôte qui règle le temps.', 'info'); return; }
+    set({ speed: s });
+  },
   setPanel: (p, force) => set({ panel: !force && get().panel === p ? null : p }),
   selectCommodity: (c, month) => {
     const g = get().game;
@@ -237,3 +262,27 @@ export const useStore = create<UIState>((set, get) => ({
 
 // Accès de débogage (serveur de développement uniquement) : scripts de capture et console.
 if (import.meta.env.DEV) (window as unknown as { __tw: typeof useStore }).__tw = useStore;
+
+// ---------------------------------------------------------------- partie en ligne : raccordement au contrôleur réseau
+setMpHooks({
+  onStart: (states, myCompany) => {
+    const g = states[myCompany] ?? states[0]!;
+    consumeAlerts(g);
+    useStore.setState({ game: g, rev: 0, speed: 0, panel: 'market', modal: null, month: listedMonths(COMMODITIES.BRENT, g.day)[0]!, commodity: 'BRENT', selectedCity: null });
+  },
+  onFrame: (f, result, mine, quiet) => {
+    const st = useStore.getState();
+    if (f.kind === 'tick') {
+      st.afterDay();
+      return;
+    }
+    useStore.setState({ rev: st.rev + 1 });
+    if (mine && result) {
+      if (!quiet && result.message) st.toast(result.message, result.ok ? 'good' : 'bad');
+      if (result.ok) {
+        if (f.action.type === 'TRADE_FUTURE') sfx.trade();
+        else if (f.action.type === 'ACCEPT_OFFER' || f.action.type === 'SPOT_BUY' || f.action.type === 'SPOT_SELL') sfx.deal();
+      } else sfx.error();
+    }
+  },
+});

@@ -621,3 +621,17 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); padding: 0; min-width: 0; box-shadow: none; }
 .swatch.on { border-color: var(--gold); transform: scale(1.12); }
 i.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }
+
+/* partie en ligne */
+.online { display: flex; flex-direction: column; gap: 8px; }
+.online-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.online-card { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,.03); }
+.code-input { font-family: 'Baloo 2', monospace; font-size: 1.4rem; letter-spacing: 4px; text-transform: uppercase; }
+.lobby-code { font-size: 1.1rem; } .lobby-code b { font-family: 'Baloo 2', monospace; font-size: 1.6rem; letter-spacing: 4px; color: var(--gold); }
+.lobby-company { border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.lobby-company.new { border-style: dashed; }
+.lobby-players { display: flex; flex-wrap: wrap; gap: 4px; }
+.lobby-chat { max-height: 140px; overflow-y: auto; border-top: 1px solid rgba(255,255,255,.1); padding-top: 4px; }
+.mp-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 46px; z-index: 12; zoom: var(--ui, 1); }
+.mp-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin-top: 4px; width: 320px; max-width: 90vw; }
+@media (max-width: 760px) { .online-cols { grid-template-columns: 1fr; } }

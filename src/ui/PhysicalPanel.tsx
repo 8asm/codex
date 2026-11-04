@@ -64,7 +64,6 @@ function Offers() {
 function OfferCard({ o }: { o: Offer }) {
   const g = useStore((s) => s.game)!;
   const act = useStore((s) => s.act);
-  const toast = useStore((s) => s.toast);
   const spec = COMMODITIES[o.commodity];
   const loc = spec.physical.locations.find((l) => l.id === o.locationId)!;
   const cp = COUNTERPARTY_BY_ID[o.counterpartyId]!;
@@ -87,11 +86,8 @@ function OfferCard({ o }: { o: Offer }) {
   const sanct = sanctionedOrigin(g, o);
   const pOff = o.side > 0 ? offSpecProbability(g, o.counterpartyId) : 0;
   const accept = (hedge: boolean) => {
-    const r = act({ type: 'ACCEPT_OFFER', offerId: o.id, inspect });
-    if (r.ok && hedge) {
-      const h = act({ type: 'TRADE_FUTURE', commodity: o.commodity, month: hm, lots: -o.side * hl }, true);
-      toast(h.ok ? `Couvert : ${o.side > 0 ? 'vente' : 'achat'} de ${hl} lots ${monthLabel(hm)}.` : `Couverture refusée : ${h.message}`, h.ok ? 'good' : 'bad');
-    }
+    // achat et couverture en une seule action (atomique, y compris en ligne)
+    act({ type: 'ACCEPT_OFFER', offerId: o.id, inspect, hedge: hedge ? { month: hm, lots: -o.side * hl } : undefined });
   };
 
   return (
