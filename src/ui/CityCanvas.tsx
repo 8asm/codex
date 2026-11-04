@@ -5,7 +5,7 @@ import { COMPANY_BY_ID } from '../data/companies';
 import { TIERS } from '../data/offices';
 import { listedMonths } from '../engine/contracts';
 import { futuresPrice } from '../engine/market';
-import { managesOffice, prestige, seatsUsed, tierForNav } from '../engine/offices';
+import { managesOffice, prestige, seatsTotal, seatsUsed, tierForNav } from '../engine/offices';
 import type { GameState } from '../engine/types';
 import { CityView, type CityViewState } from '../render/CityView';
 import { BRANCH } from '../engine/staff';
@@ -23,7 +23,7 @@ export function cityViewState(g: GameState, cityId: string): CityViewState {
   let employerId: string | null = null;
   if (managesOffice(g) && g.company.hqCity === cityId) {
     const o = g.office;
-    hq = { name: g.company.name, color: PLAYER_COLOR, tier: o.tier, style: o.style, items: o.items.map((i) => i.id), owned: !!o.owned, staff: seatsUsed(g), seats: TIERS[o.tier]!.seats, employer: false };
+    hq = { name: g.company.name, color: PLAYER_COLOR, tier: o.tier, style: o.style, items: o.items.map((i) => i.id), owned: !!o.owned, staff: seatsUsed(g), seats: seatsTotal(g), employer: false, custom: o.custom };
   } else if (managesOffice(g) && g.staff?.branches.some((b) => b.cityId === cityId)) {
     // bureau à l'étranger : petit immeuble (représentation) ou étages loués (régional), sans personnalisation
     const b = g.staff.branches.find((x) => x.cityId === cityId)!;
@@ -65,6 +65,7 @@ export function CityCanvas() {
     const v = new CityView(ref.current, {
       onExit: () => useStore.getState().exitCity(),
       onHqClick: () => useStore.getState().setInterior(true),
+      onInteriorExit: () => useStore.getState().setInterior(false),
     });
     view.current = v;
     const st = useStore.getState();
@@ -115,7 +116,7 @@ export function CityCanvas() {
           {s.hq.staff} personnes sur {s.hq.seats} postes{mine ? ` · style ${g.office.style}` : ''} · le mur d’écrans affiche les cours en direct
         </div>
       )}
-      {!interior && s.hq && <div className="cityview-caption small muted">Cliquez sur le siège pour entrer dans la salle de marché · dézoomez pour revenir au globe</div>}
+      {!interior && s.hq && <div className="cityview-caption small muted">Cliquez sur le siège, ou zoomez dessus, pour entrer dans la salle de marché · dézoomez pour revenir au globe</div>}
     </div>
   );
 }

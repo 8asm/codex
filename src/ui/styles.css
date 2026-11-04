@@ -101,7 +101,9 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 .menu .keys { margin-top: 6px; line-height: 1.5; }
 
 /* Dock */
-.dock { position: absolute; left: 10px; top: 74px; display: flex; flex-direction: column; gap: 8px; z-index: 9; }
+.dock { position: absolute; left: 10px; top: 74px; bottom: 46px; display: flex; flex-direction: column; gap: 8px; z-index: 9; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: var(--gold) transparent; padding-right: 2px; }
+.dock::-webkit-scrollbar { width: 5px; } .dock::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 4px; }
+.dock button { flex-shrink: 0; }
 .dock button { width: 70px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 16px; padding: 4px; border: 2px solid var(--line); background: linear-gradient(180deg, rgba(36,76,138,0.95), rgba(16,40,80,0.95)); }
 .dock button span { font-size: 1.45rem; line-height: 1.1; }
 .dock button small { font-size: .66rem; }
@@ -594,3 +596,28 @@ h4 { margin: 14px 0 6px; color: var(--gold); font-size: 1rem; }
 /* monuments de la vue ville */
 .city3d-label.monument { background: rgba(255,255,255,0.82); color: #3b2a14; font-size: 11px; border-color: rgba(0,0,0,0.15); }
 .city3d-label.monument span { color: #3b2a14; font-size: 11px; font-weight: 700; }
+
+/* mise à l'échelle de l'interface selon l'écran (variable --ui posée par l'application) */
+.hud, .dock, .panel-slot, .layerbar, .toasts, .lesson-card, .city-btn, .cityview-bar, .cityview-caption, .advisors, .ticker, .modal, .menu { zoom: var(--ui, 1); }
+
+/* mode simplifié : les éléments avancés s'effacent (ils restent accessibles hors de ce mode) */
+.simple .adv { display: none !important; }
+
+.check-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.check-row input { width: auto; }
+.settings { width: min(620px, calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; }
+.settings-row { display: grid; grid-template-columns: 170px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+.settings-row .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.settings .switch { display: flex; gap: 8px; align-items: flex-start; }
+.settings .switch input { width: auto; margin-top: 3px; }
+.lesson.blocked { opacity: .55; }
+@media (max-width: 640px) { .settings-row { grid-template-columns: 1fr; } }
+
+/* personnalisation du siège */
+.custom-grid { display: grid; grid-template-columns: 150px 1fr; gap: 6px 10px; align-items: center; font-size: .85rem; }
+.custom-grid .chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.custom-grid .chips button { padding: 2px 8px; font-size: .78rem; }
+.swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+.swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3); padding: 0; min-width: 0; box-shadow: none; }
+.swatch.on { border-color: var(--gold); transform: scale(1.12); }
+i.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: middle; }

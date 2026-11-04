@@ -7,6 +7,7 @@
  * Les contreparties proposent en moyenne un diff légèrement à leur avantage ; être SUR PLACE permet
  * de le renégocier (≈ 0,4 % du prix) : c'est l'intérêt de voyager.
  */
+import { licenceEdge } from './government';
 import { factors } from './difficulty';
 import { gradeDiff, pickGrade } from './grades';
 import { COMMODITIES, COMMODITY_IDS, findLocation } from '../data/commodities';
@@ -190,7 +191,7 @@ export function generateOffers(state: GameState, opts: { count?: number; side?: 
     // Le diff proposé avantage la contrepartie de 0,15 % en moyenne (écart-type 0,45 %) ; un contact qui
     // vous fait confiance propose de meilleures conditions (jusqu'à 0,3 % de mieux à confiance maximale).
     const trust = contactAt(state, cp.id)?.trust ?? 0;
-    const skew = f * (factors(state).offerSkew - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
+    const skew = f * (factors(state).offerSkew - licenceEdge(state, cp.zone) - (trust / 100) * 0.003 - traderEdge(state, spec.family) + 0.0045 * normal(state.rng));
     let diff = basisAt(state.market, c, loc.id, physicalDeliveryDay(month)) + side * skew;
     if (sanctioned) diff -= Math.max(sanctionedDiscount(state, cp.id, c), f * (0.15 + 0.1 * uniform(state.rng)));
     const id = newId(state, 'o');

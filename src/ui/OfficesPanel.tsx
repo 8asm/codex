@@ -5,6 +5,7 @@ import { rate } from '../engine/market';
 import {
   buildingBook, buildingPrice, fitOutCost, localCost, managesOffice, negotiationEdge, officeBookValue, officeEffects, officeMonthly, prestige, rentFor, seatsUsed, styleCost, tierForNav,
 } from '../engine/offices';
+import type { OfficeCustom } from '../engine/types';
 import type { NpcRole, OfficeTier } from '../engine/types';
 import { nav } from '../engine/valuation';
 import { Panel, Term } from './common';
@@ -186,6 +187,52 @@ export function OfficesPanel() {
           </div>
         ))}
       </div>
+      <CustomizeSection />
     </Panel>
+  );
+}
+
+const FACADES = ['#5d8fb8', '#2b3a4a', '#9fb7c9', '#b08d57', '#3d6b5a', '#e8e4dc', '#7a2e3a'];
+const ACCENTS = ['#ffb703', '#e11d48', '#2563eb', '#10b981', '#a855f7', '#f97316', '#f1f5f9'];
+const FLOORS: [string, string][] = [['#c8a27a', 'parquet'], ['#e9e6df', 'marbre'], ['#5b6470', 'moquette'], ['#9ca3af', 'béton ciré'], ['#2a2f36', 'ardoise']];
+const WALLS: [string, string][] = [['#f4f1ea', 'blanc cassé'], ['#dfe7ef', 'bleu glacier'], ['#e8dccb', 'sable'], ['#2f3b4a', 'anthracite'], ['#6b4f3a', 'noyer']];
+const SHAPES: [NonNullable<OfficeCustom['shape']>, string][] = [['stepped', 'en gradins'], ['straight', 'droite'], ['tapered', 'effilée'], ['cylinder', 'cylindrique'], ['twin', 'tours jumelles']];
+const ROOFS: [NonNullable<OfficeCustom['roof']>, string][] = [['flat', 'plat'], ['garden', 'jardin'], ['spire', 'flèche'], ['crown', 'couronne lumineuse']];
+
+/** Personnalisation du siège : silhouette, couleurs, toit, ailes, intérieur. Chaque changement est un chantier facturé. */
+function CustomizeSection() {
+  const g = useStore((s) => s.game)!;
+  const act = useStore((s) => s.act);
+  if (!managesOffice(g)) return null;
+  const cu = g.office.custom ?? {};
+  const tower = g.office.tier >= 2;
+  const set = (patch: OfficeCustom) => act({ type: 'CUSTOMIZE_OFFICE', patch });
+  return (
+    <>
+      <h4>Personnalisation du siège</h4>
+      <p className="muted small">Travaux facturés au coût local et amortis sur 60 mois. Forme et hauteur : réservées à un immeuble entier (tour ou campus). Chaque aile ajoute 15 % de postes et 12 % de loyer. Plongez dans la ville (H) pour voir le résultat.</p>
+      <div className="custom-grid">
+        <span>Façade (80 k$)</span>
+        <div className="swatches">{FACADES.map((c) => <button key={c} className={`swatch ${cu.facade === c ? 'on' : ''}`} style={{ background: c }} onClick={() => set({ facade: c })} title={c} />)}</div>
+        <span>Couleur de la marque</span>
+        <div className="swatches">{ACCENTS.map((c) => <button key={c} className={`swatch ${cu.accent === c ? 'on' : ''}`} style={{ background: c }} onClick={() => set({ accent: c })} title={c} />)}</div>
+        <span>Forme (1,5 M$)</span>
+        <div className="chips">{SHAPES.map(([id, l]) => <button key={id} disabled={!tower} className={(cu.shape ?? 'stepped') === id ? 'on' : ''} onClick={() => set({ shape: id })}>{l}</button>)}</div>
+        <span>Hauteur (1,5 M$)</span>
+        <div className="chips">{[0.8, 1, 1.25, 1.5].map((h) => <button key={h} disabled={!tower} className={(cu.height ?? 1) === h ? 'on' : ''} onClick={() => set({ height: h })}>{Math.round(h * 100)} %</button>)}</div>
+        <span>Toit (300 k$)</span>
+        <div className="chips">{ROOFS.map(([id, l]) => <button key={id} className={(cu.roof ?? 'flat') === id ? 'on' : ''} onClick={() => set({ roof: id })}>{l}</button>)}</div>
+        <span>Ailes d’extension (2 M$ l’aile)</span>
+        <div className="chips">{[0, 1, 2, 3].map((n) => <button key={n} className={(cu.extension ?? 0) === n ? 'on' : ''} onClick={() => set({ extension: n })}>{n === 0 ? 'aucune' : `${n} aile${n > 1 ? 's' : ''}`}</button>)}</div>
+        <span>Sol de la salle (50 k$)</span>
+        <div className="chips">{FLOORS.map(([c, l]) => <button key={c} className={cu.floor === c ? 'on' : ''} onClick={() => set({ floor: c })}><i className="dot" style={{ background: c }} /> {l}</button>)}</div>
+        <span>Murs (50 k$)</span>
+        <div className="chips">{WALLS.map(([c, l]) => <button key={c} className={cu.wall === c ? 'on' : ''} onClick={() => set({ wall: c })}><i className="dot" style={{ background: c }} /> {l}</button>)}</div>
+        <span>Éclairage (50 k$)</span>
+        <div className="chips">{([['chaud', 'chaud'], ['froid', 'froid'], ['neon', 'néon']] as const).map(([id, l]) => <button key={id} className={cu.lighting === id ? 'on' : ''} onClick={() => set({ lighting: id })}>{l}</button>)}</div>
+        <span>Plantes (50 k$)</span>
+        <div className="chips"><button className={cu.plants ? 'on' : ''} onClick={() => set({ plants: !cu.plants })}>{cu.plants ? '🪴 oui' : 'non'}</button></div>
+      </div>
+    </>
   );
 }

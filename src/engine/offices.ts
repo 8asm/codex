@@ -30,7 +30,7 @@ import { npc, remember } from './npcs';
 import { hashUniform } from './rng';
 import { ymd } from './calendar';
 import type { Day } from './calendar';
-import type { ActionResult, FloorStyle, GameState, OfficeState, OfficeTier, PrestigeItemId } from './types';
+import type { ActionResult, FloorStyle, GameState, OfficeState, OfficeTier, PrestigeItemId , OfficeCustom } from './types';
 import { nav } from './valuation';
 import { complianceSeats } from './compliance';
 import { hqStaffSeats } from './staff';
@@ -107,8 +107,14 @@ export function seatsUsed(state: GameState): number {
   return BASE_SEATS + state.managers.filter((m) => m.assetId).length + AUTOMATION_SEATS(state) + complianceSeats(state) + hqStaffSeats(state);
 }
 
+/** Postes du siège, ailes d'extension comprises. */
+export function seatsTotal(state: GameState): number {
+  const o = office(state);
+  return Math.round(TIERS[o.tier]!.seats * (1 + 0.15 * (o.custom?.extension ?? 0)));
+}
+
 export function seatsFree(state: GameState): number {
-  return TIERS[office(state).tier]!.seats - seatsUsed(state);
+  return seatsTotal(state) - seatsUsed(state);
 }
 
 const has = (o: OfficeState, id: PrestigeItemId) => o.items.some((i) => i.id === id);
@@ -156,7 +162,8 @@ export function officeEffects(state: GameState): OfficeEffects {
 /** Coûts mensuels des locaux. */
 export function officeMonthly(state: GameState): { rent: number; upkeep: number; overflow: number } {
   const o = office(state);
-  const rent = o.owned ? 0 : rentFor(state, o.tier);
+  const ext = 1 + 0.12 * (o.custom?.extension ?? 0);
+  const rent = o.owned ? 0 : rentFor(state, o.tier) * ext;
   let upkeep = o.owned ? (o.owned.cost * OWNER_COSTS_PA) / 12 : 0;
   for (const i of o.items) upkeep += ITEM_BY_ID[i.id].monthly;
   const over = Math.max(0, -seatsFree(state));
@@ -367,4 +374,42 @@ export function tierForNav(v: number): OfficeTier {
   if (v >= TIERS[2]!.minNav) return 2;
   if (v >= TIERS[1]!.minNav) return 1;
   return 0;
+}
+
+/**
+ * Personnalisation du siège. Prix (multipliés par le coût local) :
+ *  - couleurs de façade : 80 k$ ; toit : 300 k$ ; intérieur (sol, murs, éclairage, plantes) : 50 k$ par élément ;
+ *  - forme et hauteur : réservées à un immeuble entier (tour ou campus), 1,5 M$ ;
+ *  - aile d'extension : 2 M$ l'aile (3 au plus), +15 % de postes, +12 % de loyer.
+ * Les dépenses sont des agencements : capitalisées et amorties sur 60 mois, comme les autres travaux.
+ */
+export function customizeOffice(state: GameState, patch: OfficeCustom): ActionResult {
+  if (!managesOffice(state)) return { ok: false, message: 'Les locaux appartiennent à votre employeur.' };
+  const o = office(state);
+  const cur = o.custom ?? {};
+  const k = localCost(state);
+  let cost = 0;
+  const notes: string[] = [];
+  if ((patch.shape && patch.shape !== cur.shape) || (patch.height !== undefined && patch.height !== cur.height)) {
+    if (o.tier < 2) return { ok: false, message: 'Forme et hauteur : il faut un immeuble entier (tour ou campus).' };
+    cost += 1_500_000 * k;
+    notes.push('silhouette');
+  }
+  if ((patch.facade && patch.facade !== cur.facade) || (patch.accent && patch.accent !== cur.accent)) { cost += 80_000 * k; notes.push('façade'); }
+  if (patch.roof && patch.roof !== cur.roof) { cost += 300_000 * k; notes.push('toit'); }
+  if (patch.extension !== undefined && patch.extension !== (cur.extension ?? 0)) {
+    const n = Math.max(0, Math.min(3, Math.round(patch.extension)));
+    if (n > (cur.extension ?? 0)) cost += (n - (cur.extension ?? 0)) * 2_000_000 * k;
+    patch.extension = n;
+    notes.push('extension');
+  }
+  for (const key of ['floor', 'wall', 'lighting', 'plants'] as const) if (patch[key] !== undefined && patch[key] !== cur[key]) { cost += 50_000 * k; notes.push('intérieur'); }
+  if (!notes.length) return { ok: false, message: 'Rien à changer.' };
+  if (cost > state.company.cash - state.company.im) return { ok: false, message: 'Trésorerie insuffisante pour ces travaux.' };
+  if (patch.height !== undefined) patch.height = Math.max(0.7, Math.min(1.5, patch.height));
+  addCash(state, -cost, 'office');
+  o.fitOuts.push({ cost, since: state.day, months: 60, label: `Personnalisation (${[...new Set(notes)].join(', ')})` });
+  o.custom = { ...cur, ...patch };
+  log(state, `Travaux au siège : ${[...new Set(notes)].join(', ')}`, -cost);
+  return { ok: true, message: `Travaux réalisés (${[...new Set(notes)].join(', ')}) : ${Math.round(cost / 1000)} k$, amortis sur 60 mois.` };
 }

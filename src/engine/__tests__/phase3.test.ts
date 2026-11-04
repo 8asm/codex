@@ -212,12 +212,20 @@ describe('sociétés concurrentes', () => {
     expect(s.credit.losses).toHaveLength(1);
   });
 
-  it('une société dont la NAV s’effondre fait faillite au pas suivant', () => {
+  it('une société dont la NAV s’effondre est recapitalisée une fois, puis fait faillite si elle rechute', () => {
     const s = createGame({ seed: 'aidef2', ...quiet });
     const c = s.companies.find((x) => x.id === 'mercuris')!;
     c.nav = 0.1 * c.initialNav;
     advanceDay(s);
     stepCompanies(s);
+    // premier effondrement : sauvetage par les actionnaires (3 fois sur 4) ou faillite
+    if (c.alive) {
+      expect(c.recapitalized).toBe(true);
+      expect(c.nav).toBeGreaterThan(0.4 * c.initialNav);
+      c.nav = 0.1 * c.initialNav;
+      advanceDay(s);
+      stepCompanies(s);
+    }
     expect(c.alive).toBe(false);
   });
 });

@@ -8,6 +8,7 @@
  *    l'effectif et les objets de prestige reflètent l'état du jeu ; un mur d'écrans affiche les vrais prix.
  * La caméra descend du ciel à l'entrée (continuité avec le plongeon du globe) et remonte à la sortie.
  */
+import type { OfficeCustom } from '../engine/types';
 import { LANDMARK_MAX_H, LANDMARK_PLOTS, LANDMARKS } from './landmarks';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -43,6 +44,8 @@ export interface CityViewState {
     employer: boolean;
     /** bureau à l'étranger : libellé affiché à la place du niveau de siège */
     label?: string;
+    /** personnalisation (forme, hauteur, couleurs, toit, extension, intérieur) */
+    custom?: OfficeCustom;
   };
   rivals: CityRival[];
   tickers: CityTicker[];
@@ -53,6 +56,8 @@ export interface CityViewState {
 export interface CityViewOptions {
   onExit: () => void;
   onHqClick: () => void;
+  /** sortie de l'intérieur par le zoom arrière */
+  onInteriorExit?: () => void;
 }
 
 const BLOCK = 60;
@@ -262,7 +267,7 @@ export class CityView {
       this.cityKey = ck;
       this.buildCity(s);
     }
-    const hk = s.hq ? `${s.hq.tier}|${s.hq.items.join(',')}|${s.hq.owned}|${s.hq.color}|${s.hq.name}` : 'none';
+    const hk = s.hq ? `${s.hq.tier}|${s.hq.items.join(',')}|${s.hq.owned}|${s.hq.color}|${s.hq.name}|${JSON.stringify(s.hq.custom ?? {})}` : 'none';
     const rk = s.rivals.map((r) => `${r.id}:${r.tier}`).join(',');
     if (hk + rk !== this.hqKey) {
       this.hqKey = hk + rk;
@@ -270,7 +275,7 @@ export class CityView {
       this.buildRivals(s);
       this.buildLabels(s);
     }
-    const ik = s.hq ? `${s.hq.tier}|${s.hq.style}|${s.hq.items.join(',')}|${Math.min(s.hq.staff, 999)}` : 'none';
+    const ik = s.hq ? `${s.hq.tier}|${s.hq.style}|${s.hq.items.join(',')}|${Math.min(s.hq.staff, 999)}|${JSON.stringify(s.hq.custom ?? {})}` : 'none';
     if (ik !== this.inKey) {
       this.inKey = ik;
       this.buildInterior(s);
@@ -364,9 +369,17 @@ export class CityView {
 
   // ---------------------------------------------------------------- interactions
   private onWheel = (e: WheelEvent) => {
-    if (this.interior || this.anim) return;
+    if (this.anim) return;
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    if (this.interior) {
+      // à l'intérieur : dézoomer en butée ressort du bâtiment
+      if (e.deltaY > 0 && dist >= this.controls.maxDistance * 0.98) this.opts.onInteriorExit?.();
+      return;
+    }
     // dézoomer au-delà de la distance maximale ramène au globe : zoom continu dans les deux sens
-    if (e.deltaY > 0 && this.camera.position.distanceTo(this.controls.target) >= this.controls.maxDistance * 0.98) this.opts.onExit();
+    if (e.deltaY > 0 && dist >= this.controls.maxDistance * 0.98) this.opts.onExit();
+    // zoomer en butée sur son propre siège fait entrer dans la salle de marché (le clic marche toujours)
+    if (e.deltaY < 0 && this.state?.hq && dist <= this.controls.minDistance * 1.08 && Math.hypot(this.controls.target.x, this.controls.target.z) < BLOCK * 0.9) this.opts.onHqClick();
   };
 
   private onDown = (e: PointerEvent) => {
@@ -688,9 +701,10 @@ export class CityView {
       g.add(b);
       return;
     }
-    const color = hq.color;
-    // façade : verre bleuté teinté de la couleur de la société ; bandeaux et couronne en couleur pleine
-    const glass = flat(new THREE.Color('#5d8fb8').lerp(new THREE.Color(color), 0.18), { emissive: '#1d3b5a', emissiveIntensity: 0.25, roughness: 0.2, metalness: 0.55 });
+    const cu = hq.custom ?? {};
+    const color = cu.accent ?? hq.color;
+    // façade : verre (teinte choisie, sinon bleutée) teinté de la couleur de la société ; bandeaux et couronne en couleur pleine
+    const glass = flat(new THREE.Color(cu.facade ?? '#5d8fb8').lerp(new THREE.Color(color), 0.18), { emissive: '#1d3b5a', emissiveIntensity: 0.25, roughness: 0.2, metalness: 0.55 });
     const accent = flat(color, { emissive: color, emissiveIntensity: 0.25, roughness: 0.4, metalness: 0.3 });
     const stone = flat('#f1ece2');
     const dark = flat('#3a4552', { roughness: 0.4, metalness: 0.3 });
@@ -722,21 +736,41 @@ export class CityView {
       g.add(this.box(10, 0.5, 4, dark, 0, 4.5, 15.5));
     } else {
       // tour (palier 2) ; campus (palier 3) = tour plus haute + pavillons
-      const H = hq.tier === 2 ? 95 : 130;
+      const H = (hq.tier === 2 ? 95 : 130) * (cu.height ?? 1);
       const segs = 4;
+      const shape = cu.shape ?? 'stepped';
+      const shrink = shape === 'straight' || shape === 'cylinder' ? 1 : shape === 'tapered' ? 0.76 : 0.86;
+      // une tour (ou deux, en « jumelles ») : segments de verre, nervures, bandeaux
+      const tower = (x0: number, w0: number, hMul: number) => {
+        let w = w0;
+        let y = 0.9;
+        for (let k = 0; k < segs; k++) {
+          const h = (H * hMul) / segs;
+          const geo = shape === 'cylinder' ? new THREE.CylinderGeometry(w / 2, w / 2, h, 20).translate(0, h / 2, 0) : new THREE.BoxGeometry(w, h, w).translate(0, h / 2, 0);
+          const seg = new THREE.Mesh(geo, glass);
+          seg.position.set(x0, y, 0);
+          seg.castShadow = true;
+          g.add(seg);
+          if (shape !== 'cylinder') for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(this.box(1, h, 1, stone, x0 + (sx * w) / 2, y, (sz * w) / 2));
+          y += h;
+          if (shape === 'cylinder') { const ring = new THREE.Mesh(new THREE.CylinderGeometry(w / 2 + 0.5, w / 2 + 0.5, 1.2, 20), accent); ring.position.set(x0, y - 0.6, 0); g.add(ring); }
+          else g.add(this.box(w + 0.8, 1.2, w + 0.8, accent, x0, y - 1.2, 0));
+          w *= shrink;
+        }
+        return { y, w: w / shrink };
+      };
       let w = 30;
       let y = 0.9;
-      for (let k = 0; k < segs; k++) {
-        const h = H / segs;
-        const seg = new THREE.Mesh(new THREE.BoxGeometry(w, h, w).translate(0, h / 2, 0), glass);
-        seg.position.y = y;
-        seg.castShadow = true;
-        g.add(seg);
-        // nervures verticales
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(this.box(1, h, 1, stone, (sx * w) / 2, y, (sz * w) / 2));
-        y += h;
-        g.add(this.box(w + 0.8, 1.2, w + 0.8, accent, 0, y - 1.2, 0));
-        w *= 0.86;
+      if (shape === 'twin') {
+        const a = tower(-11, 18, 1);
+        tower(11, 18, 0.82);
+        g.add(this.box(22, 3, 6, flat('#cfe6f5', { transparent: true, opacity: 0.7 }), 0, H * 0.55, 0)); // passerelle
+        y = a.y;
+        w = a.w;
+      } else {
+        const r = tower(0, 30, 1);
+        y = r.y;
+        w = r.w;
       }
       top = y;
       g.add(this.box(w * 1.05, 4, w * 1.05, accent, 0, top, 0));
@@ -788,6 +822,28 @@ export class CityView {
         heli.name = 'heli';
         g.add(heli);
       }
+    }
+    // toit personnalisé
+    if (cu.roof === 'garden') {
+      g.add(this.box(22, 0.8, 22, flat('#7fb069'), 0, top, 0));
+      for (let k = 0; k < 6; k++) { const tr = new THREE.Mesh(new THREE.ConeGeometry(1.6, 4, 6), flat('#3f8f46')); tr.position.set(Math.cos(k) * 7, top + 2.6, Math.sin(k) * 7); g.add(tr); }
+    } else if (cu.roof === 'spire') {
+      const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 1.4, 22, 8), flat('#d1d5db', { metalness: 0.7 }));
+      sp.position.y = top + 11;
+      g.add(sp);
+      top += 22;
+    } else if (cu.roof === 'crown') {
+      const cr = new THREE.Mesh(new THREE.TorusGeometry(9, 1.1, 8, 24), flat(color, { emissive: color, emissiveIntensity: 0.9 }));
+      cr.rotation.x = Math.PI / 2;
+      cr.position.y = top + 3;
+      g.add(cr);
+    }
+    // ailes d'extension : des pavillons accolés, aux couleurs de la société
+    for (let k = 0; k < (cu.extension ?? 0); k++) {
+      const [x, z] = [[-27, 0], [27, 0], [0, -27]][k]!;
+      const h = 16 + 5 * k;
+      g.add(this.box(18, h, 24, glass, x, 0.9, z));
+      g.add(this.box(18.6, 1.4, 24.6, accent, x, 0.9 + h - 1.4, z));
     }
     // drapeau si propriétaire
     if (hq.owned || hq.tier >= 2) {
@@ -905,7 +961,8 @@ export class CityView {
     const hq = s.hq;
     const tier = hq?.tier ?? 0;
     const style: FloorStyle = hq?.style ?? 'openspace';
-    const pal = STYLE_PAL[style];
+    const cu = hq?.custom ?? {};
+    const pal = { ...STYLE_PAL[style], ...(cu.floor ? { floor: cu.floor } : {}), ...(cu.wall ? { wall: cu.wall } : {}) };
     const items = hq?.items ?? [];
     const rows = 2 + tier;
     const perRow = 4 + tier;
@@ -936,6 +993,22 @@ export class CityView {
     const floor = new THREE.Mesh(new THREE.BoxGeometry(W, 0.4, D), flat(pal.floor, { roughness: style === 'verriere' ? 0.25 : 0.85 }));
     floor.position.y = -0.2;
     g.add(floor);
+    // éclairage et plantes choisis par le joueur
+    if (cu.lighting) {
+      const col = cu.lighting === 'chaud' ? '#ffc98a' : cu.lighting === 'froid' ? '#cfe8ff' : '#c084fc';
+      const lamp = new THREE.PointLight(col, cu.lighting === 'neon' ? 40 : 25, W * 1.2, 1.2);
+      lamp.position.set(0, H - 0.6, 0);
+      this.inScene.add(lamp);
+    }
+    if (cu.plants) {
+      for (const [x, z] of [[-W / 2 + 1.2, -D / 2 + 1.2], [W / 2 - 1.2, -D / 2 + 1.2], [-W / 2 + 1.2, D / 2 - 1.2], [W / 2 - 1.2, D / 2 - 1.2], [0, -D / 2 + 1.2]]) {
+        const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.4, 0.8, 8), flat('#8b5e3c'));
+        pot.position.set(x!, 0.4, z!);
+        const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), flat('#3f8f46'));
+        leaves.position.set(x!, 1.4, z!);
+        g.add(pot, leaves);
+      }
+    }
     const wallMat = style === 'verriere' ? flat(pal.wall, { transparent: true, opacity: 0.35, roughness: 0.1 }) : flat(pal.wall);
     const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.3), wallMat);
     back.position.set(0, H / 2, -D / 2);

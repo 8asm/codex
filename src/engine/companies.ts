@@ -6,6 +6,7 @@
  * Effets sur le joueur : contreparties de ses deals (risque de défaut), concurrence sur les bonnes offres
  * physiques, chocs de marché quand une grosse maison liquide, classement et rivalités nominatives.
  */
+import { hashUniform } from './rng';
 import { COMMODITIES, COMMODITY_IDS } from '../data/commodities';
 import { COMPANIES, COMPANY_BY_ID } from '../data/companies';
 import { RATINGS } from '../data/world';
@@ -74,15 +75,30 @@ export function stepCompanies(state: GameState) {
     co.history.push(co.nav);
     if (co.history.length > 260) co.history.shift();
     if (state.day >= co.nextRebalance) {
+      // risque normalisé par le nombre de desks (une maison à 15 desks ne prend pas 15 fois le risque d'un desk),
+      // et réduit de moitié après 30 % de perte depuis le plus haut (comité des risques)
+      const nDesks = Math.max(1, Object.keys(def.desks).length);
+      const deRisk = co.nav < 0.7 * co.peakNav ? 0.5 : 1;
       for (const c of Object.keys(def.desks) as CommodityId[]) {
         const signal = Math.max(-1, Math.min(1, 0.5 * momentum(state, c) + 0.6 * normal(state.rng)));
-        co.exposure[c] = signal * def.appetite * (def.desks[c] ?? 0) * LEVERAGE[def.kind]! * Math.max(0, co.nav);
+        co.exposure[c] = (signal * def.appetite * (def.desks[c] ?? 0) * LEVERAGE[def.kind]! * Math.max(0, co.nav) * deRisk * 3) / Math.sqrt(nDesks) / 1.6;
       }
       co.nextRebalance = addBusinessDays(state.day, randInt(state.rng, 4, 8));
     }
     co.rating = ratingFor(co);
     const floor = def.kind === 'trader' || def.kind === 'fund' ? 0.2 : 0.1;
-    if (co.nav < floor * co.initialNav) companyDefault(state, co.id, 'Pertes de trading et lignes bancaires coupées.');
+    if (co.nav < floor * co.initialNav) {
+      // les actionnaires (ou la maison mère) remettent au pot une fois sur trois quarts ; sinon, faillite
+      if (!co.recapitalized && hashUniform(state.config.seed, 'recap', co.id) < 0.75) {
+        co.recapitalized = true;
+        co.nav = 0.45 * co.initialNav;
+        co.peakNav = co.nav;
+        co.exposure = {};
+        co.reputation = Math.max(0, co.reputation - 10);
+        co.rating = ratingFor(co);
+        addNews(state, { headline: `${def.name} recapitalisée par ses actionnaires après de lourdes pertes`, body: 'Nouvel apport de fonds propres, positions réduites, direction des risques remaniée.', tone: 'neutral', major: false, category: 'entreprises', companyId: co.id });
+      } else companyDefault(state, co.id, 'Pertes de trading et lignes bancaires coupées.');
+    }
   }
   corporateFlavor(state);
 }

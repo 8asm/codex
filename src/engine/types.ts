@@ -509,6 +509,8 @@ export interface AICompanyState {
   peakNav: number;
   yearStartNav: number;
   exposure: Partial<Record<CommodityId, number>>; // notionnel signé (USD)
+  /** déjà sauvée une fois par ses actionnaires */
+  recapitalized?: boolean;
   reputation: number;
   rating: string;
   alive: boolean;
@@ -566,6 +568,8 @@ export interface GameConfig {
   commodities?: CommodityId[];
   /** Difficulté (frictions commerciales et frais fixes, jamais le pricing). Absent = normal. */
   difficulty?: 'debutant' | 'normal' | 'expert';
+  /** Phase 11 : complexité progressive (panneaux dévoilés quand on en a besoin). */
+  progressive?: boolean;
 }
 
 export interface GameState {
@@ -613,6 +617,10 @@ export interface GameState {
   /** desks de trading délégués aux traders recrutés (phase 9) */
   desks?: DeskState;
   lessons?: LessonState;
+  /** panneaux débloqués (complexité progressive) */
+  unlocked?: string[];
+  /** relations avec les gouvernements (phase 11) */
+  gov?: GovState;
   /** bruits de couloir déjà entendus (aucun effet sur le jeu) */
   lore?: { lastNews: Day; lastAside: Day; seen: string[] };
   companies: AICompanyState[];
@@ -943,6 +951,13 @@ export type Action =
   | { type: 'COUNTER_OFFER'; id: string }
   | { type: 'SET_MANDATE'; id: string; budget: number }
   | { type: 'START_LESSON'; id: string }
+  | { type: 'SKIP_LESSON_STEP' }
+  | { type: 'UNLOCK_ALL' }
+  | { type: 'GOV_BID'; tenderId: string; diff: number }
+  | { type: 'GOV_LICENCE'; zone: string }
+  | { type: 'GOV_LOBBY'; zone: string; kind: 'dossier' | 'diner' }
+  | { type: 'GOV_TAX_RULING' }
+  | { type: 'CUSTOMIZE_OFFICE'; patch: OfficeCustom }
   | { type: 'QUIT_LESSON' }
   | { type: 'OPEN_BRANCH'; cityId: string; size: 'bureau' | 'grand' }
   | { type: 'CLOSE_BRANCH'; cityId: string }
@@ -969,6 +984,22 @@ export interface FitOut {
   months: number;
 }
 
+/** Phase 11 : personnalisation du siège (extérieur et intérieur). */
+export interface OfficeCustom {
+  facade?: string;
+  accent?: string;
+  /** hauteur relative (0,7 à 1,5) */
+  height?: number;
+  shape?: 'stepped' | 'straight' | 'tapered' | 'cylinder' | 'twin';
+  /** ailes d'extension (0 à 3) : +15 % de postes et +12 % de loyer chacune */
+  extension?: number;
+  roof?: 'flat' | 'garden' | 'spire' | 'crown';
+  floor?: string;
+  wall?: string;
+  lighting?: 'chaud' | 'froid' | 'neon';
+  plants?: boolean;
+}
+
 export interface OfficeState {
   tier: OfficeTier;
   style: FloorStyle;
@@ -980,6 +1011,7 @@ export interface OfficeState {
   lastConferenceYear: number;
   /** Candidatures spontanées reçues (statistique affichée). */
   applicants: number;
+  custom?: OfficeCustom;
 }
 
 // ---------------------------------------------------------------- phase 7 : exotiques
@@ -1232,6 +1264,33 @@ export interface LessonState {
   active: string | null;
   step: number;
   done: string[];
+  /** étapes passées sans être réalisées */
+  skipped?: number;
+}
+
+/** Phase 11 : relations avec les États. */
+export interface Tender {
+  id: string;
+  agencyId: string;
+  zone: string;
+  commodity: CommodityId;
+  locationId: string;
+  /** +1 : l'État vend (le joueur achète) ; −1 : l'État achète */
+  playerSide: 1 | -1;
+  qty: number;
+  month: MonthIndex;
+  openDay: Day;
+  closeDay: Day;
+  bidders: number;
+}
+
+export interface GovState {
+  relations: Record<string, number>;
+  licences: { zone: string; untilDay: Day }[];
+  tenders: Tender[];
+  bids: { tenderId: string; diff: number; day: Day }[];
+  results: { tenderId: string; agencyId: string; commodity: CommodityId; won: boolean; day: Day; bid?: number; fair: number }[];
+  taxRuling?: { cut: number; untilDay: Day };
 }
 
 export interface DeskState {

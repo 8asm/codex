@@ -2,6 +2,7 @@
  * Conseillers animés : portraits SVG originaux (clignement, bouche qui parle, humeurs), bulle de dialogue,
  * fiche avec palmarès. Principal vecteur d'apprentissage du jeu.
  */
+import { useSettings } from './settings';
 import { useEffect, useMemo, useState } from 'react';
 import { ADVISOR_BY_ID, ADVISORS } from '../data/advisors';
 import { formatDayShort } from '../engine/calendar';
@@ -87,7 +88,9 @@ export function AdvisorBar() {
   const act = useStore((s) => s.act);
   const setPanel = useStore((s) => s.setPanel);
   const [open, setOpen] = useState<AdvisorId | null>(null);
-  const unseen = useMemo(() => g.advice.filter((a) => !a.seen && g.day - a.day <= 2), [g, rev]);
+  const simple = useSettings((s) => s.simplified);
+  // mode simplifié : seuls les avertissements sérieux font parler les conseillers
+  const unseen = useMemo(() => g.advice.filter((a) => !a.seen && g.day - a.day <= 2 && (!simple || a.mood === 'worried' || a.mood === 'angry')), [g, rev, simple]);
   const current = unseen[0];
   const [lastId, setLastId] = useState<string | null>(null);
   useEffect(() => {

@@ -55,6 +55,38 @@ export function lessonTick(s: GameState) {
     if (!st.done.includes(l.id)) st.done.push(l.id);
     st.active = null;
     s.pendingAlerts.push({ kind: 'achievement', text: `${l.icon} Leçon terminée : ${l.title}. ${l.outro}` });
-    if (l.id === 'first' && s.config.difficulty === 'debutant') s.pendingAlerts.push({ kind: 'achievement', text: '🔓 Tous les panneaux sont débloqués : risque, trésorerie, options, fret, actifs, équipes… Les leçons 🎓 vous guident sur chacun.' });
   }
+}
+
+/** Passe l'étape courante (le joueur la juge inutile ou ne peut pas la réaliser). */
+export function skipLessonStep(s: GameState): ActionResult {
+  const st = s.lessons;
+  if (!st?.active) return { ok: false, message: 'Pas de leçon en cours.' };
+  const l = LESSON_BY_ID[st.active];
+  if (!l) return { ok: false, message: 'Leçon inconnue.' };
+  st.step++;
+  st.skipped = (st.skipped ?? 0) + 1;
+  if (st.step >= l.steps.length) {
+    if (!st.done.includes(l.id)) st.done.push(l.id);
+    st.active = null;
+    return { ok: true, message: `Leçon terminée (étape passée) : ${l.title}.` };
+  }
+  lessonTick(s); // l'étape suivante est peut-être déjà réalisée
+  return { ok: true, message: 'Étape passée.' };
+}
+
+/**
+ * Diagnostic de l'étape courante : réalisable maintenant ? Si un déclencheur manque (pas d'offre, marché non suivi,
+ * attente d'une livraison), le joueur sait quoi faire ou peut passer l'étape.
+ */
+export function stepDiagnostic(s: GameState): { blocker: string | null; done: boolean } {
+  const st = s.lessons;
+  const l = st?.active ? LESSON_BY_ID[st.active] : undefined;
+  const step = l?.steps[st!.step];
+  if (!l || !step) return { blocker: null, done: false };
+  let done = false;
+  try { done = step.check(s); } catch { done = false; }
+  let blocker: string | null = null;
+  try { blocker = step.blocker?.(s) ?? null; } catch { blocker = null; }
+  return { blocker: done ? null : blocker, done };
 }

@@ -1,4 +1,5 @@
 import { CITY_BY_ID } from '../data/cities';
+import { useSettings } from './settings';
 import { formatDay } from '../engine/calendar';
 import { freeCash, rcfHeadroom } from '../engine/treasury';
 import { nav } from '../engine/valuation';
@@ -102,12 +103,12 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
           <div className="kpi-label">P&L du jour</div>
           <AnimatedNumber value={dayPnl} format={(x) => signedUsd(x, 2)} />
         </div>
-        <div className={`kpi ${marginUse > 0.8 ? 'danger' : marginUse > 0.5 ? 'warn' : ''}`} onClick={() => setPanel('treasury')}>
+        <div className={`kpi ${marginUse > 0.8 ? 'danger' : marginUse > 0.5 ? 'warn' : 'adv'}`} onClick={() => setPanel('treasury')}>
           <div className="kpi-label"><Term id="im">Marge</Term> utilisée</div>
           <div className="bar"><div style={{ width: `${Math.min(100, marginUse * 100)}%` }} /></div>
           <div className="kpi-sub">{usd(g.company.im)} / {usd(capacity)}</div>
         </div>
-        <div className={`kpi ${varUse > 1 ? 'danger' : varUse > 0.8 ? 'warn' : ''}`} onClick={() => setPanel('risk')}>
+        <div className={`kpi ${varUse > 1 ? 'danger' : varUse > 0.8 ? 'warn' : 'adv'}`} onClick={() => setPanel('risk')}>
           <div className="kpi-label"><Term id="var">Risque (VaR 1 j)</Term></div>
           <div className="bar"><div style={{ width: `${Math.min(100, varUse * 100)}%` }} /></div>
           <div className="kpi-sub">{usd(v)} · {(v / Math.max(1, navV) * 100).toFixed(1)} % FP</div>
@@ -128,7 +129,8 @@ export function Hud({ onMenu }: { onMenu: () => void }) {
         </div>
       </div>
       <div className="hud-tools">
-        <button className="ghost mute" onClick={() => setPanel('automation')} title="Automatisation (U)">⚙️</button>
+        <button className="ghost mute" onClick={() => useSettings.getState().setOpen(true)} title="Paramètres">🛠️</button>
+        <button className="ghost mute adv" onClick={() => setPanel('automation')} title="Automatisation (U)">⚙️</button>
         <button className="ghost mute" onClick={() => { setMuted(!muted); setM(!muted); }} title="Effets sonores">{muted ? '🔇' : '🔊'}</button>
         <MusicButton />
       </div>

@@ -8,6 +8,8 @@
  *   clôture    -> VM, échéances, livraisons, stockage, intérêts, frais, impôts, trésorerie/appels de marge
  *   nuit       -> le marché évolue jusqu'au jour ouvré suivant
  */
+import { customizeOffice } from './offices';
+import { buyLicence, govMonth, lobby, requestTaxRuling, resolveTenders, submitBid, taxRulingCut } from './government';
 import { factors } from './difficulty';
 import { offerBlock } from './physical';
 import { loreDay } from './lore';
@@ -39,7 +41,8 @@ import { recordFreightFixings, settleFfa, tradeFfa } from './freight';
 import { shipCargo, stepVoyages } from './logistics';
 import { buyOpportunity, createManagerPool, fireManager, generateOpportunities, hedgeProduction, hireManager, sellAsset, startMaintenance, stepAssets } from './assets';
 import { DEFAULT_AUTOMATION, rehedgeAfterDeliveries, runAutomation } from './automation';
-import { lessonTick, quitLesson, startLesson } from './lessons';
+import { lessonTick, quitLesson, skipLessonStep, startLesson } from './lessons';
+import { stepProgression, unlockAll } from './progression';
 import { deskMonth, deskTrading, liquidateDesks, setMandate, settleDesks } from './desks';
 import { FREIGHT_IDS } from '../data/freight';
 import { acceptJob, careerClose, careerLog, careerOpen, deskFor, evaluate, fire, flattenBook, foundCompany, initCareer, interviewChance, isEmployee, leave, makeOffer, permissionError, salaryFor, setAllocation, title } from './career';
@@ -240,8 +243,9 @@ export function effectiveTaxRate(state: GameState): { rate: number; regime: null
   const city = CITY_BY_ID[state.company.hqCity]!;
   const base = state.world.cityRegs[city.id]!.taxRate;
   const sp = city.specialRegime;
-  if (sp && sp.rate < base && state.company.physVolumeYtd >= (sp.minPhysicalVolume ?? 0)) return { rate: sp.rate, regime: sp };
-  return { rate: base, regime: null };
+  const cut = taxRulingCut(state); // rescrit fiscal négocié avec le gouvernement du siège
+  if (sp && sp.rate < base && state.company.physVolumeYtd >= (sp.minPhysicalVolume ?? 0)) return { rate: Math.max(0, sp.rate - cut), regime: sp };
+  return { rate: Math.max(0, base - cut), regime: null };
 }
 
 function openDay(state: GameState) {
@@ -326,6 +330,7 @@ function closeDay(state: GameState) {
   state.stats.voyagesDone += Math.max(0, voyagesBefore - state.voyages.length);
   for (const msg of stepAssets(state, days)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
   for (const msg of stepFinancing(state, days, newMonth)) state.pendingAlerts.push({ kind: 'delivery', text: msg });
+  if (paysCompanyCosts(state)) resolveTenders(state);
   rehedgeAfterDeliveries(state);
   chargeStorage(state, days);
   accrueInterest(state, days);
@@ -342,6 +347,7 @@ function closeDay(state: GameState) {
     complianceMonth(state);
     staffMonth(state);
     deskMonth(state);
+    govMonth(state);
     // Déclaration réglementaire des dérivés (type EMIR / Dodd-Frank) : coût par transaction du mois écoulé.
     const fee = state.world.cityRegs[co.hqCity]!.reportingFee * co.tradesThisMonth;
     if (fee > 0) {
@@ -442,6 +448,7 @@ function closeDay(state: GameState) {
   state.lastNav = navNow;
   state.lastCloseDay = state.day;
   stepProgress(state, mcBefore);
+  stepProgression(state);
   lessonTick(state);
 }
 
@@ -471,7 +478,7 @@ export function advanceDay(state: GameState): void {
 
 export function dispatch(state: GameState, action: Action): ActionResult {
   const r = dispatchAction(state, action);
-  if (r.ok) lessonTick(state);
+  if (r.ok) { stepProgression(state); lessonTick(state); }
   return r;
 }
 
@@ -631,6 +638,21 @@ function dispatchAction(state: GameState, action: Action): ActionResult {
       return startLesson(state, action.id);
     case 'QUIT_LESSON':
       return quitLesson(state);
+    case 'SKIP_LESSON_STEP':
+      return skipLessonStep(state);
+    case 'GOV_BID':
+      return submitBid(state, action.tenderId, action.diff);
+    case 'GOV_LICENCE':
+      return buyLicence(state, action.zone);
+    case 'GOV_LOBBY':
+      return lobby(state, action.zone, action.kind);
+    case 'GOV_TAX_RULING':
+      return requestTaxRuling(state);
+    case 'CUSTOMIZE_OFFICE':
+      return customizeOffice(state, action.patch);
+    case 'UNLOCK_ALL':
+      unlockAll(state);
+      return { ok: true, message: 'Tous les panneaux sont affichés.' };
     case 'SET_MANDATE':
       return setMandate(state, action.id, action.budget);
     case 'SPOT_BUY':

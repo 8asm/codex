@@ -12,6 +12,7 @@ import { MARKET_SETS } from '../data/commodities';
 import { GOALS } from '../data/achievements';
 import { useStore } from './store';
 import { MusicButton } from './common';
+import { useSettings } from './settings';
 import { DIFFICULTY_BLURB, DIFFICULTY_LABEL, DIFFICULTY_PRESET, type Difficulty } from '../engine/difficulty';
 
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
@@ -36,6 +37,7 @@ export function StartScreen() {
   const [player, setPlayer] = useState('Alex Martin');
   const [saves, setSaves] = useState<SaveMeta[]>([]);
   const [diff, setDiff] = useState<Difficulty>('normal');
+  const [progressive, setProgressive] = useState(true);
   const pickDiff = (d: Difficulty) => {
     setDiff(d);
     const p = DIFFICULTY_PRESET[d];
@@ -53,6 +55,7 @@ export function StartScreen() {
     mode === 'scenario' ? newGame({ scenario, seed, playerName: player || 'Vous' }) : newGame({
       goal,
       difficulty: diff,
+      progressive,
       commodities: MARKET_SETS.find((x) => x.id === markets)?.ids.length ? MARKET_SETS.find((x) => x.id === markets)!.ids : undefined,
       mode: mode === 'story' ? 'story' : 'sandbox', start: mode === 'join' ? 'join' : 'found', employerId: employer, track, playerName: player || 'Vous',
       companyName: name || 'Ma société', hqCity: city, capital: capital * 1e6, years: mode === 'story' ? Math.max(years, 6) : years, volatility: vol, crisisFrequency: crisis, seed,
@@ -61,7 +64,7 @@ export function StartScreen() {
 
   return (
     <div className="start">
-      <MusicButton className="ghost start-music" />
+      <div className="start-music"><button className="ghost" onClick={() => useSettings.getState().setOpen(true)} title="Paramètres">🛠️</button> <MusicButton className="ghost" /></div>
       <div className="start-card">
         <div className="start-title">
           <span className="logo">⛵</span>
@@ -95,6 +98,9 @@ export function StartScreen() {
               ))}
             </div>
             {diff === 'debutant' && mode !== 'found' && <div className="muted small">La visite guidée démarre en « Sandbox : ma société ». Ici, seules les conditions sont adoucies.</div>}
+            {mode !== 'story' && mode !== 'join' && (
+              <label className="check-row"><input type="checkbox" checked={progressive} onChange={(e) => setProgressive(e.target.checked)} /> <b>Complexité progressive</b> <span className="muted small">Les panneaux apparaissent au fil de la partie, quand vous en avez besoin, avec une explication et une leçon.</span></label>
+            )}
           </>
         )}
         {mode === 'scenario' && (

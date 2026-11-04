@@ -126,6 +126,39 @@ interface CityNode {
   ring: THREE.Mesh;
 }
 
+/**
+ * Écarte légèrement les villes trop proches pour l'affichage (Genève, Lyon, Zoug, Lugano, Milan sont à moins de
+ * 1,5° les unes des autres) : répulsion itérative dans le plan local (longitude × cos latitude), écart minimal 2,1°,
+ * déplacement plafonné à 1,1° par ville. Seul l'affichage du globe est concerné, pas les distances du jeu.
+ */
+export function spreadCities(cities: { lat: number; lon: number }[]): [number, number][] {
+  const MIN = 2.1, CAP = 1.1;
+  const p = cities.map((c) => [c.lat, c.lon] as [number, number]);
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (let a = 0; a < p.length; a++)
+      for (let b = a + 1; b < p.length; b++) {
+        const k = Math.cos((((p[a]![0] + p[b]![0]) / 2) * Math.PI) / 180);
+        const dy = p[b]![0] - p[a]![0], dx = (p[b]![1] - p[a]![1]) * k;
+        const d = Math.hypot(dx, dy);
+        if (d >= MIN || d === 0) continue;
+        const push = (MIN - d) / 2 / d * 0.5;
+        p[a]![0] -= dy * push; p[a]![1] -= (dx * push) / k;
+        p[b]![0] += dy * push; p[b]![1] += (dx * push) / k;
+        moved = true;
+      }
+    // plafond du déplacement par rapport à la position réelle
+    p.forEach((q, i) => {
+      const k = Math.cos((cities[i]!.lat * Math.PI) / 180);
+      const dy = q[0] - cities[i]!.lat, dx = (q[1] - cities[i]!.lon) * k;
+      const d = Math.hypot(dx, dy);
+      if (d > CAP) { q[0] = cities[i]!.lat + (dy * CAP) / d; q[1] = cities[i]!.lon + (dx * CAP) / d / k; }
+    });
+    if (!moved) break;
+  }
+  return p;
+}
+
 export class Globe {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -170,7 +203,7 @@ export class Globe {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.enablePan = false;
-    this.controls.minDistance = 1.18;
+    this.controls.minDistance = 1.07; // la plongée dans une ville ne démarre qu'au ras du sol
     this.controls.maxDistance = 5;
     this.controls.rotateSpeed = 0.5;
     this.controls.zoomSpeed = 0.8;
@@ -232,8 +265,10 @@ export class Globe {
         const k = propOf(c);
         if (!arr.includes(k) && arr.length < 3) arr.push(k);
       }
+    const spread = spreadCities(opts.cities);
     opts.cities.forEach((city, i) => {
-      const pos = latLonToVec3(city.lat, city.lon, 1);
+      const [lat, lon] = spread[i]!;
+      const pos = latLonToVec3(lat, lon, 1);
       const group = new THREE.Group();
       group.position.copy(pos);
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), pos.clone().normalize());
@@ -320,7 +355,7 @@ export class Globe {
     if (!n) return done?.();
     const dir = n.pos.clone().normalize();
     this.camera.position.copy(dir.clone().multiplyScalar(1.09));
-    this.focusAnim = { from: dir, to: dir.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize(), t: 0, dist0: 1.09, dist1: 2.0, dur: 1.2, done: () => { this.controls.minDistance = 1.18; done?.(); } };
+    this.focusAnim = { from: dir, to: dir.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize(), t: 0, dist0: 1.09, dist1: 2.0, dur: 1.2, done: () => { this.controls.minDistance = 1.07; done?.(); } };
   }
 
   private buildStarfield() {

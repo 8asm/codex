@@ -1,4 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { GovernmentPanel } from './GovernmentPanel';
+import { SettingsModal } from './SettingsModal';
+import { applyLanguage } from './i18n';
+import { isUnlocked } from '../engine/progression';
+import { effectiveScale, useSettings } from './settings';
 import { exportJson, saveGame } from '../save/saveStore';
 import { BookPanel } from './BookPanel';
 import { CodexPanel } from './CodexPanel';
@@ -56,6 +61,7 @@ const DOCK: { id: PanelId; icon: string; label: string; key: string }[] = [
   { id: 'exotics', icon: '🧪', label: 'Structurés', key: 'X' },
   { id: 'finance', icon: '🏧', label: 'Financement', key: 'Y' },
   { id: 'compliance', icon: '⚖️', label: 'Conformité', key: 'Z' },
+  { id: 'government', icon: '🏛️', label: 'Gouvernements', key: 'D' },
   { id: 'game', icon: '🏆', label: 'Partie', key: 'Q' },
   { id: 'lessons', icon: '🎓', label: 'Leçons', key: 'W' },
   { id: 'codex', icon: '📚', label: 'Codex', key: 'C' },
@@ -126,12 +132,27 @@ function useKeyboard() {
       }
       else {
         const d = DOCK.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
-        if (d) st.setPanel(d.id);
+        if (d && (!st.game || isUnlocked(st.game, d.id))) st.setPanel(d.id);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+}
+
+/** Échelle de l'interface (variable CSS --ui), recalculée au redimensionnement de la fenêtre. */
+function useUiScale() {
+  const pref = useSettings((s) => s.uiScale);
+  const simple = useSettings((s) => s.simplified);
+  useEffect(() => { document.documentElement.classList.toggle('simple', simple); }, [simple]);
+  const lang = useSettings((s) => s.lang);
+  useEffect(() => { applyLanguage(lang); }, [lang]);
+  useEffect(() => {
+    const apply = () => document.documentElement.style.setProperty('--ui', String(effectiveScale(pref)));
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, [pref]);
 }
 
 export function App() {
@@ -144,6 +165,7 @@ export function App() {
   const quit = useStore((s) => s.quit);
   useGameLoop();
   useKeyboard();
+  useUiScale();
   const menuRef = useRef<HTMLDivElement>(null);
   const cityPhase = useStore((s) => s.cityPhase);
   const selectedCity = useStore((s) => s.selectedCity);
@@ -172,14 +194,13 @@ export function App() {
     if (id === 'exotics') return rg.otc;
     if (id === 'staff') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     if (id === 'finance') return rg.treasury;
+    if (id === 'government') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     if (id === 'compliance') return !game?.career || game.career.status === 'founder' || game.career.status === 'ceo';
     return true;
   };
   const visible0 = (id: PanelId) => byRights(id) && (id === 'logistics' ? showLogi || !!game?.career : id === 'assets' ? showAssets || !!game?.career : id === 'automation' ? false : true);
-  // débutant : tant que la visite guidée n'est pas finie, seuls les panneaux essentiels sont affichés
-  const guided = game?.config.difficulty === 'debutant' && !game.career && !(game.lessons?.done.includes('first'));
-  const ESSENTIAL: PanelId[] = ['market', 'physical', 'book', 'news', 'lessons', 'game', 'codex', 'travel'];
-  const visible = (id: PanelId) => visible0(id) && visible1(id) && (!guided || ESSENTIAL.includes(id));
+  // complexité progressive : un panneau n'apparaît qu'une fois débloqué par l'activité du joueur
+  const visible = (id: PanelId) => visible0(id) && visible1(id) && (!game || isUnlocked(game, id));
   const visible1 = (id: PanelId) => (id === 'exotics' ? showOptions && (game!.history.length > 20 || game!.exotics.length > 0) : id === 'finance' ? showTreasury : id === 'compliance' ? game!.history.length > 10 || game!.compliance.cases.length > 0 : id === 'treasury' ? showTreasury : id === 'options' ? showOptions : id === 'risk' ? showRisk : id === 'world' ? showWorld : id === 'rivals' ? showRivals : true);
 
   return (
@@ -187,6 +208,7 @@ export function App() {
       <GlobeCanvas />
       {game && inCity && <Suspense fallback={null}><CityCanvas /></Suspense>}
       {!game && <StartScreen />}
+      <SettingsModal />
       {game && (
         <>
           <Hud onMenu={() => setMenu(!menu)} />
@@ -229,6 +251,7 @@ export function App() {
             {panel === 'game' && <GamePanel />}
             {panel === 'staff' && <StaffPanel />}
             {panel === 'lessons' && <LessonsPanel />}
+            {panel === 'government' && <GovernmentPanel />}
           </div>
           {!cityPhase && <LayerBar />}
           {!cityPhase && (
@@ -265,7 +288,7 @@ function LayerBar() {
   const layers = useStore((s) => s.layers);
   const toggle = useStore((s) => s.toggleLayer);
   return (
-    <div className="layerbar">
+    <div className="layerbar adv">
       <span className="muted small">Calques</span>
       {LAYERS.map((l) => (
         <button key={l.id} className={layers[l.id] ? 'on' : ''} onClick={() => toggle(l.id)} title={l.label}>{l.icon}<small>{l.label}</small></button>
