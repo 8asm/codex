@@ -86,6 +86,7 @@ export function hasAchievement(state: GameState, id: string) {
 }
 
 export function checkAchievements(state: GameState) {
+  if (state.stats?.cheats?.length) return; // partie avec codes de triche : pas de succès
   for (const a of ACHIEVEMENTS) {
     if (hasAchievement(state, a.id)) continue;
     let ok = false;

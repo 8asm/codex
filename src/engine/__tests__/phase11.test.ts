@@ -123,3 +123,19 @@ describe('personnalisation du siège', () => {
     expect(s.status).toBe('running');
   });
 });
+
+describe('codes de triche', () => {
+  it('un code connu s’applique et marque la partie (plus de succès) ; un code inconnu est refusé', async () => {
+    const { applyCheat } = await import('../cheats');
+    const s = createGame({ seed: 'cheat', ...quiet });
+    const cash = s.company.cash;
+    expect(applyCheat(s, 'midas').ok).toBe(true);
+    expect(s.company.cash).toBeCloseTo(cash + 10e6, 2);
+    expect(s.stats.cheats).toContain('MIDAS');
+    expect(applyCheat(s, 'abracadabra').ok).toBe(false);
+    expect(dispatch(s, { type: 'CHEAT', code: 'Panorama' }).ok).toBe(true);
+    const n = s.achievements.length;
+    for (let i = 0; i < 5; i++) advanceDay(s);
+    expect(s.achievements.length).toBe(n);
+  });
+});

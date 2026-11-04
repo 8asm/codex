@@ -635,3 +635,6 @@ i.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vert
 .mp-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 46px; z-index: 12; zoom: var(--ui, 1); }
 .mp-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin-top: 4px; width: 320px; max-width: 90vw; }
 @media (max-width: 760px) { .online-cols { grid-template-columns: 1fr; } }
+
+.cheats { width: min(520px, calc(100vw - 32px)); max-height: 86vh; overflow-y: auto; }
+.cheats td:first-child button { font-family: 'Baloo 2', monospace; letter-spacing: 1px; }

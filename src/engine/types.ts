@@ -361,7 +361,8 @@ export type CashCategory =
   | 'assets'
   | 'dividends'
   | 'office'
-  | 'financing';
+  | 'financing'
+  | 'cheat';
 
 export interface Company {
   name: string;
@@ -955,6 +956,7 @@ export type Action =
   | { type: 'START_LESSON'; id: string }
   | { type: 'SKIP_LESSON_STEP' }
   | { type: 'UNLOCK_ALL' }
+  | { type: 'CHEAT'; code: string }
   | { type: 'GOV_BID'; tenderId: string; diff: number }
   | { type: 'GOV_LICENCE'; zone: string }
   | { type: 'GOV_LOBBY'; zone: string; kind: 'dossier' | 'diner' }
@@ -1174,6 +1176,8 @@ export interface ComplianceState {
 export type GoalId = 'taille' | 'rendement' | 'fortune' | 'reputation' | 'domination' | 'survie' | 'scenario';
 
 export interface GameStats {
+  /** codes de triche utilisés (la partie est marquée) */
+  cheats?: string[];
   /** dépassements de mandat découverts (desks délégués) */
   roguesCaught?: number;
   exoticPnl: number[];

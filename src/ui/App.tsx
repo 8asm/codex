@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { CheatMenu } from './CheatMenu';
 import { MpBar } from './OnlineLobby';
 import { GovernmentPanel } from './GovernmentPanel';
 import { SettingsModal } from './SettingsModal';
@@ -210,6 +211,7 @@ export function App() {
       {game && inCity && <Suspense fallback={null}><CityCanvas /></Suspense>}
       {!game && <StartScreen />}
       <SettingsModal />
+      <CheatMenu />
       {game && (
         <>
           <Hud onMenu={() => setMenu(!menu)} />

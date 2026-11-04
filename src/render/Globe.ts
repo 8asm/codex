@@ -54,6 +54,8 @@ export interface GlobeOptions {
   simDay: () => number;
   /** zoom avant au plus près d'une ville : on plonge dans la vue ville */
   onDive?: (cityId: string) => void;
+  /** clic (sans glisser) sur l'Antarctique : aucun indice visuel, le curseur ne change pas */
+  onAntarctica?: () => void;
 }
 
 const EARTH_VS = /* glsl */ `
@@ -316,11 +318,30 @@ export class Globe {
     this.scene.add(this.trail);
 
     this.renderer.domElement.addEventListener('wheel', this.onWheel, { passive: true });
+    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(container);
     this.resize();
     this.loop();
   }
+
+  private downXY: { x: number; y: number } | null = null;
+  private onPointerDown = (e: PointerEvent) => { this.downXY = { x: e.clientX, y: e.clientY }; };
+  /** Un clic (pas un glisser) : on cherche le point touché sur la sphère terrestre ; s'il est sous 62° S, c'est l'Antarctique. */
+  private onPointerUp = (e: PointerEvent) => {
+    const d = this.downXY;
+    this.downXY = null;
+    if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5 || !this.opts.onAntarctica) return;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const hit = ray.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1), new THREE.Vector3());
+    if (!hit) return;
+    const lat = (Math.asin(Math.max(-1, Math.min(1, hit.y / hit.length()))) * 180) / Math.PI;
+    if (lat < -62) this.opts.onAntarctica();
+  };
 
   /** Zoom avant en butée : la ville la plus centrale devient la destination du plongeon. */
   private onWheel = (e: WheelEvent) => {
@@ -597,6 +618,8 @@ export class Globe {
     cancelAnimationFrame(this.raf);
     this.resizeObs.disconnect();
     this.renderer.domElement.removeEventListener('wheel', this.onWheel);
+    this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

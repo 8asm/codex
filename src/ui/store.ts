@@ -29,7 +29,7 @@ export interface Modal {
 /** Horloge partagée hors React (lue par le globe à chaque frame). */
 export const clock = { dayFrac: 0 };
 
-export const DAY_SECONDS: Record<Exclude<Speed, 0>, number> = { 1: 3.2, 2: 1.6, 5: 0.6 };
+export const DAY_SECONDS: Record<Exclude<Speed, 0>, number> = { 1: 8, 2: 3.5, 5: 1.2 }; // secondes réelles par jour de jeu
 
 interface UIState {
   game: GameState | null;

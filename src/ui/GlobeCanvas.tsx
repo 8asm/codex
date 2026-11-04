@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useCheatMenu } from './CheatMenu';
 import { CITIES } from '../data/cities';
 import { COMMODITIES } from '../data/commodities';
 import { Globe, type GlobeMarker, type GlobeOverlay } from '../render/Globe';
@@ -36,6 +37,7 @@ export function GlobeCanvas() {
       },
       simDay: () => (useStore.getState().game?.day ?? 0) + clock.dayFrac,
       onDive: (id) => useStore.getState().requestCity(id),
+      onAntarctica: () => useCheatMenu.getState().tap(),
       travelProgress: () => {
         const t = useStore.getState().game?.player.travel;
         const st = useStore.getState().game;

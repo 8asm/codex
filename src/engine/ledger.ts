@@ -4,7 +4,7 @@ import type { CashCategory, CommodityId, GameState } from './types';
 export function addCash(state: GameState, amountUsd: number, category: CashCategory, commodity?: CommodityId) {
   const co = state.company;
   co.cash += amountUsd;
-  co.cumCashByCategory[category] += amountUsd;
+  co.cumCashByCategory[category] = (co.cumCashByCategory[category] ?? 0) + amountUsd;
   if (commodity) co.cumCashByCommodity[commodity] += amountUsd;
 }
 

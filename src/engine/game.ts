@@ -8,6 +8,7 @@
  *   clôture    -> VM, échéances, livraisons, stockage, intérêts, frais, impôts, trésorerie/appels de marge
  *   nuit       -> le marché évolue jusqu'au jour ouvré suivant
  */
+import { applyCheat } from './cheats';
 import { customizeOffice } from './offices';
 import { buyLicence, govMonth, lobby, requestTaxRuling, resolveTenders, submitBid, taxRulingCut } from './government';
 import { factors } from './difficulty';
@@ -696,6 +697,8 @@ function dispatchAction(state: GameState, action: Action): ActionResult {
       return requestTaxRuling(state);
     case 'CUSTOMIZE_OFFICE':
       return customizeOffice(state, action.patch);
+    case 'CHEAT':
+      return applyCheat(state, action.code);
     case 'UNLOCK_ALL':
       unlockAll(state);
       return { ok: true, message: 'Tous les panneaux sont affichés.' };
